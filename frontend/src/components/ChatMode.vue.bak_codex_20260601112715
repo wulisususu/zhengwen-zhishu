@@ -1,0 +1,1149 @@
+<template>
+  <div class="flex h-full min-h-0 w-full flex-1">
+    <section
+      class="relative flex h-full min-h-0 w-full flex-1 flex-col rounded-[8px] border border-black/[0.08] bg-white"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent="onDragOver"
+      @dragleave.prevent="onDragLeave"
+      @drop.prevent="onDropFiles"
+    >
+      <div v-if="isDraggingFiles" class="drag-upload-overlay">
+        <div class="drag-upload-panel">
+          <Paperclip class="size-5" :stroke-width="2" />
+          <span>松开以上传文件</span>
+        </div>
+      </div>
+      <div class="border-b border-black/[0.08] px-4 py-3">
+        <h2 class="text-[16px] font-semibold leading-6">{{ chat.currentConvId ? activeTitle : idleTitle }}</h2>
+      </div>
+      <div ref="messagesContainer" class="flex-1 space-y-4 overflow-y-auto p-4">
+        <template v-for="m in chat.messages" :key="m.id">
+          <div :class="m.role === 'user' ? 'message-row message-row-user' : 'message-row message-row-assistant'">
+            <div v-if="m.role === 'user'" class="user-message">
+              <div v-if="messageAttachments(m).length" class="user-attachment-list">
+                <template v-for="file in messageAttachments(m)" :key="file.id">
+                  <img
+                    v-if="isImageAttachment(file)"
+                    class="user-image-attachment"
+                    :src="fileDownloadUrl(file)"
+                    :alt="file.filename || '图片'"
+                    loading="lazy"
+                    @load="scrollToBottom()"
+                  />
+                  <a
+                    v-else
+                    class="user-file-attachment"
+                    :href="fileDownloadUrl(file)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Paperclip class="size-4 shrink-0" :stroke-width="2" />
+                    <span class="min-w-0 flex-1 truncate">{{ file.filename || '附件' }}</span>
+                    <span v-if="file.size" class="shrink-0 text-black/40">{{ formatFileSize(file.size) }}</span>
+                  </a>
+                </template>
+              </div>
+              <div v-if="m.content" class="user-text-bubble">{{ m.content }}</div>
+            </div>
+            <div v-else>
+              <div v-if="parseThink(m.content).think" class="mb-2">
+                <button @click="m._showThink = !m._showThink" class="flex items-center gap-1 text-[12px] text-black/40 hover:text-black/60">
+                  <span class="transition-transform" :class="m._showThink ? 'rotate-90' : ''">&#9654;</span>
+                  思考
+                </button>
+                <div v-show="m._showThink" class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ parseThink(m.content).think }}</div>
+              </div>
+              <div v-if="visibleMessage(parseThink(m.content).answer)" class="message-content assistant-content whitespace-pre-wrap" v-html="formatMessage(visibleMessage(parseThink(m.content).answer))"></div>
+              <div v-for="task in messageDocTasks(m.content)" :key="task.task_id" class="doc-card mt-2">
+                <div class="min-w-0">
+                  <div class="doc-title">{{ task.file?.filename || task.title || 'Word 文档' }}</div>
+                  <div class="doc-meta">{{ docTaskStatusText(task) }} &middot; docx<span v-if="task.file?.size"> &middot; {{ formatFileSize(task.file.size) }}</span></div>
+                  <div v-if="task.error" class="doc-error">{{ task.error }}</div>
+                </div>
+                <button class="doc-download" :disabled="task.status !== 'done' || !task.file?.download_url" @click="downloadDoc(task)">下载</button>
+              </div>
+              <div class="mt-2 flex gap-2">
+                <button @click="playTTS(m.id, visibleMessage(parseThink(m.content).answer))" :disabled="ttsLoading"
+                  class="rounded-[8px] bg-white px-3 py-1.5 text-[13px] text-black/65 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] hover:bg-black/[0.04] disabled:opacity-50">
+                  {{ ttsPlayingId === m.id ? '播放中...' : '朗读' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div v-if="isStreaming && !streamingText" class="message-row-assistant">
+          <div class="inline-flex h-10 min-w-10 items-center justify-center rounded-[8px] border border-black/[0.08] bg-[#fbfcfd] px-4">
+            <span class="typing-dot" aria-label="正在思考"></span>
+          </div>
+        </div>
+        <div v-else-if="streamingText" class="message-row-assistant">
+          <div v-if="streamingThink" class="mb-2">
+            <span class="text-[12px] text-black/40">&#9654; 思考中...</span>
+            <div class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ streamingThink }}</div>
+          </div>
+          <div class="assistant-content whitespace-pre-wrap">
+            <span v-html="formatMessage(streamingAnswer)"></span><span class="animate-pulse">|</span>
+          </div>
+          <div v-for="task in streamingTasks" :key="task.task_id" class="doc-card mt-2">
+            <div class="min-w-0">
+              <div class="doc-title">{{ task.file?.filename || task.title || 'Word 文档' }}</div>
+              <div class="doc-meta">{{ docTaskStatusText(task) }} &middot; docx<span v-if="task.file?.size"> &middot; {{ formatFileSize(task.file.size) }}</span></div>
+              <div v-if="task.error" class="doc-error">{{ task.error }}</div>
+            </div>
+            <button class="doc-download" :disabled="task.status !== 'done' || !task.file?.download_url" @click="downloadDoc(task)">下载</button>
+          </div>
+        </div>
+
+        <p v-if="!chat.messages.length && !isStreaming && !streamingText" class="text-center text-[14px] text-black/35 mt-20">{{ emptyText }}</p>
+      </div>
+      <div class="border-t border-black/[0.08] px-3 pt-3">
+        <input ref="fileInput" type="file" multiple class="hidden" @change="onAttachmentSelected" />
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" @click="openAttachmentPicker" :disabled="uploadingAttachments"
+            class="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-black/[0.08] bg-white px-2.5 text-[13px] text-black/65 hover:bg-black/[0.04] disabled:opacity-50">
+            <Paperclip class="size-4" :stroke-width="2" />
+            附件
+          </button>
+          <span v-if="uploadingAttachments" class="text-[12px] text-black/40">上传中...</span>
+          <div v-for="file in attachedFiles" :key="file.id" class="attachment-chip">
+            <span class="max-w-[180px] truncate font-medium">{{ file.filename }}</span>
+            <span class="shrink-0 text-black/40">{{ parseTaskStatusText(file.parseTask) }}</span>
+            <button type="button" class="attachment-remove" @click="removeAttachment(file.id)" aria-label="移除附件">
+              <X class="size-3.5" :stroke-width="2" />
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-if="kbMode" class="mx-3 mb-1 flex items-center gap-1.5 rounded-[6px] bg-[#e8f4fd] px-3 py-1.5 text-[12px] text-[#2677a8]">
+        <Database class="size-3.5" :stroke-width="2" />
+        <span>知识库模式已开启 — 回答将基于档案检索</span>
+      </div>
+      <ComposerBar placeholder="输入消息，按 Enter 发送..." @send="onSend" :loading="chat.loading || isStreaming || uploadingAttachments">
+        <template #left>
+          <button type="button" @click="kbMode = !kbMode"
+            :class="['kb-toggle', { 'kb-toggle-on': kbMode }]"
+            :title="kbMode ? '关闭知识库模式' : '开启知识库模式'">
+            <Database class="size-4" :stroke-width="2" />
+            <span>知识库</span>
+          </button>
+        </template>
+      </ComposerBar>
+    </section>
+  </div>
+</template>
+
+<script setup>
+import { ref, watch, nextTick, onMounted, onUnmounted, reactive } from 'vue'
+import { useRouter } from 'vue-router'
+import { Paperclip, X, Database } from 'lucide-vue-next'
+import { useChatStore } from '../stores/chat.js'
+import api, { handleUnauthorized } from '../api.js'
+import { getSessionToken } from '../stores/auth.js'
+import ComposerBar from './ComposerBar.vue'
+
+const props = defineProps({
+  workflow: { type: String, default: 'chat' },
+  routeBase: { type: String, default: '/chat' },
+  activeTitle: { type: String, default: '当前对话' },
+  idleTitle: { type: String, default: '请选择对话' },
+  emptyText: { type: String, default: '开始新的对话' },
+})
+const chat = useChatStore()
+const router = useRouter()
+const messagesContainer = ref(null)
+const ttsPlayingId = ref(null)
+const ttsLoading = ref(false)
+const isStreaming = ref(false)
+const kbMode = ref(false)
+const streamingText = ref('')
+const streamingThink = ref('')
+const streamingAnswer = ref('')
+const streamingTasks = ref([])
+const docTasks = reactive({})
+const fileParseTasks = reactive({})
+const attachedFiles = ref([])
+const uploadingAttachments = ref(false)
+const isDraggingFiles = ref(false)
+const fileInput = ref(null)
+const pollingTimers = new Map()
+const parsePollingTimers = new Map()
+let dragDepth = 0
+let currentAudio = null
+let activeStreamController = null
+let streamVersion = 0
+let streamFrame = 0
+let queuedStreamText = ''
+let streamTimeoutTimer = 0
+let streamTimedOut = false
+
+onMounted(async () => {
+  window.addEventListener('mqw-workspace-reset', resetLocalState)
+  await chat.loadConversations(50, props.workflow)
+  const pendingText = consumePendingRequest()
+  hydrateDocTasks()
+  if (pendingText) await sendPendingRequest(pendingText)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mqw-workspace-reset', resetLocalState)
+  clearPollingTimers()
+  clearParsePollingTimers()
+})
+
+function scrollToBottom(behavior = 'smooth') {
+  nextTick(() => messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior }))
+}
+
+watch(() => chat.messages.length, () => {
+  hydrateDocTasks()
+  scrollToBottom()
+})
+
+watch(streamingText, () => {
+  scrollToBottom()
+})
+
+watch(() => chat.messages.map((m) => m.content).join('\n'), () => hydrateDocTasks())
+
+function clearPollingTimers() {
+  for (const timer of pollingTimers.values()) window.clearInterval(timer)
+  pollingTimers.clear()
+}
+
+function clearParsePollingTimers() {
+  for (const timer of parsePollingTimers.values()) window.clearInterval(timer)
+  parsePollingTimers.clear()
+}
+
+function clearDocTasks() {
+  for (const key of Object.keys(docTasks)) delete docTasks[key]
+}
+
+function clearFileParseTasks() {
+  for (const key of Object.keys(fileParseTasks)) delete fileParseTasks[key]
+}
+
+function resetLocalState() {
+  streamVersion += 1
+  if (activeStreamController) {
+    activeStreamController.abort()
+    activeStreamController = null
+  }
+  cancelQueuedStreamRender()
+  clearStreamTimeout()
+  clearPollingTimers()
+  clearParsePollingTimers()
+  clearDocTasks()
+  clearFileParseTasks()
+  attachedFiles.value = []
+  isDraggingFiles.value = false
+  dragDepth = 0
+  streamingText.value = ''
+  streamingThink.value = ''
+  streamingAnswer.value = ''
+  streamingTasks.value = []
+  isStreaming.value = false
+  ttsPlayingId.value = null
+  ttsLoading.value = false
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio = null
+  }
+}
+
+function clearStreamTimeout() {
+  if (streamTimeoutTimer) {
+    window.clearTimeout(streamTimeoutTimer)
+    streamTimeoutTimer = 0
+  }
+  streamTimedOut = false
+}
+
+function scheduleStreamTimeout(ms) {
+  if (streamTimeoutTimer) window.clearTimeout(streamTimeoutTimer)
+  streamTimeoutTimer = window.setTimeout(() => {
+    streamTimedOut = true
+    activeStreamController?.abort()
+  }, ms)
+}
+
+function cancelQueuedStreamRender() {
+  if (streamFrame) {
+    window.cancelAnimationFrame(streamFrame)
+    streamFrame = 0
+  }
+  queuedStreamText = ''
+}
+
+function applyStreamingText(text) {
+  streamingText.value = text
+  const parsed = parseThink(text)
+  streamingThink.value = parsed.think
+  streamingAnswer.value = parsed.answer
+}
+
+function queueStreamingToken(token) {
+  const text = String(token || '')
+  if (!text) return
+  queuedStreamText += text
+  if (streamFrame) return
+  streamFrame = window.requestAnimationFrame(() => {
+    streamFrame = 0
+    if (!queuedStreamText) return
+    applyStreamingText(streamingText.value + queuedStreamText)
+    queuedStreamText = ''
+  })
+}
+
+function flushStreamingTokens() {
+  if (!queuedStreamText) return
+  const nextText = streamingText.value + queuedStreamText
+  queuedStreamText = ''
+  if (streamFrame) {
+    window.cancelAnimationFrame(streamFrame)
+    streamFrame = 0
+  }
+  applyStreamingText(nextText)
+}
+
+function replaceStreamingText(text) {
+  cancelQueuedStreamRender()
+  applyStreamingText(String(text || ''))
+}
+
+function parseSseBlock(block) {
+  const dataLines = []
+  let eventType = ''
+  for (const rawLine of String(block || '').split(/\r?\n/)) {
+    const line = rawLine.trimEnd()
+    if (!line || line.startsWith(':')) continue
+    if (line.startsWith('event:')) eventType = line.slice(6).trim()
+    if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+  }
+  const payload = dataLines.join('\n').trim()
+  if (!payload) return null
+  if (payload === '[DONE]') return { type: 'stream_end' }
+  try {
+    const data = JSON.parse(payload)
+    if (eventType && !data.type) data.type = eventType
+    return data
+  } catch {
+    return { type: 'parse_error', raw: payload }
+  }
+}
+
+function consumePendingRequest() {
+  try {
+    const raw = sessionStorage.getItem('mqw-pending-request')
+    if (!raw) return null
+    sessionStorage.removeItem('mqw-pending-request')
+    const parsed = JSON.parse(raw)
+    if (!parsed?.text) return null
+    let text = String(parsed.text).trim()
+    if (parsed.type === 'word' && !/(word|docx|\u6587\u6863|\u5468\u62a5|\u7b80\u5386|\u6e05\u5355|\u62a5\u544a)/i.test(text)) {
+      text = '\u8bf7\u751f\u6210Word\u6587\u6863\uff1a' + text
+    }
+    if (parsed.type === 'ppt' && !/(ppt|\u6f14\u793a|\u6c47\u62a5)/i.test(text)) {
+      text = '\u8bf7\u751f\u6210PPT\uff1a' + text
+    }
+    return text
+  } catch {
+    sessionStorage.removeItem('mqw-pending-request')
+    return null
+  }
+}
+
+async function sendPendingRequest(text) {
+  if (!text) return
+  await nextTick()
+  await onSend(text)
+}
+
+function upsertConversation(conv) {
+  if (!conv) return
+  if (conv.workflow_type && conv.workflow_type !== props.workflow) return
+  const idx = chat.conversations.findIndex((c) => c.id === conv.id)
+  if (idx >= 0) chat.conversations[idx] = { ...chat.conversations[idx], ...conv }
+  else chat.conversations.unshift(conv)
+}
+
+function parseThink(content) {
+  if (!content) return { think: '', answer: '' }
+  const match = content.match(/<think>([\s\S]*?)<\/think>\s*([\s\S]*)/)
+  if (match) return { think: match[1].trim(), answer: match[2].trim() }
+  const danglingThink = content.indexOf('<think>')
+  if (danglingThink >= 0) return { think: '', answer: content.slice(0, danglingThink).trim() }
+  return { think: '', answer: content }
+}
+
+function escapeHtml(content) {
+  return String(content || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatMessage(content) {
+  return escapeHtml(content).replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+    return `<a class="message-link" href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+  })
+}
+
+function taskMarkerRegex() {
+  return /\[\[DOC_TASK\]\]([\s\S]*?)\[\[\/DOC_TASK\]\]/g
+}
+
+function visibleMessage(content) {
+  return String(content || '').replace(taskMarkerRegex(), '').trim()
+}
+
+function normalizeTask(task) {
+  if (!task || !task.task_id) return null
+  return { ...(docTasks[task.task_id] || {}), ...task }
+}
+
+function upsertDocTask(task) {
+  const normalized = normalizeTask(task)
+  if (!normalized) return null
+  docTasks[normalized.task_id] = normalized
+  const streamingIdx = streamingTasks.value.findIndex((item) => item.task_id === normalized.task_id)
+  if (streamingIdx >= 0) streamingTasks.value[streamingIdx] = normalized
+  if (normalized.status !== 'done' && normalized.status !== 'error') startTaskPolling(normalized.task_id)
+  return normalized
+}
+
+function parseDocTaskMarkers(content) {
+  const tasks = []
+  for (const match of String(content || '').matchAll(taskMarkerRegex())) {
+    try {
+      const parsed = JSON.parse(match[1])
+      if (parsed?.task_id) tasks.push(parsed)
+    } catch {}
+  }
+  return tasks
+}
+
+function messageDocTasks(content) {
+  return parseDocTaskMarkers(content).map((task) => docTasks[task.task_id] || task)
+}
+
+function hydrateDocTasks() {
+  for (const message of chat.messages) {
+    for (const task of parseDocTaskMarkers(message.content)) upsertDocTask(task)
+  }
+}
+
+async function refreshDocTask(taskId) {
+  try {
+    const { data } = await api.get('/documents/tasks/' + taskId)
+    if (data.code === 0) {
+      const task = upsertDocTask(data.data)
+      if (task && (task.status === 'done' || task.status === 'error')) stopTaskPolling(taskId)
+    }
+  } catch {}
+}
+
+function startTaskPolling(taskId) {
+  if (!taskId || pollingTimers.has(taskId)) return
+  refreshDocTask(taskId)
+  const timer = window.setInterval(() => refreshDocTask(taskId), 1500)
+  pollingTimers.set(taskId, timer)
+}
+
+function stopTaskPolling(taskId) {
+  const timer = pollingTimers.get(taskId)
+  if (timer) window.clearInterval(timer)
+  pollingTimers.delete(taskId)
+}
+
+function docTaskStatusText(task) {
+  if (task.status === 'done') return '已生成'
+  if (task.status === 'error') return '生成失败'
+  if (task.status === 'writing') return '正在写入 Word'
+  if (task.status === 'structuring') return '\u6b63\u5728\u6574\u7406\u5185\u5bb9'
+  return '生成中 ' + (task.progress || 0) + '%'
+}
+
+function formatFileSize(size) {
+  if (!size) return ''
+  if (size < 1024 * 1024) return Math.max(1, Math.round(size / 1024)) + 'KB'
+  return (size / 1024 / 1024).toFixed(1) + 'MB'
+}
+
+function messageAttachments(message) {
+  return Array.isArray(message?.attachments) ? message.attachments : []
+}
+
+function isImageAttachment(file) {
+  const type = String(file?.mime_type || file?.type || '').toLowerCase()
+  const name = String(file?.filename || '').toLowerCase()
+  return type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/.test(name)
+}
+
+function fileDownloadUrl(file) {
+  if (file?.download_url) return file.download_url
+  if (file?.id) return '/api/v1/files/' + file.id + '/download'
+  return '#'
+}
+
+function attachmentSnapshot(file) {
+  return {
+    id: file.id,
+    filename: file.filename,
+    size: file.size,
+    type: file.type,
+    download_url: file.download_url || (file.id ? '/api/v1/files/' + file.id + '/download' : ''),
+    parseTask: file.parseTask || null,
+  }
+}
+
+async function downloadDoc(task) {
+  if (!task?.file?.download_url) return
+  try {
+    const response = await api.get(task.file.download_url.replace('/api/v1', ''), { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = task.file.filename || 'document.docx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Download document failed:', error)
+    task.error = '下载失败，请重新登录后再试'
+  }
+}
+
+function normalizeFileParseTask(task) {
+  if (!task || !task.task_id) return null
+  return { ...(fileParseTasks[task.task_id] || {}), ...task }
+}
+
+function upsertFileParseTask(task) {
+  const normalized = normalizeFileParseTask(task)
+  if (!normalized) return null
+  fileParseTasks[normalized.task_id] = normalized
+  const idx = attachedFiles.value.findIndex((file) => file.id === normalized.file_id)
+  if (idx >= 0) {
+    attachedFiles.value[idx] = { ...attachedFiles.value[idx], parseTask: normalized }
+  }
+  if (normalized.status !== 'done' && normalized.status !== 'error') startFileParsePolling(normalized)
+  else stopFileParsePolling(normalized.task_id)
+  return normalized
+}
+
+async function refreshFileParseTask(task) {
+  if (!task?.task_id || !task?.file_id) return
+  try {
+    const { data } = await api.get('/files/' + task.file_id + '/parse-tasks/' + task.task_id)
+    if (data.code === 0) upsertFileParseTask(data.data)
+  } catch {}
+}
+
+function startFileParsePolling(task) {
+  if (!task?.task_id || parsePollingTimers.has(task.task_id)) return
+  const timer = window.setInterval(() => refreshFileParseTask(task), 1800)
+  parsePollingTimers.set(task.task_id, timer)
+  refreshFileParseTask(task)
+}
+
+function stopFileParsePolling(taskId) {
+  const timer = parsePollingTimers.get(taskId)
+  if (timer) window.clearInterval(timer)
+  parsePollingTimers.delete(taskId)
+}
+
+function parseTaskStatusText(task) {
+  if (!task) return '未解析'
+  if (task.status === 'done') return '已解析'
+  if (task.status === 'error') return '解析失败'
+  if (task.stage) return task.stage
+  return '解析中 ' + (task.progress || 0) + '%'
+}
+
+async function onAttachmentSelected(event) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  await uploadFiles(files)
+}
+
+async function uploadFiles(files) {
+  if (!files.length || uploadingAttachments.value) return
+  uploadingAttachments.value = true
+  try {
+    for (const file of files) {
+      const formData = new FormData()
+      formData.append('file', file)
+      const { data } = await api.post('/files/upload', formData)
+      if (data.code !== 0 || !data.data?.id) continue
+      const uploaded = {
+        id: data.data.id,
+        filename: data.data.filename || file.name,
+        size: data.data.size || file.size,
+        type: data.data.type || file.type || '',
+        download_url: data.data.download_url || ('/api/v1/files/' + data.data.id + '/download'),
+        parseTask: data.data.parse_task || null,
+      }
+      const existing = attachedFiles.value.findIndex((item) => item.id === uploaded.id)
+      if (existing >= 0) attachedFiles.value[existing] = uploaded
+      else attachedFiles.value.push(uploaded)
+      if (uploaded.parseTask) upsertFileParseTask(uploaded.parseTask)
+    }
+  } catch (error) {
+    console.error('Upload attachment failed:', error)
+  } finally {
+    uploadingAttachments.value = false
+  }
+}
+
+function openAttachmentPicker() {
+  fileInput.value?.click()
+}
+
+function hasDraggedFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes('Files')
+}
+
+function onDragEnter(event) {
+  if (!hasDraggedFiles(event)) return
+  dragDepth += 1
+  isDraggingFiles.value = true
+}
+
+function onDragOver(event) {
+  if (!hasDraggedFiles(event)) return
+  event.dataTransfer.dropEffect = 'copy'
+  isDraggingFiles.value = true
+}
+
+function onDragLeave(event) {
+  if (!hasDraggedFiles(event)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) isDraggingFiles.value = false
+}
+
+async function onDropFiles(event) {
+  if (!hasDraggedFiles(event)) return
+  dragDepth = 0
+  isDraggingFiles.value = false
+  const files = Array.from(event.dataTransfer?.files || [])
+  await uploadFiles(files)
+}
+
+function removeAttachment(fileId) {
+  const file = attachedFiles.value.find((item) => item.id === fileId)
+  if (file?.parseTask?.task_id) stopFileParsePolling(file.parseTask.task_id)
+  attachedFiles.value = attachedFiles.value.filter((item) => item.id !== fileId)
+}
+
+function clearComposerAttachments() {
+  for (const file of attachedFiles.value) {
+    if (file?.parseTask?.task_id) stopFileParsePolling(file.parseTask.task_id)
+  }
+  attachedFiles.value = []
+}
+
+async function onSend(text) {
+  if (isStreaming.value || uploadingAttachments.value) return
+  const effectiveWorkflow = kbMode.value ? 'knowledge' : props.workflow
+  const streamId = ++streamVersion
+  if (!chat.currentConvId) {
+    let conv = null
+    try {
+      conv = await chat.createConversation(text.slice(0, 20), effectiveWorkflow)
+    } catch (error) {
+      console.error('Create conversation failed:', error)
+      return
+    }
+    if (conv?.id) await router.replace(`${props.routeBase}/${conv.id}`)
+  }
+  if (streamId !== streamVersion || !chat.currentConvId) return
+
+  const conversationId = chat.currentConvId
+  const attachments = attachedFiles.value.map((file) => file.id)
+  const pendingAttachments = attachedFiles.value.map(attachmentSnapshot)
+  const userMsg = {
+    id: Date.now(),
+    role: 'user',
+    content: text,
+    msg_type: 'text',
+    created_at: new Date().toISOString(),
+    attachments: pendingAttachments,
+  }
+  chat.messages.push(userMsg)
+  if (attachments.length) clearComposerAttachments()
+
+  isStreaming.value = true
+  streamingText.value = ''
+  streamingThink.value = ''
+  streamingAnswer.value = ''
+  streamingTasks.value = []
+  cancelQueuedStreamRender()
+  clearStreamTimeout()
+  activeStreamController = new AbortController()
+  scheduleStreamTimeout(180000)
+  let receivedDone = false
+  let receivedFinalMessage = false
+  let assistantMessageId = null
+  let assistantCreatedAt = new Date().toISOString()
+  let fallbackAssistantMessage = null
+
+  try {
+    const response = await fetch('/api/v1/conversations/' + conversationId + '/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + getSessionToken(),
+      },
+      body: JSON.stringify({ content: text, stream: true, attachments, workflow_type: effectiveWorkflow }),
+      signal: activeStreamController.signal,
+    })
+
+    if (response.status === 401) {
+      handleUnauthorized()
+      throw new Error('HTTP 401 Unauthorized')
+    }
+
+    if (!response.ok || !response.body) {
+      throw new Error('HTTP ' + response.status + ' ' + (response.statusText || 'stream failed'))
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        buffer += decoder.decode()
+        break
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      const blocks = buffer.split(/\r?\n\r?\n/)
+      buffer = blocks.pop() || ''
+
+      if (streamId !== streamVersion) break
+      for (const block of blocks) {
+        if (streamId !== streamVersion) break
+        const data = parseSseBlock(block)
+        if (!data) continue
+        if (data.type === 'stream_end') {
+          receivedDone = true
+          continue
+        }
+
+        if (data.type === 'token') {
+          queueStreamingToken(data.content)
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'replace') {
+          replaceStreamingText(data.content)
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'doc_task') {
+          const task = upsertDocTask(data.task)
+          streamingTasks.value = task ? [task] : []
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'file_parse_task') {
+          upsertFileParseTask(data.task)
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'done') {
+          flushStreamingTokens()
+          receivedDone = true
+          receivedFinalMessage = true
+          assistantMessageId = data.id || assistantMessageId
+          assistantCreatedAt = data.created_at || assistantCreatedAt
+          if (data.conversation) upsertConversation(data.conversation)
+          const finalContent = typeof data.content === 'string' ? data.content : streamingText.value
+          const finalMsg = {
+            id: assistantMessageId || ('assistant-' + Date.now()),
+            role: 'assistant',
+            content: finalContent,
+            msg_type: 'text',
+            created_at: assistantCreatedAt,
+            _showThink: false,
+            status: 'done',
+          }
+          const existingAssistantIdx = chat.messages.findIndex((item) => item.id === finalMsg.id && item.role === 'assistant')
+          if (existingAssistantIdx >= 0) chat.messages[existingAssistantIdx] = { ...chat.messages[existingAssistantIdx], ...finalMsg }
+          else chat.messages.push(finalMsg)
+          hydrateDocTasks()
+        } else if (data.type === 'user') {
+          if (data.conversation) upsertConversation(data.conversation)
+          const idx = chat.messages.findIndex((item) => item.id === userMsg.id && item.role === 'user')
+          if (idx >= 0 && data.id) {
+            chat.messages[idx] = {
+              ...chat.messages[idx],
+              id: data.id,
+              created_at: data.created_at || chat.messages[idx].created_at,
+              attachments: messageAttachments(data).length ? data.attachments : chat.messages[idx].attachments,
+            }
+          }
+        }
+      }
+    }
+
+    if (buffer.trim() && streamId === streamVersion) {
+      const data = parseSseBlock(buffer)
+      if (data?.type === 'token') queueStreamingToken(data.content)
+      else if (data?.type === 'replace') replaceStreamingText(data.content)
+      else if (data?.type === 'done') {
+        flushStreamingTokens()
+        receivedDone = true
+        receivedFinalMessage = true
+        assistantMessageId = data.id || assistantMessageId
+        assistantCreatedAt = data.created_at || assistantCreatedAt
+        if (data.conversation) upsertConversation(data.conversation)
+        const finalContent = typeof data.content === 'string' ? data.content : streamingText.value
+        chat.messages.push({ id: assistantMessageId || ('assistant-' + Date.now()), role: 'assistant', content: finalContent, msg_type: 'text', created_at: assistantCreatedAt, _showThink: false, status: 'done' })
+      }
+    }
+
+    flushStreamingTokens()
+    if (!receivedDone && streamId === streamVersion && streamingText.value.trim()) {
+      fallbackAssistantMessage = {
+        id: assistantMessageId || ('assistant-partial-' + Date.now()),
+        role: 'assistant',
+        content: streamingText.value.trim() + '\n\n[系统提示] 本次连接提前结束，以上为已接收的完整片段，请点击“继续输出”或重新发送以补齐。',
+        msg_type: 'text',
+        created_at: assistantCreatedAt,
+        _showThink: false,
+        status: 'interrupted',
+      }
+      chat.messages.push(fallbackAssistantMessage)
+      console.warn('Stream ended before done event; preserved partial assistant content.')
+    }
+  } catch (e) {
+    flushStreamingTokens()
+    if (streamTimedOut && streamId === streamVersion) {
+      const partial = streamingText.value.trim()
+      fallbackAssistantMessage = {
+        id: 'assistant-timeout-' + Date.now(),
+        role: 'assistant',
+        content: partial
+          ? partial + '\n\n[系统提示] 模型响应超时，已保留上面的内容。可以继续追问或重新发送。'
+          : '[系统提示] 模型响应超时，没有拿到有效内容。请继续追问或重新发送。',
+        msg_type: 'text',
+        created_at: new Date().toISOString(),
+        _showThink: false,
+        status: 'timeout',
+      }
+      chat.messages.push(fallbackAssistantMessage)
+    } else if (e.message?.includes('HTTP 401') && streamId === streamVersion) {
+      const idx = chat.messages.findIndex((item) => item.id === userMsg.id && item.role === 'user')
+      if (idx >= 0) chat.messages.splice(idx, 1)
+    } else if (e.name !== 'AbortError' && streamId === streamVersion) {
+      console.error('Stream error:', e)
+      const partial = streamingText.value.trim()
+      fallbackAssistantMessage = {
+        id: 'assistant-error-' + Date.now(),
+        role: 'assistant',
+        content: partial
+          ? partial + '\n\n[系统提示] 输出连接异常中断，已保留上面的内容。'
+          : '[系统提示] 输出连接异常中断，请稍后重试。',
+        msg_type: 'text',
+        created_at: new Date().toISOString(),
+        _showThink: false,
+        status: 'error',
+      }
+      chat.messages.push(fallbackAssistantMessage)
+    }
+  } finally {
+    if (streamId !== streamVersion) return
+    activeStreamController = null
+    isStreaming.value = false
+    cancelQueuedStreamRender()
+    clearStreamTimeout()
+    streamingText.value = ''
+    streamingThink.value = ''
+    streamingAnswer.value = ''
+    streamingTasks.value = []
+    if (chat.currentConvId === conversationId) {
+      const shouldReloadMessages = !receivedFinalMessage || !!fallbackAssistantMessage
+      if (shouldReloadMessages) {
+        await chat.selectConversation(conversationId, props.workflow)
+        if (fallbackAssistantMessage) {
+          const marker = fallbackAssistantMessage.content.slice(0, 80)
+          const exists = chat.messages.some((message) => message.role === 'assistant' && String(message.content || '').includes(marker))
+          if (!exists) chat.messages.push(fallbackAssistantMessage)
+        }
+      }
+      hydrateDocTasks()
+      await chat.loadConversations(50, props.workflow)
+    }
+  }
+}
+
+async function playTTS(msgId, text) {
+  if (ttsLoading.value) return
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
+  ttsLoading.value = true
+  ttsPlayingId.value = msgId
+  try {
+    const response = await api.post('/tts/synthesize', { text }, { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'audio/wav' })
+    const url = URL.createObjectURL(blob)
+    currentAudio = new Audio(url)
+    currentAudio.onended = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    currentAudio.onerror = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    await currentAudio.play()
+  } catch (e) {
+    console.error('TTS error:', e)
+    ttsPlayingId.value = null
+    ttsLoading.value = false
+  }
+}
+</script>
+
+<style scoped>
+.kb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.4);
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kb-toggle:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.6);
+}
+.kb-toggle-on {
+  background: #e8f4fd;
+  color: #2677a8;
+  border-color: #2677a8;
+}
+.kb-toggle-on:hover {
+  background: #d4ecf9;
+  color: #1d5f8a;
+}
+
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #111;
+  display: inline-block;
+  animation: typing-dot-jump 0.72s ease-in-out infinite;
+}
+
+@keyframes typing-dot-jump {
+  0%, 100% { transform: translateY(0); opacity: 0.45; }
+  50% { transform: translateY(-5px); opacity: 1; }
+}
+
+.message-row {
+  width: 100%;
+}
+
+.message-row-user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message-row-assistant {
+  max-width: min(880px, 100%);
+  margin-right: auto;
+}
+
+.user-message {
+  display: flex;
+  max-width: min(560px, 78%);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.user-attachment-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.user-image-attachment {
+  width: min(178px, 52vw);
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.user-file-attachment {
+  display: inline-flex;
+  width: min(320px, 72vw);
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  background: #f3f4f6;
+  padding: 10px 12px;
+  color: rgba(0, 0, 0, 0.78);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.user-file-attachment:hover {
+  background: #eceef1;
+}
+
+.user-text-bubble {
+  max-width: 100%;
+  border-radius: 14px;
+  background: #f3f3f3;
+  padding: 10px 16px;
+  color: #111;
+  font-size: 16px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.assistant-content {
+  color: #111;
+  font-size: 16px;
+  line-height: 1.9;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .user-message {
+    max-width: 86%;
+  }
+
+  .message-row-assistant {
+    max-width: 100%;
+  }
+}
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 460px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.doc-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.82);
+}
+
+.doc-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.doc-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #b91c1c;
+}
+
+.doc-download {
+  opacity: 0;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  padding: 7px 12px;
+  font-size: 13px;
+  transition: opacity 0.18s ease, background 0.18s ease;
+}
+
+.doc-card:hover .doc-download {
+  opacity: 1;
+}
+
+.doc-download:disabled {
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.16);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.drag-upload-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.drag-upload-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(3, 105, 161, 0.24);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px 16px;
+  color: rgba(0, 0, 0, 0.78);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.attachment-chip {
+  display: inline-flex;
+  max-width: min(320px, 100%);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 5px 7px 5px 9px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(0, 0, 0, 0.72);
+}
+
+.attachment-remove {
+  display: inline-flex;
+  height: 20px;
+  width: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.attachment-remove:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.72);
+}
+
+:deep(.message-link) {
+  color: #0369a1;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+</style>

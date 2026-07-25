@@ -1,0 +1,33 @@
+data: {"workflow": "document", "intent_type": "document_generation", "type": "user", "id": 2152, "role": "user", "content": "请用约300字生成一份《OpenClaw 35B 文档链路探测报告》，要求输出markdown正文，并生成可下载Word文档。", "msg_type": "text", "workflow_type": "document", "metadata_json": "", "created_at": "2026-06-30T15:33:27.942813", "attachments": [], "conversation": {"id": 897, "title": "OpenClaw链路探测", "workflow_type": "document", "created_at": "2026-06-30T15:33:27.819601", "updated_at": "2026-06-30T15:33:27.939900"}}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "message_start", "role": "assistant"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "我会为你生成"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "《用约300"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "字生成一份O"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "penCla"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "w》，并在完"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "成正文后生成"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "可下载文档。"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "status", "stage": "analyzing", "message": "正在分析你的文档需求…"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "status", "stage": "extracting", "message": "正在提取标题和必备章节…"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "status", "stage": "planning", "message": "正在规划文档结构…"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "status", "stage": "preparing_body", "message": "正在准备正文开头…"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "status", "stage": "generating_chunk_1", "message": "正在生成正文…"}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "error", "error_type": "openclaw_error", "message": "长文档生成中断，已保留最近一次成功进度，请稍后重试。", "retryable": true}
+
+data: {"workflow": "document", "intent_type": "document_generation", "type": "done", "id": 2153, "content": "我会为你生成《用约300字生成一份OpenClaw》，并在完成正文后生成可下载文档。\n\n长文档生成中断，已保留最近一次成功进度，请稍后重试。", "conversation": {"id": 897, "title": "OpenClaw链路探测", "workflow_type": "document", "created_at": "2026-06-30T15:33:27.819601", "updated_at": "2026-06-30T15:35:04.678393"}}
+
+data: [DONE]

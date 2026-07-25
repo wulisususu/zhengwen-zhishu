@@ -1,0 +1,63 @@
+{
+  "http": {
+    "unauthenticated_generate": 401,
+    "invalid_page_count": 422,
+    "nonempty_sources": 422,
+    "active_duplicate": 409,
+    "concurrent_second_task": 429,
+    "primary_stream": 200,
+    "idempotent_replay": 200,
+    "owner_download": 200,
+    "other_user_download": 404,
+    "anonymous_download": 401
+  },
+  "sse_event_types": [
+    "progress",
+    "progress",
+    "spec",
+    "progress",
+    "progress",
+    "progress",
+    "validate",
+    "progress",
+    "done"
+  ],
+  "primary_seconds": 27.771,
+  "replay_seconds": 0.032,
+  "done_contract": {
+    "keys": [
+      "download_url",
+      "file_id",
+      "sha256",
+      "size",
+      "valid",
+      "validation_result"
+    ],
+    "file_id": 594,
+    "download_url_shape": true,
+    "size": 14469,
+    "sha256": "c2c38a95c7c217c38a8a44fdaab747de8e4582b7fe5578f26deeb698d10d71aa",
+    "valid": true,
+    "leaks_server_path": false
+  },
+  "validation": {
+    "passed": true,
+    "warnings_count": 0,
+    "errors_count": 0,
+    "blocking_errors_count": 0,
+    "consistent_with_valid": true
+  },
+  "idempotency": {
+    "same_file_id": true,
+    "replay_is_faster": true
+  },
+  "pptx": {
+    "zip_integrity": true,
+    "required_ooxml": true,
+    "slide_count": 1,
+    "slide_count_matches": true,
+    "native_editable_shapes": true,
+    "downloaded_bytes": 14469
+  },
+  "passed": true
+}

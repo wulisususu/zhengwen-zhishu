@@ -1,0 +1,134 @@
+<template>
+  <main class="flex h-dvh flex-col overflow-hidden bg-[#f6f7f8] text-black">
+    <AppHeader title="欢迎2" subtitle="写文档" @goHome="router.push('/')" @logout="router.push('/login')" />
+
+    <div class="flex min-h-0 flex-1">
+      <aside class="hidden w-[260px] shrink-0 border-r border-black/[0.08] bg-white px-3 py-3 md:flex md:min-h-0 md:flex-col">
+        <nav class="shrink-0 space-y-1 pb-4">
+          <button @click="createNewDocument"
+            class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <Plus class="size-4" :stroke-width="2" />
+            <span>新文档</span>
+          </button>
+          <button class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <Search class="size-4" :stroke-width="2" />
+            <span>搜索文档</span>
+          </button>
+          <button @click="router.push('/chat')"
+            class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <MessageSquare class="size-4" :stroke-width="2" />
+            <span>聊天</span>
+          </button>
+          <button
+            class="flex h-9 w-full items-center gap-3 rounded-[8px] bg-black/[0.06] px-2.5 text-left text-[14px] text-black transition-colors">
+            <FileText class="size-4" :stroke-width="2" />
+            <span>写文档</span>
+          </button>
+          <button @click="router.push({ path: '/workspace', query: { mode: 'knowledge' } })"
+            class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <Database class="size-4" :stroke-width="2" />
+            <span>知识库</span>
+          </button>
+        </nav>
+
+        <section class="flex min-h-0 flex-1 flex-col pt-1">
+          <h2 class="shrink-0 px-2.5 pb-2 text-[13px] font-semibold leading-5 text-black">最近生成</h2>
+          <div ref="historyScroller" class="min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1" @scroll="onHistoryScroll">
+            <button v-for="c in chat.conversations" :key="c.id" @click="selectConversation(c.id)"
+              :class="['block h-9 w-full rounded-[8px] px-2.5 text-left text-[14px] leading-9 transition-colors',
+                chat.currentConvId === c.id ? 'bg-black/[0.06] text-black' : 'text-black/85 hover:bg-black/[0.06]']">
+              <span class="block truncate">{{ c.title }}</span>
+            </button>
+            <div v-if="chat.conversationsLoading" class="px-2.5 py-2 text-[12px] text-black/35">加载中...</div>
+            <div v-else-if="!chat.conversations.length" class="px-2.5 py-2 text-[13px] text-black/35">暂无文档记录</div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="flex min-w-0 flex-1 flex-col">
+        <div class="flex items-center gap-2 overflow-x-auto border-b border-black/[0.08] bg-white px-3 py-2 md:hidden">
+          <button @click="router.push('/chat')" class="h-9 shrink-0 rounded-[8px] bg-black/[0.04] px-3 text-[14px] text-black/65">聊天</button>
+          <button class="h-9 shrink-0 rounded-[8px] bg-[#232629] px-3 text-[14px] text-white">写文档</button>
+          <button @click="router.push({ path: '/workspace', query: { mode: 'knowledge' } })" class="h-9 shrink-0 rounded-[8px] bg-black/[0.04] px-3 text-[14px] text-black/65">知识库</button>
+        </div>
+
+        <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 md:grid-cols-[minmax(0,1fr)_340px] md:p-5">
+          <ChatMode route-base="/document" active-title="文档生成" idle-title="描述要写的文档" empty-text="输入文档需求后开始生成" />
+          <DocumentMode />
+        </div>
+      </section>
+    </div>
+  </main>
+</template>
+
+<script setup>
+import { onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Database, FileText, MessageSquare, Plus, Search } from 'lucide-vue-next'
+import AppHeader from '../components/AppHeader.vue'
+import ChatMode from '../components/ChatMode.vue'
+import DocumentMode from '../components/DocumentMode.vue'
+import { useChatStore } from '../stores/chat.js'
+
+const route = useRoute()
+const router = useRouter()
+const chat = useChatStore()
+const historyScroller = ref(null)
+
+onMounted(async () => {
+  await chat.loadConversations(50)
+  await syncRouteState()
+})
+
+watch(() => route.fullPath, () => {
+  syncRouteState()
+})
+
+async function createNewDocument() {
+  if (!chat.currentConvId && !chat.messages.length) {
+    if (route.path !== '/document') router.replace('/document')
+    return
+  }
+  chat.startNewConversation()
+  window.dispatchEvent(new CustomEvent('mqw-workspace-reset'))
+  await router.push('/document')
+}
+
+async function selectConversation(id) {
+  const ok = await chat.selectConversation(id)
+  if (ok && route.path !== `/document/${id}`) await router.push(`/document/${id}`)
+  if (!ok) await router.replace('/document')
+}
+
+function routeConversationId() {
+  const raw = route.params.id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const id = Number(value)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+async function syncRouteState() {
+  const id = routeConversationId()
+  if (id) {
+    if (chat.currentConvId !== id) {
+      const ok = await chat.selectConversation(id)
+      if (!ok) {
+        chat.startNewConversation()
+        window.dispatchEvent(new CustomEvent('mqw-workspace-reset'))
+        await router.replace('/document')
+      }
+    }
+  } else if (chat.currentConvId || chat.messages.length) {
+    chat.startNewConversation()
+    window.dispatchEvent(new CustomEvent('mqw-workspace-reset'))
+  }
+}
+
+function onHistoryScroll(event) {
+  const el = event.target
+  if (!el || chat.conversationsLoading || !chat.conversationsHasMore) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+    chat.loadMoreConversations(20)
+  }
+}
+</script>

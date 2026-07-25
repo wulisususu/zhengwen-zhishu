@@ -1,0 +1,70 @@
+"""Chat Agent 客户端."""
+from __future__ import annotations
+
+import json
+from typing import AsyncGenerator
+
+from app.services.pi_agent_client.base_client import PiAgentClient, _clean_delta, AgentUnavailable
+
+CHAT_AGENT_URL = "http://127.0.0.1:18790"
+
+
+def _parse_response_chunk(line: str) -> str | None:
+    """解析 /v1/responses SSE chunk，提取 output_text delta.
+    增强: 错误事件标记 + 工具调用屏蔽 + 输出清洗."""
+    import logging
+    logger = logging.getLogger(__name__)
+    if not line.startswith("data: "):
+        return None
+    data_str = line[6:]
+    if data_str == "[DONE]":
+        return "__DONE__"
+    try:
+        obj = json.loads(data_str)
+        evt = obj.get("type", "")
+        if evt in ("response.error", "error"):
+            err = obj.get("message", "") or obj.get("error", {}).get("message", "")
+            logger.warning("PI Agent SSE error event: %s", err)
+            return "__ERROR__"
+        if evt == "response.output_item.added":
+            item = obj.get("item", {})
+            if item.get("type") == "function_call":
+                return None
+        if evt == "response.output_text.delta":
+            return _clean_delta(obj.get("delta", ""))
+        if evt == "response.output_text.done":
+            return "__DONE__"
+        if evt == "response.completed":
+            return "__DONE__"
+    except (json.JSONDecodeError, KeyError):
+        pass
+    return None
+
+
+async def call_chat_agent(
+    content: str,
+    user_id: int,
+    conversation_id: int,
+    attachment_context: str = "",
+) -> AsyncGenerator[str, None]:
+    """调用 PI Agent chat-agent，走完整 Agent Loop."""
+    client = PiAgentClient(CHAT_AGENT_URL)
+    input_text = content
+    if attachment_context:
+        input_text = "附件内容:\n" + attachment_context + "\n\n用户问题:\n" + content
+
+    async for sse_line in client.post_sse_stream(
+        "/v1/responses",
+        {
+            "model": "openclaw/chat",
+            "input": input_text,
+            "stream": True,
+        },
+    ):
+        text = _parse_response_chunk(sse_line)
+        if text == "__DONE__":
+            break
+        if text == "__ERROR__":
+            raise AgentUnavailable("PI Agent returned error event from model")
+        if text:
+            yield text

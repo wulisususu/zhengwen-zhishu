@@ -1,0 +1,402 @@
+<template>
+  <form @submit.prevent="send" class="border-t border-black/[0.08] p-3">
+    <div class="composer-wrap">
+      <slot name="left" />
+      <textarea
+        v-model="input"
+        :placeholder="placeholder"
+        @keydown.enter.exact.prevent="send"
+        :class="['composer-textarea', { 'composer-textarea-recording': recording }]"
+      />
+
+      <!-- Recording animation -->
+      <transition name="rec-fade">
+        <div v-if="recording" class="rec-indicator">
+          <span class="rec-dot"></span>
+          <span class="rec-time">{{ recTimeDisplay }}</span>
+        </div>
+      </transition>
+
+      <!-- Action buttons -->
+      <div class="composer-actions">
+        <transition name="btn-swap" mode="out-in">
+          <div v-if="recording" key="rec-controls" class="rec-controls">
+            <button
+              type="button"
+              @click="cancelRecord"
+              class="action-btn action-cancel"
+              title="取消录音"
+            >
+              <X class="size-4" :stroke-width="2.5" />
+            </button>
+            <button
+              type="button"
+              @click="confirmRecord"
+              class="action-btn action-confirm"
+              title="确认发送"
+            >
+              <Check class="size-4" :stroke-width="2.5" />
+            </button>
+          </div>
+          <button
+            v-else
+            key="mic-btn"
+            type="button"
+            @click="startRecord"
+            class="action-btn action-mic"
+            title="点击录音"
+          >
+            <Mic class="size-4" :stroke-width="2" />
+          </button>
+        </transition>
+
+        <transition name="btn-swap" mode="out-in">
+          <button
+            v-if="!recording"
+            type="submit"
+            :disabled="loading"
+            class="send-btn"
+          >
+            <Send class="size-4" :stroke-width="2" />
+            <span>发送</span>
+          </button>
+        </transition>
+      </div>
+    </div>
+  </form>
+</template>
+
+<script setup>
+import { ref, onUnmounted } from 'vue'
+import { Mic, Send, X, Check } from 'lucide-vue-next'
+import api from '../api.js'
+
+defineProps({ placeholder: String, loading: Boolean })
+const emit = defineEmits(['send'])
+const input = ref('')
+const recording = ref(false)
+const recSeconds = ref(0)
+const recTimeDisplay = ref('0:00')
+let mediaRecorder = null
+let audioChunks = []
+let recTimer = null
+
+onUnmounted(() => {
+  stopTimer()
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+})
+
+function startTimer() {
+  recSeconds.value = 0
+  recTimeDisplay.value = '0:00'
+  recTimer = window.setInterval(() => {
+    recSeconds.value++
+    const m = Math.floor(recSeconds.value / 60)
+    const s = recSeconds.value % 60
+    recTimeDisplay.value = m + ':' + (s < 10 ? '0' : '') + s
+  }, 1000)
+}
+
+function stopTimer() {
+  if (recTimer) {
+    window.clearInterval(recTimer)
+    recTimer = null
+  }
+}
+
+function floatTo16BitPCM(view, offset, input) {
+  for (let i = 0; i < input.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, input[i]))
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
+  }
+}
+
+function encodeWAV(audioBuffer) {
+  const numChannels = 1
+  const sampleRate = audioBuffer.sampleRate
+  const samples = audioBuffer.getChannelData(0)
+  const buffer = new ArrayBuffer(44 + samples.length * 2)
+  const view = new DataView(buffer)
+  const writeString = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)) }
+  writeString(0, 'RIFF')
+  view.setUint32(4, 36 + samples.length * 2, true)
+  writeString(8, 'WAVE')
+  writeString(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numChannels * 2, true)
+  view.setUint16(32, numChannels * 2, true)
+  view.setUint16(34, 16, true)
+  writeString(36, 'data')
+  view.setUint32(40, samples.length * 2, true)
+  floatTo16BitPCM(view, 44, samples)
+  return new Blob([buffer], { type: 'audio/wav' })
+}
+
+async function startRecord() {
+  if (!navigator.mediaDevices) {
+    alert('浏览器不支持录音')
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioChunks = []
+    mediaRecorder = new MediaRecorder(stream)
+    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data)
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop())
+      if (audioChunks.length) processAudio()
+    }
+    mediaRecorder.start()
+    recording.value = true
+    startTimer()
+  } catch (err) {
+    console.error('录音失败:', err)
+    if (err.name === 'NotAllowedError') {
+      alert('请在浏览器中允许使用麦克风')
+    }
+  }
+}
+
+function cancelRecord() {
+  stopTimer()
+  recording.value = false
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    audioChunks = []
+    mediaRecorder.stop()
+  }
+}
+
+function confirmRecord() {
+  stopTimer()
+  recording.value = false
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+}
+
+async function processAudio() {
+  try {
+    const webmBlob = new Blob(audioChunks, { type: 'audio/webm' })
+    const arrayBuf = await webmBlob.arrayBuffer()
+    const audioCtx = new AudioContext()
+    const audioBuf = await audioCtx.decodeAudioData(arrayBuf)
+    const wavBlob = encodeWAV(audioBuf)
+    await audioCtx.close()
+    const form = new FormData()
+    form.append('file', wavBlob, 'voice.wav')
+    const res = await api.post('/asr/recognize', form)
+    if (res.data?.code === 0 && res.data?.data?.text) {
+      input.value += res.data.data.text
+    }
+  } catch (err) {
+    console.error('ASR failed:', err)
+  }
+}
+
+function send() {
+  if (!input.value.trim()) return
+  emit('send', input.value)
+  input.value = ''
+}
+</script>
+
+<style scoped>
+.composer-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1.5px solid #b8d9e8;
+  background: #fff;
+  padding: 8px 10px;
+  box-shadow: 0 8px 28px rgba(76, 184, 255, 0.10);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.composer-wrap:focus-within {
+  border-color: #6db8e0;
+  box-shadow: 0 8px 28px rgba(76, 184, 255, 0.18);
+}
+
+.composer-textarea {
+  flex: 1;
+  min-height: 40px;
+  max-height: 140px;
+  resize: none;
+  background: transparent;
+  padding: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  outline: none;
+  border: none;
+  color: #111;
+  transition: opacity 0.2s ease;
+}
+
+.composer-textarea::placeholder {
+  color: rgba(0, 0, 0, 0.30);
+}
+
+.composer-textarea-recording {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.rec-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(239, 68, 68, 0.08);
+  flex-shrink: 0;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+
+.rec-time {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #ef4444;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.rec-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-mic {
+  background: #f3f4f6;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.action-mic:hover {
+  background: #e5e7eb;
+  color: #111;
+  transform: scale(1.05);
+}
+
+.action-cancel {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.action-cancel:hover {
+  background: #fecaca;
+  transform: scale(1.08);
+}
+
+.action-confirm {
+  background: #22c55e;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
+}
+
+.action-confirm:hover {
+  background: #16a34a;
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+}
+
+.send-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: none;
+  background: #232629;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.send-btn:hover {
+  background: #111315;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-swap-enter-active {
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-swap-leave-active {
+  transition: all 0.15s ease-in;
+}
+
+.btn-swap-enter-from {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.btn-swap-leave-to {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.rec-fade-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rec-fade-leave-active {
+  transition: all 0.2s ease-in;
+}
+
+.rec-fade-enter-from {
+  opacity: 0;
+  transform: translateX(-10px) scale(0.9);
+}
+
+.rec-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-10px) scale(0.9);
+}
+</style>

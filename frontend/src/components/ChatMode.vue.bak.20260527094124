@@ -1,0 +1,197 @@
+<template>
+  <div class="grid h-full min-h-[560px] gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+    <aside class="flex min-h-0 flex-col rounded-[8px] border border-black/[0.08] bg-white">
+      <div class="flex h-12 items-center justify-between border-b border-black/[0.08] px-3">
+        <h2 class="text-[15px] font-semibold">对话历史列表</h2>
+        <button @click="chat.createConversation()" class="rounded-[8px] bg-black/[0.04] px-3 py-1.5 text-[13px] text-black/70 hover:bg-black/[0.07]">新建对话</button>
+      </div>
+      <div class="space-y-2 overflow-y-auto p-3">
+        <button v-for="c in chat.conversations" :key="c.id" @click="chat.selectConversation(c.id)"
+          :class="['block w-full rounded-[8px] border p-3 text-left transition-colors',
+            chat.currentConvId === c.id ? 'border-[#5aa7d8] bg-[#eaf6fc]' : 'border-black/[0.08] bg-[#fbfcfd] hover:bg-black/[0.04]']">
+          <span class="block truncate text-[14px] font-medium">{{ c.title }}</span>
+          <span class="mt-1 block text-[12px] text-black/40">{{ new Date(c.updated_at).toLocaleString('zh-CN') }}</span>
+        </button>
+        <p v-if="!chat.conversations.length" class="p-3 text-[13px] text-black/35">暂无对话</p>
+      </div>
+    </aside>
+
+    <section class="flex min-h-0 flex-col rounded-[8px] border border-black/[0.08] bg-white">
+      <div class="border-b border-black/[0.08] px-4 py-3">
+        <h2 class="text-[16px] font-semibold leading-6">{{ chat.currentConvId ? '当前对话' : '选择或新建对话' }}</h2>
+      </div>
+      <div ref="messagesContainer" class="flex-1 space-y-4 overflow-y-auto p-4">
+        <template v-for="m in chat.messages" :key="m.id">
+          <div :class="m.role === 'user' ? 'ml-auto max-w-[72%]' : 'max-w-[78%]'">
+            <!-- User message -->
+            <div v-if="m.role === 'user'"
+              class="rounded-[8px] bg-[#eaf6fc] px-4 py-3 text-[14px] leading-6">{{ m.content }}</div>
+            <!-- Assistant message with think block -->
+            <div v-else>
+              <div v-if="parseThink(m.content).think" class="mb-2">
+                <button @click="m._showThink = !m._showThink"
+                  class="flex items-center gap-1 text-[12px] text-black/40 hover:text-black/60">
+                  <span class="transition-transform" :class="m._showThink ? 'rotate-90' : ''">&#9654;</span>
+                  思考过程
+                </button>
+                <div v-show="m._showThink"
+                  class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ parseThink(m.content).think }}</div>
+              </div>
+              <div class="rounded-[8px] border border-black/[0.08] bg-[#fbfcfd] px-4 py-3 text-[14px] leading-6 whitespace-pre-wrap">{{ parseThink(m.content).answer }}</div>
+              <div class="mt-2 flex gap-2">
+                <button @click="playTTS(m.id, parseThink(m.content).answer)" :disabled="ttsLoading"
+                  class="rounded-[8px] bg-white px-3 py-1.5 text-[13px] text-black/65 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] hover:bg-black/[0.04] disabled:opacity-50">
+                  {{ ttsPlayingId === m.id ? '播放中...' : '播报' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+        <!-- Streaming message -->
+        <div v-if="streamingText" class="max-w-[78%]">
+          <div v-if="streamingThink" class="mb-2">
+            <span class="text-[12px] text-black/40">&#9654; 思考中...</span>
+            <div class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ streamingThink }}</div>
+          </div>
+          <div class="rounded-[8px] border border-black/[0.08] bg-[#fbfcfd] px-4 py-3 text-[14px] leading-6 whitespace-pre-wrap">
+            {{ streamingAnswer }}<span class="animate-pulse">|</span>
+          </div>
+        </div>
+
+        <p v-if="!chat.messages.length && !streamingText" class="text-center text-[14px] text-black/35 mt-20">开始对话吧</p>
+      </div>
+      <ComposerBar placeholder="输入问题或办公需求..." @send="onSend" :loading="chat.loading || isStreaming" />
+    </section>
+  </div>
+</template>
+
+<script setup>
+import { ref, watch, nextTick, onMounted, reactive } from 'vue'
+import { useChatStore } from '../stores/chat.js'
+import api from '../api.js'
+import ComposerBar from './ComposerBar.vue'
+
+const chat = useChatStore()
+const messagesContainer = ref(null)
+const ttsPlayingId = ref(null)
+const ttsLoading = ref(false)
+const isStreaming = ref(false)
+const streamingText = ref('')
+const streamingThink = ref('')
+const streamingAnswer = ref('')
+let currentAudio = null
+
+onMounted(() => chat.loadConversations())
+
+watch(() => chat.messages.length, () => {
+  nextTick(() => messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }))
+})
+
+watch(streamingText, () => {
+  nextTick(() => messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }))
+})
+
+function parseThink(content) {
+  if (!content) return { think: '', answer: '' }
+  const match = content.match(/<think>([\s\S]*?)<\/think>\s*([\s\S]*)/)
+  if (match) return { think: match[1].trim(), answer: match[2].trim() }
+  return { think: '', answer: content }
+}
+
+async function onSend(text) {
+  if (isStreaming.value) return
+
+  // Ensure conversation exists
+  if (!chat.currentConvId) {
+    await chat.createConversation(text.slice(0, 20))
+  }
+
+  // Add user message locally
+  const userMsg = { id: Date.now(), role: 'user', content: text, msg_type: 'text', created_at: new Date().toISOString() }
+  chat.messages.push(userMsg)
+
+  // Start streaming
+  isStreaming.value = true
+  streamingText.value = ''
+  streamingThink.value = ''
+  streamingAnswer.value = ''
+
+  try {
+    const response = await fetch('/api/v1/conversations/' + chat.currentConvId + '/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (JSON.parse(localStorage.getItem('mqw-session') || '{}').token || ''),
+      },
+      body: JSON.stringify({ content: text, stream: true }),
+    })
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const payload = line.slice(6).trim()
+        if (payload === '[DONE]') break
+
+        try {
+          const data = JSON.parse(payload)
+          if (data.type === 'token') {
+            streamingText.value += data.content
+            // Parse think/answer in real-time
+            const parsed = parseThink(streamingText.value)
+            streamingThink.value = parsed.think
+            streamingAnswer.value = parsed.answer
+          } else if (data.type === 'done') {
+            // Final message saved to DB
+            const finalMsg = { id: data.id, role: 'assistant', content: data.content, msg_type: 'text', created_at: new Date().toISOString(), _showThink: false }
+            chat.messages.push(finalMsg)
+          } else if (data.type === 'user') {
+            // Already added locally
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.error('Stream error:', e)
+  } finally {
+    isStreaming.value = false
+    streamingText.value = ''
+    streamingThink.value = ''
+    streamingAnswer.value = ''
+    // Reload messages to get DB state
+    if (chat.currentConvId) {
+      await chat.selectConversation(chat.currentConvId)
+    }
+  }
+}
+
+async function playTTS(msgId, text) {
+  if (ttsLoading.value) return
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
+  ttsLoading.value = true
+  ttsPlayingId.value = msgId
+  try {
+    const response = await api.post('/tts/synthesize', { text }, { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'audio/wav' })
+    const url = URL.createObjectURL(blob)
+    currentAudio = new Audio(url)
+    currentAudio.onended = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    currentAudio.onerror = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    await currentAudio.play()
+  } catch (e) {
+    console.error('TTS error:', e)
+    ttsPlayingId.value = null
+    ttsLoading.value = false
+  }
+}
+</script>

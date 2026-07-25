@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Document Generation Input",
+  "type": "object",
+  "required": ["prompt"],
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "minLength": 5,
+      "description": "用户输入的文档主题和需求"
+    },
+    "doc_type": {
+      "type": "string",
+      "enum": ["weekly_report", "resume", "checklist", "simple_report", "complex_report", "official_report"],
+      "description": "文档类型"
+    },
+    "topic": {
+      "type": "string",
+      "description": "文档标题，缺省从 prompt 提取"
+    },
+    "section_count": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 10,
+      "default": 6,
+      "description": "期望章节数"
+    }
+  }
+}

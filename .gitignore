@@ -1,0 +1,22 @@
+# Frontend build artifacts and dependencies
+frontend/node_modules/
+frontend/dist/
+
+# Backend runtime state and dependencies
+backend/.venv/
+backend/data/
+backend/backups/
+backend/.pi-agent/
+
+# Local staging files and logs
+.import/
+*.log
+
+# Local model artifacts
+*.rkllm
+*.onnx
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.ckpt

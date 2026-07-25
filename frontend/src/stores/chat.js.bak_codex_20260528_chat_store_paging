@@ -1,0 +1,74 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import api from '../api.js'
+
+export const useChatStore = defineStore('chat', () => {
+  const conversations = ref([])
+  const currentConvId = ref(null)
+  const messages = ref([])
+  const loading = ref(false)
+
+  function reset() {
+    conversations.value = []
+    currentConvId.value = null
+    messages.value = []
+    loading.value = false
+  }
+
+  async function loadConversations() {
+    try {
+      const { data } = await api.get('/conversations')
+      if (data.code === 0) {
+        conversations.value = data.data || []
+        if (currentConvId.value && !conversations.value.some((c) => c.id === currentConvId.value)) {
+          currentConvId.value = null
+          messages.value = []
+        }
+      }
+    } catch {
+      reset()
+    }
+  }
+
+  async function createConversation(title) {
+    const { data } = await api.post('/conversations', { title: title || 'new' })
+    if (data.code === 0) {
+      conversations.value.unshift(data.data)
+      currentConvId.value = data.data.id
+      messages.value = []
+      return data.data
+    }
+  }
+
+  async function selectConversation(id) {
+    currentConvId.value = id
+    messages.value = []
+    try {
+      const { data } = await api.get('/conversations/' + id + '/messages')
+      if (data.code === 0) messages.value = data.data || []
+    } catch {
+      currentConvId.value = null
+      messages.value = []
+    }
+  }
+
+  async function sendMessage(content) {
+    loading.value = true
+    try {
+      if (!currentConvId.value) await createConversation(content.slice(0, 20))
+      const { data } = await api.post('/conversations/' + currentConvId.value + '/messages', { content })
+      if (data.code === 0) {
+        if (Array.isArray(data.data)) messages.value.push(...data.data)
+        else {
+          messages.value.push(...(data.data.messages || []))
+          if (data.data.conversation) {
+            const idx = conversations.value.findIndex((c) => c.id === data.data.conversation.id)
+            if (idx >= 0) conversations.value[idx] = { ...conversations.value[idx], ...data.data.conversation }
+          }
+        }
+      }
+    } finally { loading.value = false }
+  }
+
+  return { conversations, currentConvId, messages, loading, reset, loadConversations, createConversation, selectConversation, sendMessage }
+})

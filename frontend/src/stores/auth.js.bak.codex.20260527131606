@@ -1,0 +1,53 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import api from '../api.js'
+
+export const useAuthStore = defineStore('auth', () => {
+  const session = ref(null)
+
+  function loadSession() {
+    try {
+      const s = JSON.parse(localStorage.getItem('mqw-session') || 'null')
+      if (s?.token) session.value = s
+    } catch {}
+  }
+
+  async function login(username, password) {
+    try {
+      const { data } = await api.post('/auth/login', { username, password })
+      if (data.code === 0 && data.data?.access_token) {
+        const s = { name: username, nickname: username, token: data.data.access_token, isTemporary: false }
+        localStorage.setItem('mqw-session', JSON.stringify(s))
+        session.value = s
+        return true
+      }
+      return data.message || '登录失败'
+    } catch (e) { return '网络错误: ' + e.message }
+  }
+
+  async function register(username, password) {
+    try {
+      const { data } = await api.post('/auth/register', { username, password, nickname: username })
+      if (data.code === 0 && data.data?.access_token) {
+        const s = { name: username, nickname: username, token: data.data.access_token, isTemporary: false }
+        localStorage.setItem('mqw-session', JSON.stringify(s))
+        session.value = s
+        return true
+      }
+      return data.message || '注册失败'
+    } catch (e) { return '网络错误: ' + e.message }
+  }
+
+  function loginAsTemp(username) {
+    const s = { name: username || '临时账户', nickname: '', token: '', isTemporary: true }
+    localStorage.setItem('mqw-session', JSON.stringify(s))
+    session.value = s
+  }
+
+  function logout() {
+    session.value = null
+    localStorage.removeItem('mqw-session')
+  }
+
+  return { session, loadSession, login, register, loginAsTemp, logout }
+})

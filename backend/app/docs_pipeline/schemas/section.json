@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Section Output",
+  "type": "object",
+  "required": ["heading", "content"],
+  "properties": {
+    "heading": {
+      "type": "string",
+      "minLength": 3
+    },
+    "content": {
+      "type": "string",
+      "minLength": 200,
+      "description": "章节正文，至少200字符"
+    },
+    "subsections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "number": { "type": "string" },
+          "title": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      }
+    }
+  }
+}

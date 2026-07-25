@@ -1,0 +1,48 @@
+<template>
+  <section class="rounded-[8px] border border-black/[0.08] bg-white">
+    <div class="flex flex-col gap-3 border-b border-black/[0.08] p-4 sm:flex-row sm:items-center">
+      <h2 class="text-[18px] font-semibold">文档管理库</h2>
+      <div class="relative sm:ml-auto sm:w-[260px]">
+        <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" />
+        <input placeholder="搜索文档" class="h-10 w-full rounded-[8px] border border-black/[0.1] bg-[#fbfcfd] pl-9 pr-3 text-[14px] outline-none focus:border-[#5aa7d8] focus:ring-4 focus:ring-[#5aa7d8]/15" />
+      </div>
+      <button class="flex h-10 items-center justify-center gap-2 rounded-[8px] bg-[#232629] px-4 text-[14px] font-medium text-white hover:bg-[#111315]">
+        <Upload class="size-4" :stroke-width="2" />上传文件
+      </button>
+    </div>
+    <div class="flex flex-wrap gap-2 border-b border-black/[0.08] px-4 py-3">
+      <button v-for="f in ['全部类型','全部标签','全部分类']" :key="f"
+        class="h-9 rounded-[8px] border border-black/[0.08] bg-white px-3 text-[14px] text-black/65 hover:bg-black/[0.04]">{{ f }}</button>
+    </div>
+    <div class="overflow-x-auto p-4">
+      <table class="w-full min-w-[620px] border-collapse text-left text-[14px]">
+        <thead><tr class="border-b border-black/[0.08] text-black/45">
+          <th class="py-3 font-medium">文件名</th><th class="py-3 font-medium">类型</th><th class="py-3 font-medium">大小</th><th class="py-3 font-medium">日期</th><th class="py-3 text-right font-medium">操作</th>
+        </tr></thead>
+        <tbody>
+          <tr v-for="f in documents" :key="f.name" class="border-b border-black/[0.06] last:border-0">
+            <td class="py-3 font-medium">{{ f.name }}</td>
+            <td class="py-3 text-black/60">{{ f.type }}</td>
+            <td class="py-3 text-black/60">{{ f.size }}</td>
+            <td class="py-3 text-black/60">{{ f.date }}</td>
+            <td class="py-3 text-right">
+              <button class="rounded-[8px] px-2 py-1 text-black/55 hover:bg-black/[0.04]">编辑</button>
+              <button class="rounded-[8px] px-2 py-1 text-black/55 hover:bg-black/[0.04]">删除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="mt-4 text-[13px] text-black/45">共 50 条 &lt; 1 2 3 ... 5 &gt;</div>
+    </div>
+  </section>
+</template>
+
+<script setup>
+import { Search, Upload } from 'lucide-vue-next'
+const documents = [
+  { name: '公文写作模板', type: 'docx', size: '200KB', date: '05/10' },
+  { name: 'Q3市场分析', type: 'pdf', size: '1.2MB', date: '05/09' },
+  { name: '会议照片', type: 'png', size: '3.5MB', date: '05/08' },
+  { name: '产品介绍PPT', type: 'pptx', size: '5.0MB', date: '05/07' },
+]
+</script>

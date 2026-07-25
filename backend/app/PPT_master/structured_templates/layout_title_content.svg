@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720"
+     data-pptx-master="master-default" data-pptx-master-name="Default Master"
+     data-pptx-layout="layout-title-content" data-pptx-layout-name="Title and Content"
+     data-pptx-page-role="content">
+  <g data-pptx-role="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="slot-title" data-pptx-placeholder="title" data-pptx-placeholder-idx="0"
+     data-pptx-placeholder-bounds="80,80,1120,100">
+    <text data-pptx-placeholder-carrier="true" x="100" y="140" font-size="42">Title</text>
+  </g>
+  <g id="slot-body" data-pptx-placeholder="body" data-pptx-placeholder-idx="1"
+     data-pptx-placeholder-bounds="80,220,1120,440">
+    <text data-pptx-placeholder-carrier="true" x="100" y="280" font-size="24">Body content</text>
+  </g>
+</svg>

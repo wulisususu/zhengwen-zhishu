@@ -1,0 +1,456 @@
+<template>
+  <div class="grid h-full min-h-[560px] gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+    <aside class="flex min-h-0 flex-col rounded-[8px] border border-black/[0.08] bg-white">
+      <div class="flex h-12 items-center justify-between border-b border-black/[0.08] px-3">
+        <h2 class="text-[15px] font-semibold">对话历史</h2>
+        <button @click="chat.createConversation()" class="rounded-[8px] bg-black/[0.04] px-3 py-1.5 text-[13px] text-black/70 hover:bg-black/[0.07]">新建</button>
+      </div>
+      <div class="space-y-2 overflow-y-auto p-3">
+        <button v-for="c in chat.conversations" :key="c.id" @click="chat.selectConversation(c.id)"
+          :class="['block w-full rounded-[8px] border p-3 text-left transition-colors',
+            chat.currentConvId === c.id ? 'border-[#5aa7d8] bg-[#eaf6fc]' : 'border-black/[0.08] bg-[#fbfcfd] hover:bg-black/[0.04]']">
+          <span class="block truncate text-[14px] font-medium">{{ c.title }}</span>
+          <span class="mt-1 block text-[12px] text-black/40">{{ new Date(c.updated_at).toLocaleString('zh-CN') }}</span>
+        </button>
+        <p v-if="!chat.conversations.length" class="p-3 text-[13px] text-black/35">暂无对话</p>
+      </div>
+    </aside>
+
+    <section class="flex min-h-0 flex-col rounded-[8px] border border-black/[0.08] bg-white">
+      <div class="border-b border-black/[0.08] px-4 py-3">
+        <h2 class="text-[16px] font-semibold leading-6">{{ chat.currentConvId ? '\u5f53\u524d\u5bf9\u8bdd' : '\u8bf7\u9009\u62e9\u5bf9\u8bdd' }}</h2>
+      </div>
+      <div ref="messagesContainer" class="flex-1 space-y-4 overflow-y-auto p-4">
+        <template v-for="m in chat.messages" :key="m.id">
+          <div :class="m.role === 'user' ? 'ml-auto max-w-[72%]' : 'max-w-[78%]'">
+            <div v-if="m.role === 'user'" class="rounded-[8px] bg-[#eaf6fc] px-4 py-3 text-[14px] leading-6">{{ m.content }}</div>
+            <div v-else>
+              <div v-if="parseThink(m.content).think" class="mb-2">
+                <button @click="m._showThink = !m._showThink" class="flex items-center gap-1 text-[12px] text-black/40 hover:text-black/60">
+                  <span class="transition-transform" :class="m._showThink ? 'rotate-90' : ''">&#9654;</span>
+                  思考
+                </button>
+                <div v-show="m._showThink" class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ parseThink(m.content).think }}</div>
+              </div>
+              <div v-if="visibleMessage(parseThink(m.content).answer)" class="message-content rounded-[8px] border border-black/[0.08] bg-[#fbfcfd] px-4 py-3 text-[14px] leading-6 whitespace-pre-wrap" v-html="formatMessage(visibleMessage(parseThink(m.content).answer))"></div>
+              <div v-for="task in messageDocTasks(m.content)" :key="task.task_id" class="doc-card mt-2">
+                <div class="min-w-0">
+                  <div class="doc-title">{{ task.file?.filename || task.title || 'Word 文档' }}</div>
+                  <div class="doc-meta">{{ docTaskStatusText(task) }} &middot; docx<span v-if="task.file?.size"> &middot; {{ formatFileSize(task.file.size) }}</span></div>
+                  <div v-if="task.error" class="doc-error">{{ task.error }}</div>
+                </div>
+                <button class="doc-download" :disabled="task.status !== 'done' || !task.file?.download_url" @click="downloadDoc(task)">下载</button>
+              </div>
+              <div class="mt-2 flex gap-2">
+                <button @click="playTTS(m.id, visibleMessage(parseThink(m.content).answer))" :disabled="ttsLoading"
+                  class="rounded-[8px] bg-white px-3 py-1.5 text-[13px] text-black/65 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)] hover:bg-black/[0.04] disabled:opacity-50">
+                  {{ ttsPlayingId === m.id ? '播放中...' : '朗读' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div v-if="isStreaming && !streamingText" class="max-w-[78%]">
+          <div class="inline-flex h-10 min-w-10 items-center justify-center rounded-[8px] border border-black/[0.08] bg-[#fbfcfd] px-4">
+            <span class="typing-dot" aria-label="正在思考"></span>
+          </div>
+        </div>
+        <div v-else-if="streamingText" class="max-w-[78%]">
+          <div v-if="streamingThink" class="mb-2">
+            <span class="text-[12px] text-black/40">&#9654; 思考中...</span>
+            <div class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ streamingThink }}</div>
+          </div>
+          <div class="rounded-[8px] border border-black/[0.08] bg-[#fbfcfd] px-4 py-3 text-[14px] leading-6 whitespace-pre-wrap">
+            <span v-html="formatMessage(streamingAnswer)"></span><span class="animate-pulse">|</span>
+          </div>
+          <div v-for="task in streamingTasks" :key="task.task_id" class="doc-card mt-2">
+            <div class="min-w-0">
+              <div class="doc-title">{{ task.file?.filename || task.title || 'Word 文档' }}</div>
+              <div class="doc-meta">{{ docTaskStatusText(task) }} &middot; docx<span v-if="task.file?.size"> &middot; {{ formatFileSize(task.file.size) }}</span></div>
+              <div v-if="task.error" class="doc-error">{{ task.error }}</div>
+            </div>
+            <button class="doc-download" :disabled="task.status !== 'done' || !task.file?.download_url" @click="downloadDoc(task)">下载</button>
+          </div>
+        </div>
+
+        <p v-if="!chat.messages.length && !isStreaming && !streamingText" class="text-center text-[14px] text-black/35 mt-20">开始新的对话</p>
+      </div>
+      <ComposerBar placeholder="输入消息，按 Enter 发送..." @send="onSend" :loading="chat.loading || isStreaming" />
+    </section>
+  </div>
+</template>
+
+<script setup>
+import { ref, watch, nextTick, onMounted, onUnmounted, reactive } from 'vue'
+import { useChatStore } from '../stores/chat.js'
+import api from '../api.js'
+import ComposerBar from './ComposerBar.vue'
+
+const chat = useChatStore()
+const messagesContainer = ref(null)
+const ttsPlayingId = ref(null)
+const ttsLoading = ref(false)
+const isStreaming = ref(false)
+const streamingText = ref('')
+const streamingThink = ref('')
+const streamingAnswer = ref('')
+const streamingTasks = ref([])
+const docTasks = reactive({})
+const pollingTimers = new Map()
+let currentAudio = null
+
+onMounted(async () => {
+  await chat.loadConversations()
+  hydrateDocTasks()
+  await sendPendingRequest()
+})
+
+onUnmounted(() => {
+  for (const timer of pollingTimers.values()) window.clearInterval(timer)
+  pollingTimers.clear()
+})
+
+watch(() => chat.messages.length, () => {
+  hydrateDocTasks()
+  nextTick(() => messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }))
+})
+
+watch(streamingText, () => {
+  nextTick(() => messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }))
+})
+
+watch(() => chat.messages.map((m) => m.content).join('\n'), () => hydrateDocTasks())
+
+function consumePendingRequest() {
+  try {
+    const raw = sessionStorage.getItem('mqw-pending-request')
+    if (!raw) return null
+    sessionStorage.removeItem('mqw-pending-request')
+    const parsed = JSON.parse(raw)
+    if (!parsed?.text) return null
+    let text = String(parsed.text).trim()
+    if (parsed.type === 'word' && !/(word|docx|\u6587\u6863|\u5468\u62a5|\u7b80\u5386|\u6e05\u5355|\u62a5\u544a)/i.test(text)) {
+      text = '\u8bf7\u751f\u6210Word\u6587\u6863\uff1a' + text
+    }
+    if (parsed.type === 'ppt' && !/(ppt|\u6f14\u793a|\u6c47\u62a5)/i.test(text)) {
+      text = '\u8bf7\u751f\u6210PPT\uff1a' + text
+    }
+    return text
+  } catch {
+    sessionStorage.removeItem('mqw-pending-request')
+    return null
+  }
+}
+
+async function sendPendingRequest() {
+  const text = consumePendingRequest()
+  if (!text) return
+  await nextTick()
+  await onSend(text)
+}
+
+function upsertConversation(conv) {
+  if (!conv) return
+  const idx = chat.conversations.findIndex((c) => c.id === conv.id)
+  if (idx >= 0) chat.conversations[idx] = { ...chat.conversations[idx], ...conv }
+  else chat.conversations.unshift(conv)
+}
+
+function parseThink(content) {
+  if (!content) return { think: '', answer: '' }
+  const match = content.match(/<think>([\s\S]*?)<\/think>\s*([\s\S]*)/)
+  if (match) return { think: match[1].trim(), answer: match[2].trim() }
+  return { think: '', answer: content }
+}
+
+function escapeHtml(content) {
+  return String(content || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatMessage(content) {
+  return escapeHtml(content).replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+    return `<a class="message-link" href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+  })
+}
+
+function taskMarkerRegex() {
+  return /\[\[DOC_TASK\]\]([\s\S]*?)\[\[\/DOC_TASK\]\]/g
+}
+
+function visibleMessage(content) {
+  return String(content || '').replace(taskMarkerRegex(), '').trim()
+}
+
+function normalizeTask(task) {
+  if (!task || !task.task_id) return null
+  return { ...(docTasks[task.task_id] || {}), ...task }
+}
+
+function upsertDocTask(task) {
+  const normalized = normalizeTask(task)
+  if (!normalized) return null
+  docTasks[normalized.task_id] = normalized
+  const streamingIdx = streamingTasks.value.findIndex((item) => item.task_id === normalized.task_id)
+  if (streamingIdx >= 0) streamingTasks.value[streamingIdx] = normalized
+  if (normalized.status !== 'done' && normalized.status !== 'error') startTaskPolling(normalized.task_id)
+  return normalized
+}
+
+function parseDocTaskMarkers(content) {
+  const tasks = []
+  for (const match of String(content || '').matchAll(taskMarkerRegex())) {
+    try {
+      const parsed = JSON.parse(match[1])
+      if (parsed?.task_id) tasks.push(parsed)
+    } catch {}
+  }
+  return tasks
+}
+
+function messageDocTasks(content) {
+  return parseDocTaskMarkers(content).map((task) => docTasks[task.task_id] || task)
+}
+
+function hydrateDocTasks() {
+  for (const message of chat.messages) {
+    for (const task of parseDocTaskMarkers(message.content)) upsertDocTask(task)
+  }
+}
+
+async function refreshDocTask(taskId) {
+  try {
+    const { data } = await api.get('/documents/tasks/' + taskId)
+    if (data.code === 0) {
+      const task = upsertDocTask(data.data)
+      if (task && (task.status === 'done' || task.status === 'error')) stopTaskPolling(taskId)
+    }
+  } catch {}
+}
+
+function startTaskPolling(taskId) {
+  if (!taskId || pollingTimers.has(taskId)) return
+  refreshDocTask(taskId)
+  const timer = window.setInterval(() => refreshDocTask(taskId), 1500)
+  pollingTimers.set(taskId, timer)
+}
+
+function stopTaskPolling(taskId) {
+  const timer = pollingTimers.get(taskId)
+  if (timer) window.clearInterval(timer)
+  pollingTimers.delete(taskId)
+}
+
+function docTaskStatusText(task) {
+  if (task.status === 'done') return '已生成'
+  if (task.status === 'error') return '生成失败'
+  if (task.status === 'writing') return '正在写入 Word'
+  if (task.status === 'structuring') return '对话历史'
+  return '生成中 ' + (task.progress || 0) + '%'
+}
+
+function formatFileSize(size) {
+  if (!size) return ''
+  if (size < 1024 * 1024) return Math.max(1, Math.round(size / 1024)) + 'KB'
+  return (size / 1024 / 1024).toFixed(1) + 'MB'
+}
+
+async function downloadDoc(task) {
+  if (!task?.file?.download_url) return
+  try {
+    const response = await api.get(task.file.download_url.replace('/api/v1', ''), { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = task.file.filename || 'document.docx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Download document failed:', error)
+    task.error = '下载失败，请重新登录后再试'
+  }
+}
+
+async function onSend(text) {
+  if (isStreaming.value) return
+  if (!chat.currentConvId) await chat.createConversation(text.slice(0, 20))
+
+  const userMsg = { id: Date.now(), role: 'user', content: text, msg_type: 'text', created_at: new Date().toISOString() }
+  chat.messages.push(userMsg)
+
+  isStreaming.value = true
+  streamingText.value = ''
+  streamingThink.value = ''
+  streamingAnswer.value = ''
+  streamingTasks.value = []
+
+  try {
+    const response = await fetch('/api/v1/conversations/' + chat.currentConvId + '/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (JSON.parse(localStorage.getItem('mqw-session') || '{}').token || ''),
+      },
+      body: JSON.stringify({ content: text, stream: true }),
+    })
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const payload = line.slice(6).trim()
+        if (payload === '[DONE]') break
+
+        try {
+          const data = JSON.parse(payload)
+          if (data.type === 'token') {
+            streamingText.value += data.content
+            const parsed = parseThink(streamingText.value)
+            streamingThink.value = parsed.think
+            streamingAnswer.value = parsed.answer
+          } else if (data.type === 'doc_task') {
+            const task = upsertDocTask(data.task)
+            streamingTasks.value = task ? [task] : []
+          } else if (data.type === 'done') {
+            upsertConversation(data.conversation)
+            const finalMsg = { id: data.id, role: 'assistant', content: data.content, msg_type: 'text', created_at: new Date().toISOString(), _showThink: false }
+            chat.messages.push(finalMsg)
+            hydrateDocTasks()
+          } else if (data.type === 'user') {
+            upsertConversation(data.conversation)
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.error('Stream error:', e)
+  } finally {
+    isStreaming.value = false
+    streamingText.value = ''
+    streamingThink.value = ''
+    streamingAnswer.value = ''
+    streamingTasks.value = []
+    if (chat.currentConvId) {
+      await chat.selectConversation(chat.currentConvId)
+      hydrateDocTasks()
+      await chat.loadConversations()
+    }
+  }
+}
+
+async function playTTS(msgId, text) {
+  if (ttsLoading.value) return
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
+  ttsLoading.value = true
+  ttsPlayingId.value = msgId
+  try {
+    const response = await api.post('/tts/synthesize', { text }, { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'audio/wav' })
+    const url = URL.createObjectURL(blob)
+    currentAudio = new Audio(url)
+    currentAudio.onended = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    currentAudio.onerror = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    await currentAudio.play()
+  } catch (e) {
+    console.error('TTS error:', e)
+    ttsPlayingId.value = null
+    ttsLoading.value = false
+  }
+}
+</script>
+
+<style scoped>
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #111;
+  display: inline-block;
+  animation: typing-dot-jump 0.72s ease-in-out infinite;
+}
+
+@keyframes typing-dot-jump {
+  0%, 100% { transform: translateY(0); opacity: 0.45; }
+  50% { transform: translateY(-5px); opacity: 1; }
+}
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 460px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.doc-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.82);
+}
+
+.doc-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.doc-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #b91c1c;
+}
+
+.doc-download {
+  opacity: 0;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  padding: 7px 12px;
+  font-size: 13px;
+  transition: opacity 0.18s ease, background 0.18s ease;
+}
+
+.doc-card:hover .doc-download {
+  opacity: 1;
+}
+
+.doc-download:disabled {
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.16);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+:deep(.message-link) {
+  color: #0369a1;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+</style>

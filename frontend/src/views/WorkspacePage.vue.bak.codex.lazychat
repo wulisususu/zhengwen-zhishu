@@ -1,0 +1,115 @@
+<template>
+  <main class="flex h-dvh flex-col overflow-hidden bg-[#f6f7f8] text-black">
+    <AppHeader :title="'欢迎2'" :subtitle="currentModeLabel" @goHome="router.push('/')" @logout="router.push('/login')" />
+
+    <div class="flex min-h-0 flex-1">
+      <aside class="hidden w-[260px] shrink-0 border-r border-black/[0.08] bg-white px-3 py-3 md:flex md:min-h-0 md:flex-col">
+        <nav class="shrink-0 space-y-1 pb-4">
+          <button @click="createNewChat"
+            class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <Plus class="size-4" :stroke-width="2" />
+            <span>新聊天</span>
+          </button>
+          <button class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <Search class="size-4" :stroke-width="2" />
+            <span>搜索聊天</span>
+          </button>
+          <button v-for="item in workModes" :key="item.key" @click="mode = item.key"
+            :class="['flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] transition-colors',
+              item.key === mode ? 'bg-black/[0.06] text-black' : 'text-black/85 hover:bg-black/[0.06]']">
+            <component :is="item.icon" class="size-4" :stroke-width="2" />
+            <span>{{ item.shortLabel }}</span>
+            <span v-if="item.disabled" class="ml-auto text-[11px] text-black/35">以后</span>
+          </button>
+          <button class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <MoreHorizontal class="size-4" :stroke-width="2" />
+            <span>更多</span>
+          </button>
+        </nav>
+
+        <section class="flex min-h-0 flex-1 flex-col pt-1">
+          <h2 class="shrink-0 px-2.5 pb-2 text-[13px] font-semibold leading-5 text-black">最近</h2>
+          <div ref="historyScroller" class="min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1" @scroll="onHistoryScroll">
+            <button v-for="c in chat.conversations" :key="c.id" @click="selectConversation(c.id)"
+              :class="['block h-9 w-full rounded-[8px] px-2.5 text-left text-[14px] leading-9 transition-colors',
+                chat.currentConvId === c.id ? 'bg-black/[0.06] text-black' : 'text-black/85 hover:bg-black/[0.06]']">
+              <span class="block truncate">{{ c.title }}</span>
+            </button>
+            <div v-if="chat.conversationsLoading" class="px-2.5 py-2 text-[12px] text-black/35">加载中...</div>
+            <div v-else-if="!chat.conversations.length" class="px-2.5 py-2 text-[13px] text-black/35">暂无对话</div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="flex min-w-0 flex-1 flex-col">
+        <div class="flex items-center gap-2 overflow-x-auto border-b border-black/[0.08] bg-white px-3 py-2 md:hidden">
+          <button v-for="item in workModes" :key="item.key" @click="mode = item.key"
+            :class="['h-9 shrink-0 rounded-[8px] px-3 text-[14px]',
+              item.key === mode ? 'bg-[#232629] text-white' : 'bg-black/[0.04] text-black/65']">{{ item.label }}</button>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-y-auto p-4 md:p-5">
+          <ChatMode v-if="mode === 'chat'" />
+          <DocumentMode v-else-if="mode === 'document'" />
+          <KnowledgeMode v-else-if="mode === 'knowledge'" />
+          <div v-else class="flex min-h-[520px] items-center justify-center rounded-[8px] border border-dashed border-black/[0.14] bg-white p-6 text-center">
+            <div><UsersRound class="mx-auto size-10 text-black/30" :stroke-width="1.8" /><h2 class="mt-4 text-[18px] font-semibold">智能体模式</h2><p class="mt-2 text-[14px] text-black/45">以后开发</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="flex h-9 shrink-0 items-center justify-between border-t border-black/[0.08] bg-white px-4 text-[12px] text-black/45">
+      <span>系统状态：本地服务正常</span>
+      <span class="hidden sm:inline">内网模式 · 端侧优先 · 5 用户并发准备</span>
+    </footer>
+  </main>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { MessageSquare, FileText, UsersRound, Database, Plus, Search, MoreHorizontal } from 'lucide-vue-next'
+import AppHeader from '../components/AppHeader.vue'
+import ChatMode from '../components/ChatMode.vue'
+import DocumentMode from '../components/DocumentMode.vue'
+import KnowledgeMode from '../components/KnowledgeMode.vue'
+import { useChatStore } from '../stores/chat.js'
+
+const route = useRoute()
+const router = useRouter()
+const mode = ref(route.query.mode || 'chat')
+const chat = useChatStore()
+const historyScroller = ref(null)
+
+const workModes = [
+  { key: 'chat', label: '对话模式', shortLabel: '对话', icon: MessageSquare },
+  { key: 'document', label: '文档模式', shortLabel: '文档库', icon: FileText },
+  { key: 'agent', label: '智能体模式', shortLabel: '智能体', icon: UsersRound, disabled: true },
+  { key: 'knowledge', label: '知识库模式', shortLabel: '知识库', icon: Database },
+]
+
+const currentModeLabel = computed(() => workModes.find(m => m.key === mode.value)?.label || '对话模式')
+
+onMounted(() => {
+  chat.loadConversations(50)
+})
+
+async function createNewChat() {
+  mode.value = 'chat'
+  await chat.createConversation()
+}
+
+async function selectConversation(id) {
+  mode.value = 'chat'
+  await chat.selectConversation(id)
+}
+
+function onHistoryScroll(event) {
+  const el = event.target
+  if (!el || chat.conversationsLoading || !chat.conversationsHasMore) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+    chat.loadMoreConversations(20)
+  }
+}
+</script>

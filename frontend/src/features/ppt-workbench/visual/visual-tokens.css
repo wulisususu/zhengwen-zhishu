@@ -1,0 +1,179 @@
+/* PPT Workbench visual tokens — mature AI office aesthetic.
+   Defined at :root so every var(--ppt-*) reference resolves reliably
+   wherever the workbench renders (no dependency on a wrapper class).
+   Reuses the host primary (#5E6AD2) and a calm slate surface system. */
+
+:root {
+  --ppt-bg: #f1f5f9;            /* low-distraction page background */
+  --ppt-surface: #ffffff;       /* panel background */
+  --ppt-surface-2: #f8fafc;     /* subtle inset surface */
+  --ppt-border: #e6e9f0;        /* low-contrast border */
+  --ppt-border-strong: #d6dbe6;
+  --ppt-text: #0f172a;          /* high-contrast primary text */
+  --ppt-text-sub: #475569;      /* secondary text */
+  --ppt-text-muted: #94a3b8;    /* tertiary / hints */
+  --ppt-primary: #5E6AD2;       /* host primary */
+  --ppt-primary-hover: #525ec4;
+  --ppt-primary-weak: #eef0fb;
+  --ppt-danger: #e11d48;
+  --ppt-danger-weak: #fff1f3;
+  --ppt-success: #16a34a;
+  --ppt-success-weak: #ecfdf3;
+  --ppt-warning: #b45309;
+  --ppt-warning-weak: #fef6e7;
+
+  --ppt-radius-sm: 6px;
+  --ppt-radius: 10px;
+  --ppt-radius-lg: 14px;
+  --ppt-radius-pill: 999px;
+
+  --ppt-shadow-sm: 0 1px 2px rgb(15 23 42 / 6%);
+  --ppt-shadow: 0 8px 24px rgb(15 23 42 / 8%);
+  --ppt-shadow-pop: 0 12px 32px rgb(15 23 42 / 14%);
+
+  --ppt-space-1: 4px;
+  --ppt-space-2: 8px;
+  --ppt-space-3: 12px;
+  --ppt-space-4: 16px;
+  --ppt-space-6: 24px;
+  --ppt-space-8: 32px;
+
+  --ppt-topbar-h: 56px;
+}
+
+/* Shared surface used by top bar, panels and popovers. */
+.ppt-surface {
+  background: var(--ppt-surface);
+  border-color: var(--ppt-border);
+}
+
+/* Single-row, no-wrap toolbar that never goes vertical. */
+.ppt-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.ppt-tool-row::-webkit-scrollbar { height: 6px; }
+.ppt-tool-row::-webkit-scrollbar-thumb { background: var(--ppt-border-strong); border-radius: 999px; }
+
+/* Toolbar button: icon + short label, never vertical text. */
+.ppt-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--ppt-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ppt-text-sub);
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.ppt-tool-btn:hover:not(:disabled) { background: var(--ppt-surface-2); color: var(--ppt-text); }
+.ppt-tool-btn:disabled { color: var(--ppt-text-muted); cursor: not-allowed; opacity: .65; }
+.ppt-tool-btn:focus-visible,
+.ppt-menu-item:focus-visible,
+.ppt-thumb-reorder:focus-visible,
+.ppt-panel-restore:focus-visible {
+  outline: 2px solid var(--ppt-primary);
+  outline-offset: 2px;
+}
+.ppt-tool-btn[aria-pressed="true"],
+.ppt-tool-btn.is-active { background: var(--ppt-primary-weak); color: var(--ppt-primary); }
+.ppt-tool-btn .ppt-tool-ico { width: 16px; height: 16px; flex: 0 0 auto; }
+
+.ppt-tool-sep { width: 1px; height: 20px; background: var(--ppt-border); margin: 0 4px; flex: 0 0 auto; }
+
+/* 16:9 slide thumbnail card. */
+.ppt-thumb-card {
+  position: relative;
+  width: 100%;
+  border-radius: var(--ppt-radius);
+  border: 1.5px solid var(--ppt-border);
+  background: var(--ppt-surface);
+  overflow: hidden;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ppt-thumb-card:hover { border-color: var(--ppt-border-strong); }
+.ppt-thumb-card.is-selected { border-color: var(--ppt-primary); box-shadow: 0 0 0 3px var(--ppt-primary-weak); }
+
+.ppt-pop {
+  background: var(--ppt-surface);
+  border: 1px solid var(--ppt-border);
+  border-radius: var(--ppt-radius);
+  box-shadow: var(--ppt-shadow-pop);
+}
+
+.ppt-status-dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; }
+
+/* Top bar save/export status pill. */
+.ppt-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--ppt-radius-pill);
+  border: 1px solid var(--ppt-border);
+  background: var(--ppt-surface-2);
+  color: var(--ppt-text-sub);
+  white-space: nowrap;
+}
+.ppt-status .ppt-status-dot.ok { background: var(--ppt-success); }
+.ppt-status-ok { color: var(--ppt-success); border-color: var(--ppt-success-weak); background: var(--ppt-success-weak); }
+.ppt-status .ppt-status-dot.busy { background: var(--ppt-primary); }
+.ppt-status-busy { color: var(--ppt-primary); border-color: var(--ppt-primary-weak); background: var(--ppt-primary-weak); }
+.ppt-status .ppt-status-dot.danger { background: var(--ppt-danger); }
+.ppt-status-danger { color: var(--ppt-danger); border-color: var(--ppt-danger-weak); background: var(--ppt-danger-weak); }
+.ppt-status .ppt-status-dot.muted { background: var(--ppt-text-muted); }
+.ppt-status-muted { color: var(--ppt-text-muted); }
+
+/* "More" dropdown (native details/summary, no extra JS state). */
+.ppt-more > summary { list-style: none; cursor: pointer; }
+.ppt-more > summary::-webkit-details-marker { display: none; }
+.ppt-more[open] > summary { color: var(--ppt-primary); background: var(--ppt-primary-weak); }
+
+.ppt-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--ppt-radius-sm);
+  background: transparent;
+  color: var(--ppt-text-sub);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ppt-menu-item:hover { background: var(--ppt-surface-2); color: var(--ppt-text); }
+.ppt-menu-ico { width: 16px; height: 16px; flex: 0 0 auto; }
+
+/* Slide rail hover reorder controls (no element counts / ids shown). */
+.ppt-thumb-reorder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--ppt-border);
+  background: var(--ppt-surface);
+  color: var(--ppt-text-sub);
+  cursor: pointer;
+}
+.ppt-thumb-reorder:hover:not(:disabled) { background: var(--ppt-surface-2); color: var(--ppt-text); }
+.ppt-thumb-reorder:disabled { opacity: .4; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ppt-tool-btn, .ppt-thumb-card { transition: none; }
+}

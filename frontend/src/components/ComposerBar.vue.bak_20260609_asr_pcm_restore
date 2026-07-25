@@ -1,0 +1,744 @@
+<template>
+  <form @submit.prevent="send" class="composer-shell">
+    <div v-if="$slots['suggestion-prefix'] || suggestions.length" class="suggestion-list">
+      <slot name="suggestion-prefix" />
+      <button
+        v-for="item in suggestions"
+        :key="item.key || item.label"
+        type="button"
+        class="suggestion-chip"
+        @click="emit('suggestion-click', item)"
+      >
+        {{ item.label }}
+      </button>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer-main">
+        <textarea
+          ref="textareaRef"
+          v-model="input"
+          :placeholder="placeholder"
+          @keydown.enter.exact.prevent="send"
+          @input="autoResize"
+          :class="['composer-textarea', { 'composer-textarea-recording': recording }]"
+        />
+
+        <transition name="rec-fade">
+          <div v-if="recording" class="rec-indicator">
+            <span class="rec-dot"></span>
+            <span class="rec-time">{{ recTimeDisplay }}</span>
+          </div>
+        </transition>
+      </div>
+
+      <div class="composer-actions">
+        <transition name="btn-swap" mode="out-in">
+          <div v-if="recording" key="rec-controls" class="rec-controls">
+            <button
+              type="button"
+              @click="cancelRecord"
+              class="action-btn action-cancel"
+              title="取消录音"
+            >
+              <X class="size-5" :stroke-width="2.4" />
+            </button>
+            <button
+              type="button"
+              @click="confirmRecord"
+              class="action-btn action-confirm"
+              title="确认发送"
+            >
+              <Check class="size-5" :stroke-width="2.4" />
+            </button>
+          </div>
+
+          <button
+            v-else
+            key="mic-btn"
+            type="button"
+            @click="startRecord"
+            class="action-btn action-mic"
+            title="点击录音"
+          >
+            <Mic class="size-5" :stroke-width="2.1" />
+          </button>
+        </transition>
+
+        <transition name="btn-swap" mode="out-in">
+          <button
+            v-if="!recording"
+            type="submit"
+            :disabled="loading"
+            class="send-btn"
+          >
+            <Send class="size-5" :stroke-width="2.1" />
+          </button>
+        </transition>
+      </div>
+    </div>
+  </form>
+</template>
+
+<script setup>
+import { ref, nextTick, onUnmounted } from 'vue'
+import { Mic, Send, X, Check } from 'lucide-vue-next'
+import api from '../api.js'
+import {
+  applyChunkAsrResponse,
+  applyFinalAsrResponse,
+  composeInputText,
+  createVoiceDraftState,
+} from './composerVoiceState.mjs'
+
+defineProps({
+  placeholder: String,
+  loading: Boolean,
+  suggestions: { type: Array, default: () => [] },
+})
+const emit = defineEmits(['send', 'suggestion-click'])
+const input = ref('')
+const textareaRef = ref(null)
+const BASE_HEIGHT = 72
+const MAX_HEIGHT = 352
+
+function autoResize() {
+  const el = textareaRef.value
+  if (!el) return
+  el.style.height = BASE_HEIGHT + 'px'
+  const newHeight = Math.min(el.scrollHeight, MAX_HEIGHT)
+  el.style.height = newHeight + 'px'
+}
+const recording = ref(false)
+const recSeconds = ref(0)
+const recTimeDisplay = ref('0:00')
+const finalizingRecord = ref(false)
+let mediaRecorder = null
+let audioChunks = []
+let recTimer = null
+let recordingStream = null
+let baseInputText = ''
+let confirmedText = ''
+let interimText = ''
+let chunkQueue = []
+let chunkProcessing = false
+let discardRecording = false
+let voiceDraft = createVoiceDraftState()
+let voiceSessionId = ''
+let audioContext = null
+let analyserNode = null
+let sourceNode = null
+let monitorTimer = null
+let silenceMs = 0
+let hasSpoken = false
+let sentencePauseReported = false
+let autoFinalizeTriggered = false
+
+const CHUNK_INTERVAL_MS = 2000
+const SILENCE_SAMPLE_MS = 120
+const SENTENCE_PAUSE_MS = 600
+const FINAL_PAUSE_MS = 2200
+const SPEECH_THRESHOLD = 0.018
+
+onUnmounted(() => {
+  stopTimer()
+  stopSilenceMonitor()
+  recording.value = false
+  finalizingRecord.value = false
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  if (recordingStream) {
+    recordingStream.getTracks().forEach((track) => track.stop())
+    recordingStream = null
+  }
+})
+
+function startTimer() {
+  recSeconds.value = 0
+  recTimeDisplay.value = '0:00'
+  recTimer = window.setInterval(() => {
+    recSeconds.value++
+    const m = Math.floor(recSeconds.value / 60)
+    const s = recSeconds.value % 60
+    recTimeDisplay.value = m + ':' + (s < 10 ? '0' : '') + s
+  }, 1000)
+}
+
+function stopTimer() {
+  if (recTimer) {
+    window.clearInterval(recTimer)
+    recTimer = null
+  }
+}
+
+function stopSilenceMonitor() {
+  if (monitorTimer) {
+    window.clearInterval(monitorTimer)
+    monitorTimer = null
+  }
+  silenceMs = 0
+  hasSpoken = false
+  sentencePauseReported = false
+  autoFinalizeTriggered = false
+  if (sourceNode) {
+    try { sourceNode.disconnect() } catch {}
+    sourceNode = null
+  }
+  if (analyserNode) {
+    try { analyserNode.disconnect() } catch {}
+    analyserNode = null
+  }
+  if (audioContext) {
+    const current = audioContext
+    audioContext = null
+    current.close().catch(() => {})
+  }
+}
+
+function floatTo16BitPCM(view, offset, input) {
+  for (let i = 0; i < input.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, input[i]))
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+  }
+}
+
+function encodeWAV(audioBuffer) {
+  const numChannels = 1
+  const sampleRate = audioBuffer.sampleRate
+  const samples = audioBuffer.getChannelData(0)
+  const buffer = new ArrayBuffer(44 + samples.length * 2)
+  const view = new DataView(buffer)
+  const writeString = (o, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i))
+  }
+  writeString(0, 'RIFF')
+  view.setUint32(4, 36 + samples.length * 2, true)
+  writeString(8, 'WAVE')
+  writeString(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numChannels * 2, true)
+  view.setUint16(32, numChannels * 2, true)
+  view.setUint16(34, 16, true)
+  writeString(36, 'data')
+  view.setUint32(40, samples.length * 2, true)
+  floatTo16BitPCM(view, 44, samples)
+  return new Blob([buffer], { type: 'audio/wav' })
+}
+
+function syncInputWithTranscript() {
+  input.value = composeInputText(baseInputText, confirmedText, interimText)
+}
+
+function promoteInterimToConfirmed() {
+  if (!interimText) return
+  confirmedText += interimText
+  interimText = ''
+  syncInputWithTranscript()
+}
+
+function resetRecordingTranscript(restoreBase = false) {
+  confirmedText = ''
+  interimText = ''
+  chunkQueue = []
+  chunkProcessing = false
+  voiceDraft = createVoiceDraftState()
+  if (restoreBase) {
+    input.value = baseInputText
+  }
+}
+
+async function blobToWav(blob) {
+  const arrayBuf = await blob.arrayBuffer()
+  const audioCtx = new AudioContext()
+  try {
+    const audioBuf = await audioCtx.decodeAudioData(arrayBuf)
+    return encodeWAV(audioBuf)
+  } finally {
+    await audioCtx.close()
+  }
+}
+
+async function postAudio(endpoint, wavBlob, filename) {
+  const form = new FormData()
+  form.append('file', wavBlob, filename)
+  if (voiceSessionId) {
+    form.append('session_id', voiceSessionId)
+  }
+  const res = await api.post(endpoint, form)
+  if (res.data?.code === 0 && res.data?.data) {
+    return res.data.data
+  }
+  return null
+}
+
+async function postPauseSignal(pauseMs) {
+  if (!voiceSessionId) return
+  try {
+    const res = await api.post('/asr/recognize_pause', {
+      session_id: voiceSessionId,
+      pause_ms: pauseMs,
+      explicit_finalize: false,
+    })
+    const data = res.data?.code === 0 ? res.data.data : null
+    if (!data) return
+    const next = applyChunkAsrResponse(
+      {
+        baseInputText,
+        confirmedText,
+        interimText,
+        inputText: input.value,
+        voiceDraft,
+      },
+      data,
+    )
+    confirmedText = next.confirmedText
+    interimText = next.interimText
+    voiceDraft = next.voiceDraft
+    input.value = next.inputText
+  } catch (err) {
+    console.error('ASR pause signal failed:', err)
+  }
+}
+
+function startSilenceMonitor(stream) {
+  stopSilenceMonitor()
+  audioContext = new AudioContext()
+  sourceNode = audioContext.createMediaStreamSource(stream)
+  analyserNode = audioContext.createAnalyser()
+  analyserNode.fftSize = 2048
+  analyserNode.smoothingTimeConstant = 0.2
+  sourceNode.connect(analyserNode)
+  const samples = new Float32Array(analyserNode.fftSize)
+  monitorTimer = window.setInterval(() => {
+    if (!recording.value || finalizingRecord.value || !analyserNode) return
+    analyserNode.getFloatTimeDomainData(samples)
+    let sum = 0
+    for (let i = 0; i < samples.length; i++) {
+      const value = samples[i]
+      sum += value * value
+    }
+    const rms = Math.sqrt(sum / samples.length)
+    if (rms >= SPEECH_THRESHOLD) {
+      hasSpoken = true
+      silenceMs = 0
+      sentencePauseReported = false
+      return
+    }
+    if (!hasSpoken) return
+    silenceMs += SILENCE_SAMPLE_MS
+    if (!sentencePauseReported && silenceMs >= SENTENCE_PAUSE_MS) {
+      sentencePauseReported = true
+      void postPauseSignal(silenceMs)
+    }
+    if (!autoFinalizeTriggered && silenceMs >= FINAL_PAUSE_MS) {
+      autoFinalizeTriggered = true
+      confirmRecord()
+    }
+  }, SILENCE_SAMPLE_MS)
+}
+
+async function processChunkQueue() {
+  if (chunkProcessing) return
+  chunkProcessing = true
+  try {
+    while (chunkQueue.length) {
+      const chunkBlob = chunkQueue.shift()
+      if (!chunkBlob || !chunkBlob.size) continue
+      try {
+        const wavBlob = await blobToWav(chunkBlob)
+        const data = await postAudio('/asr/recognize_chunk', wavBlob, 'voice_chunk.wav')
+        const next = applyChunkAsrResponse(
+          {
+            baseInputText,
+            confirmedText,
+            interimText,
+            inputText: input.value,
+            voiceDraft,
+          },
+          data || { text: '' },
+        )
+        confirmedText = next.confirmedText
+        interimText = next.interimText
+        voiceDraft = next.voiceDraft
+        input.value = next.inputText
+      } catch (err) {
+        console.error('ASR chunk failed:', err)
+      }
+    }
+  } finally {
+    chunkProcessing = false
+  }
+}
+
+function enqueueChunk(blob) {
+  if (!blob || !blob.size) return
+  chunkQueue.push(blob)
+  void processChunkQueue()
+}
+
+async function startRecord() {
+  if (!navigator.mediaDevices) {
+    alert('浏览器不支持录音')
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    recordingStream = stream
+    baseInputText = input.value.trim()
+    resetRecordingTranscript()
+    voiceSessionId = `voice_session_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`
+    discardRecording = false
+    finalizingRecord.value = false
+    audioChunks = []
+    mediaRecorder = new MediaRecorder(stream)
+    mediaRecorder.ondataavailable = (e) => {
+      if (!e.data || !e.data.size) return
+      audioChunks.push(e.data)
+      if (!discardRecording) {
+        enqueueChunk(e.data)
+      }
+    }
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop())
+      recordingStream = null
+      if (discardRecording) {
+        finalizingRecord.value = false
+        resetRecordingTranscript(true)
+        audioChunks = []
+        voiceSessionId = ''
+        return
+      }
+      finalizingRecord.value = true
+      try {
+        while (chunkProcessing || chunkQueue.length) {
+          await new Promise((resolve) => window.setTimeout(resolve, 120))
+        }
+        const webmBlob = new Blob(audioChunks, { type: 'audio/webm' })
+        const wavBlob = await blobToWav(webmBlob)
+        const data = await postAudio('/asr/recognize_final', wavBlob, 'voice_final.wav')
+        if (data?.text) {
+          const next = applyFinalAsrResponse(
+            {
+              baseInputText,
+              confirmedText,
+              interimText,
+              inputText: input.value,
+              voiceDraft,
+            },
+            data,
+          )
+          confirmedText = next.confirmedText
+          interimText = next.interimText
+          voiceDraft = next.voiceDraft
+          input.value = next.inputText
+        } else {
+          promoteInterimToConfirmed()
+          syncInputWithTranscript()
+        }
+      } catch (err) {
+        console.error('ASR final failed:', err)
+        promoteInterimToConfirmed()
+        syncInputWithTranscript()
+      } finally {
+        finalizingRecord.value = false
+        confirmedText = ''
+        interimText = ''
+        chunkQueue = []
+        chunkProcessing = false
+        audioChunks = []
+        voiceSessionId = ''
+      }
+    }
+    mediaRecorder.start(CHUNK_INTERVAL_MS)
+    recording.value = true
+    startTimer()
+    startSilenceMonitor(stream)
+  } catch (err) {
+    console.error('录音失败:', err)
+    if (err.name === 'NotAllowedError') {
+      alert('请在浏览器中允许使用麦克风')
+    }
+  }
+}
+
+function cancelRecord() {
+  stopTimer()
+  stopSilenceMonitor()
+  recording.value = false
+  discardRecording = true
+  voiceSessionId = ''
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  } else {
+    resetRecordingTranscript(true)
+  }
+}
+
+function confirmRecord() {
+  stopTimer()
+  stopSilenceMonitor()
+  recording.value = false
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+}
+
+function send() {
+  if (recording.value || finalizingRecord.value) return
+  if (!input.value.trim()) return
+  emit('send', input.value)
+  input.value = ''
+  // Reset textarea height after send
+  nextTick(() => {
+    if (textareaRef.value) {
+      textareaRef.value.style.height = BASE_HEIGHT + 'px'
+    }
+  })
+}
+</script>
+
+<style scoped>
+.composer-shell {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 14px 18px 18px;
+  background: linear-gradient(180deg, rgba(252, 252, 254, 0.98) 0%, rgba(247, 248, 251, 1) 100%);
+}
+
+.composer-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-radius: 28px;
+  border: 1px solid #e8e5df;
+  background: #fff;
+  padding: 16px 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.composer-wrap:focus-within {
+  border-color: #d7d0c7;
+  box-shadow: 0 0 0 4px rgba(80, 110, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.04);
+}
+
+.composer-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 352px;
+  resize: none;
+  background: transparent;
+  padding: 0;
+  font-size: 18px;
+  line-height: 28px;
+  outline: none;
+  border: none;
+  color: #181818;
+  transition: opacity 0.2s ease;
+}
+
+.composer-textarea::placeholder {
+  color: #8f8f8f;
+}
+
+.composer-textarea-recording {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.rec-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.action-btn,
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-mic {
+  background: #ffffff;
+  border-color: #e8e5df;
+  color: rgba(24, 24, 24, 0.72);
+}
+
+.action-mic:hover {
+  background: #f4f2ed;
+  color: #111111;
+}
+
+.action-cancel {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.action-cancel:hover {
+  background: #fecaca;
+  transform: scale(1.05);
+}
+
+.action-confirm {
+  background: #22c55e;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.24);
+}
+
+.action-confirm:hover {
+  background: #16a34a;
+  transform: scale(1.05);
+}
+
+.send-btn {
+  background: #111111;
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(17, 17, 17, 0.14);
+}
+
+.send-btn:hover {
+  background: #222222;
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.rec-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+
+.rec-time {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #ef4444;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.btn-swap-enter-active {
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-swap-leave-active {
+  transition: all 0.14s ease-in;
+}
+
+.btn-swap-enter-from,
+.btn-swap-leave-to {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.rec-fade-enter-active {
+  transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rec-fade-leave-active {
+  transition: all 0.18s ease-in;
+}
+
+.rec-fade-enter-from,
+.rec-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-10px) scale(0.9);
+}
+
+.suggestion-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid #e8e5df;
+  background: #ffffff;
+  color: #4a4a4a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.suggestion-chip:hover {
+  background: #f4f2ed;
+  border-color: #ddd6ce;
+  color: #181818;
+}
+
+@media (max-width: 640px) {
+  .composer-shell {
+    padding: 12px 12px 16px;
+  }
+
+  .composer-wrap {
+    gap: 12px;
+    border-radius: 24px;
+    padding: 14px 14px 14px 16px;
+  }
+
+  .composer-textarea {
+    min-height: 60px;
+    max-height: 280px;
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .action-btn,
+  .send-btn {
+    width: 46px;
+    height: 46px;
+  }
+}
+</style>

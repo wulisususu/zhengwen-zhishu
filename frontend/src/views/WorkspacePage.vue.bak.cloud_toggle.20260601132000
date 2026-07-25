@@ -1,0 +1,179 @@
+<template>
+  <main class="flex h-dvh flex-col overflow-hidden bg-[#f6f7f8] text-black">
+    <AppHeader :title="'欢迎2'" :subtitle="currentModeLabel" @goHome="router.push('/')" @logout="router.push('/login')" />
+
+    <div class="flex min-h-0 flex-1">
+      <aside class="hidden w-[260px] shrink-0 border-r border-black/[0.08] bg-white px-3 py-3 md:flex md:min-h-0 md:flex-col">
+        <nav class="shrink-0 space-y-1 pb-4">
+          <button @click="createNewChat"
+            class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <Plus class="size-4" :stroke-width="2" />
+            <span>新聊天</span>
+          </button>
+          <button class="flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] text-black/85 transition-colors hover:bg-black/[0.06]">
+            <Search class="size-4" :stroke-width="2" />
+            <span>搜索聊天</span>
+          </button>
+          <button v-for="item in navItems" :key="item.key" @click="activateNavItem(item.key)"
+            :class="['flex h-9 w-full items-center gap-3 rounded-[8px] px-2.5 text-left text-[14px] transition-colors',
+              isNavItemActive(item.key) ? 'bg-black/[0.06] text-black' : 'text-black/85 hover:bg-black/[0.06]']">
+            <component :is="item.icon" class="size-4" :stroke-width="2" />
+            <span>{{ item.shortLabel }}</span>
+          </button>
+        </nav>
+
+        <section class="flex min-h-0 flex-1 flex-col pt-1">
+          <h2 class="shrink-0 px-2.5 pb-2 text-[13px] font-semibold leading-5 text-black">最近</h2>
+          <div ref="historyScroller" class="min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1" @scroll="onHistoryScroll">
+            <button v-for="c in chat.conversations" :key="c.id" @click="selectConversation(c.id)"
+              :class="['block h-9 w-full rounded-[8px] px-2.5 text-left text-[14px] leading-9 transition-colors',
+                chat.currentConvId === c.id ? 'bg-black/[0.06] text-black' : 'text-black/85 hover:bg-black/[0.06]']">
+              <span class="block truncate">{{ c.title }}</span>
+            </button>
+            <div v-if="chat.conversationsLoading" class="px-2.5 py-2 text-[12px] text-black/35">加载中...</div>
+            <div v-else-if="!chat.conversations.length" class="px-2.5 py-2 text-[13px] text-black/35">暂无对话</div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="flex min-w-0 flex-1 flex-col">
+        <div class="flex items-center gap-2 overflow-x-auto border-b border-black/[0.08] bg-white px-3 py-2 md:hidden">
+          <button v-for="item in navItems" :key="item.key" @click="activateNavItem(item.key)"
+            :class="['h-9 shrink-0 rounded-[8px] px-3 text-[14px]',
+              isNavItemActive(item.key) ? 'bg-[#232629] text-white' : 'bg-black/[0.04] text-black/65']">{{ item.label }}</button>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-hidden p-4 md:p-5">
+          <ChatMode v-if="mode === 'chat'" />
+          <DocumentMode v-else-if="mode === 'document'" />
+          <KnowledgeMode v-else-if="mode === 'knowledge'" />
+          <KnowledgeMode v-else />
+        </div>
+      </section>
+    </div>
+
+    <footer class="flex h-9 shrink-0 items-center justify-between border-t border-black/[0.08] bg-white px-4 text-[12px] text-black/45">
+      <span>系统状态：本地服务正常</span>
+      <span class="hidden sm:inline">内网模式 · 端侧优先 · 5 用户并发准备</span>
+    </footer>
+  </main>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { MessageSquare, FileText, FolderOpen, Database, Plus, Search } from 'lucide-vue-next'
+import AppHeader from '../components/AppHeader.vue'
+import ChatMode from '../components/ChatMode.vue'
+import DocumentMode from '../components/DocumentMode.vue'
+import KnowledgeMode from '../components/KnowledgeMode.vue'
+import { useChatStore } from '../stores/chat.js'
+
+const route = useRoute()
+const router = useRouter()
+const mode = ref('chat')
+const chat = useChatStore()
+const historyScroller = ref(null)
+
+const workModes = [
+  { key: 'chat', label: '聊天', shortLabel: '聊天', icon: MessageSquare },
+  { key: 'document', label: '文档库', shortLabel: '文档库', icon: FolderOpen },
+  { key: 'knowledge', label: '知识库模式', shortLabel: '知识库', icon: Database },
+]
+
+const navItems = [
+  { key: 'chat', label: '聊天', shortLabel: '聊天', icon: MessageSquare },
+  { key: 'write', label: '写文档', shortLabel: '写文档', icon: FileText },
+  { key: 'document', label: '文档库', shortLabel: '文档库', icon: FolderOpen },
+  { key: 'knowledge', label: '知识库', shortLabel: '知识库', icon: Database },
+]
+
+mode.value = normalizeMode(route.query.mode)
+
+const currentModeLabel = computed(() => workModes.find(m => m.key === mode.value)?.label || '对话模式')
+
+function normalizeMode(value) {
+  return workModes.some((item) => item.key === value) ? value : 'chat'
+}
+
+function isNavItemActive(key) {
+  return key !== 'write' && key === mode.value
+}
+
+async function activateNavItem(key) {
+  if (key === 'chat') {
+    await router.push('/chat')
+    return
+  }
+  if (key === 'write') {
+    await router.push('/document')
+    return
+  }
+  mode.value = normalizeMode(key)
+  await router.push({ path: '/workspace', query: { mode: mode.value } })
+}
+
+onMounted(async () => {
+  await chat.loadConversations(50)
+  await syncRouteState()
+})
+
+watch(() => route.fullPath, () => {
+  syncRouteState()
+})
+
+async function createNewChat() {
+  mode.value = 'chat'
+  if (!chat.currentConvId && !chat.messages.length) {
+    if (route.path !== '/chat') router.replace('/chat')
+    return
+  }
+  chat.startNewConversation()
+  window.dispatchEvent(new CustomEvent('mqw-workspace-reset'))
+  await router.push('/chat')
+}
+
+async function selectConversation(id) {
+  mode.value = 'chat'
+  const ok = await chat.selectConversation(id)
+  if (ok && route.path !== `/chat/${id}`) await router.push(`/chat/${id}`)
+  if (!ok) await router.replace('/chat')
+}
+
+function routeConversationId() {
+  const raw = route.params.id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const id = Number(value)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+async function syncRouteState() {
+  if (route.path.startsWith('/chat')) {
+    mode.value = 'chat'
+    const id = routeConversationId()
+    if (id) {
+      if (chat.currentConvId !== id) {
+        const ok = await chat.selectConversation(id)
+        if (!ok) {
+          chat.startNewConversation()
+          window.dispatchEvent(new CustomEvent('mqw-workspace-reset'))
+          await router.replace('/chat')
+        }
+      }
+    } else if (chat.currentConvId || chat.messages.length) {
+      chat.startNewConversation()
+      window.dispatchEvent(new CustomEvent('mqw-workspace-reset'))
+    }
+    return
+  }
+  mode.value = normalizeMode(route.query.mode)
+}
+
+function onHistoryScroll(event) {
+  const el = event.target
+  if (!el || chat.conversationsLoading || !chat.conversationsHasMore) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+    chat.loadMoreConversations(20)
+  }
+}
+</script>

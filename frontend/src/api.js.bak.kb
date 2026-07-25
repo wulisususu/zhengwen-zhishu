@@ -1,0 +1,26 @@
+import axios from 'axios'
+
+const api = axios.create({ baseURL: '/api/v1' })
+
+export function syncAuthCookie(token) {
+  if (typeof document === 'undefined') return
+  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+  if (token) {
+    document.cookie = 'mqw_token=' + encodeURIComponent(token) + '; Path=/; SameSite=Lax; Max-Age=604800' + secure
+  } else {
+    document.cookie = 'mqw_token=; Path=/; SameSite=Lax; Max-Age=0' + secure
+  }
+}
+
+api.interceptors.request.use((config) => {
+  try {
+    const s = JSON.parse(localStorage.getItem('mqw-session') || '{}')
+    if (s.token) {
+      config.headers.Authorization = 'Bearer ' + s.token
+      syncAuthCookie(s.token)
+    }
+  } catch {}
+  return config
+})
+
+export default api

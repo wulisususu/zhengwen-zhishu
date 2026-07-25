@@ -1,0 +1,90 @@
+<template>
+  <main class="flex h-dvh flex-col overflow-hidden bg-[#F5F7FB] text-black">
+    <AppHeader title="内网 AI 办公盒子" @goHome="goWorkspace" @logout="router.push('/login')" />
+
+    <section class="flex flex-1 flex-col items-center overflow-y-auto px-4 py-10 sm:justify-center sm:py-12">
+      <div class="w-full max-w-[1040px]">
+        <div class="mb-8">
+          <h1 class="text-[32px] font-semibold tracking-[-0.03em] leading-[42px] sm:text-[42px] sm:leading-[54px] text-[#111827]">内网AI办公盒子</h1>
+          <p class="mt-2 text-[18px] leading-7 text-[#667085]">智能写作 · 高效办公</p>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <button @click="goWorkspace('chat')"
+            class="group flex h-[104px] items-center justify-between rounded-[16px] border border-[#E6EAF2] bg-[rgba(255,255,255,0.92)] px-5 text-left shadow-[0_8px_24px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#D0D5DD] hover:shadow-[0_12px_28px_rgba(16,24,40,0.08)]">
+            <span><span class="block text-[18px] font-semibold leading-7">聊天</span><span class="mt-1 block text-[13px] leading-5 text-[#98A2B3]">通用问答与自由沟通</span></span>
+            <MessageSquare class="size-7 text-[#2677a8]" :stroke-width="1.9" />
+          </button>
+          <button @click="goWorkspace('document')"
+            class="group flex h-[104px] items-center justify-between rounded-[16px] border border-[#E6EAF2] bg-[rgba(255,255,255,0.92)] px-5 text-left shadow-[0_8px_24px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#D0D5DD] hover:shadow-[0_12px_28px_rgba(16,24,40,0.08)]">
+            <span><span class="block text-[18px] font-semibold leading-7">写文档</span><span class="mt-1 block text-[13px] leading-5 text-[#98A2B3]">Word 与材料起草</span></span>
+            <FileText class="size-7 text-[#6f5a2e]" :stroke-width="1.9" />
+          </button>
+          <a href="http://192.168.1.212:5000/"
+            class="group flex h-[104px] items-center justify-between rounded-[16px] border border-[#E6EAF2] bg-[rgba(255,255,255,0.92)] px-5 text-left shadow-[0_8px_24px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#D0D5DD] hover:shadow-[0_12px_28px_rgba(16,24,40,0.08)]">
+            <span><span class="block text-[18px] font-semibold leading-7">做PPT</span><span class="mt-1 block text-[13px] leading-5 text-[#98A2B3]">汇报与演示生成</span></span>
+            <Presentation class="size-7 text-[#7c5c1f]" :stroke-width="1.9" />
+          </a>
+          <button @click="goWorkspace('knowledge')"
+            class="group flex h-[104px] items-center justify-between rounded-[16px] border border-[#E6EAF2] bg-[rgba(255,255,255,0.92)] px-5 text-left shadow-[0_8px_24px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#D0D5DD] hover:shadow-[0_12px_28px_rgba(16,24,40,0.08)]">
+            <span><span class="block text-[18px] font-semibold leading-7">知识库</span><span class="mt-1 block text-[13px] leading-5 text-[#98A2B3]">资料检索与问答</span></span>
+            <BookOpen class="size-7 text-[#3f7b52]" :stroke-width="1.9" />
+          </button>
+        </div>
+
+        <form @submit.prevent="submitRequest"
+          class="mt-5 rounded-[16px] border border-[#E6EAF2] bg-[rgba(255,255,255,0.92)] p-5 shadow-[0_8px_24px_rgba(16,24,40,0.06)]">
+          <div class="flex flex-col gap-3 sm:flex-row">
+            <label class="relative flex h-11 items-center rounded-[14px] border border-[#E4E7EC] bg-[linear-gradient(180deg,#FFFFFF_0%,#FCFCFE_100%)] px-3.5 focus-within:border-[#C7D2FE] focus-within:ring-4 focus-within:ring-[#5E6AD2]/10 sm:w-[174px]">
+              <span class="shrink-0 text-[14px] leading-6 text-[#667085]">类型：</span>
+              <select v-model="requestType" class="h-full min-w-0 flex-1 appearance-none bg-transparent pr-7 text-[14px] leading-6 outline-none">
+                <option value="word">word</option><option value="excel">excel</option><option value="ppt">ppt</option>
+              </select>
+              <ChevronRight class="pointer-events-none absolute right-3 top-1/2 size-4 rotate-90 text-black/40" :stroke-width="2" />
+            </label>
+            <textarea v-model="requestText" placeholder="输入需求..."
+              class="min-h-[92px] flex-1 resize-none rounded-[14px] border border-[#E4E7EC] bg-[linear-gradient(180deg,#FFFFFF_0%,#FCFCFE_100%)] px-3.5 py-2.5 text-[15px] leading-6 outline-none placeholder:text-[#98A2B3] focus:border-[#C7D2FE] focus:ring-4 focus:ring-[#5E6AD2]/10" />
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" class="flex h-10 items-center gap-2 rounded-[12px] border border-[#E4E7EC] bg-white px-3.5 text-[14px] font-medium text-[#475467] shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-150 hover:bg-[#F8FAFC]">
+              <Upload class="size-4" :stroke-width="2" />上传文件
+            </button>
+            <button type="button" class="ml-auto flex size-10 items-center justify-center rounded-[12px] border border-[#E4E7EC] bg-white text-[#667085] shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-150 hover:bg-[#F8FAFC]">
+              <Mic class="size-4" :stroke-width="2" />
+            </button>
+            <button type="submit" class="flex h-10 items-center gap-2 rounded-[12px] bg-[#111827] px-4 text-[14px] font-medium text-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-150 hover:bg-[#0B1220]">
+              <Send class="size-4" :stroke-width="2" />发送
+            </button>
+          </div>
+        </form>
+        <p class="mt-3 text-[13px] leading-5 text-[#98A2B3]">或拖拽/粘贴文件至此上传</p>
+      </div>
+    </section>
+  </main>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { MessageSquare, FileText, Presentation, BookOpen, ChevronRight, Upload, Mic, Send } from 'lucide-vue-next'
+import AppHeader from '../components/AppHeader.vue'
+
+const router = useRouter()
+const requestType = ref('word')
+const requestText = ref('')
+
+function goWorkspace(mode) {
+  if (mode === 'chat') router.push('/chat')
+  else if (mode === 'document') router.push('/document')
+  else router.push({ path: '/workspace', query: { mode } })
+}
+
+function submitRequest() {
+  const text = requestText.value.trim()
+  if (text) {
+    sessionStorage.setItem('mqw-pending-request', JSON.stringify({ type: requestType.value, text }))
+  }
+  if (requestType.value === 'ppt') window.location.href = 'http://192.168.1.212:5000/'
+  else router.push('/document')
+}
+</script>

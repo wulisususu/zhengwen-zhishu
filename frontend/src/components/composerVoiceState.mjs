@@ -1,0 +1,104 @@
+export function composeInputText(base, confirmed, interim) {
+  const liveText = `${confirmed || ''}${interim || ''}`.trim()
+  const cleanBase = (base || '').trim()
+  if (!cleanBase) return liveText
+  if (!liveText) return cleanBase
+  return `${cleanBase}\n${liveText}`
+}
+
+export function createVoiceDraftState() {
+  return {
+    taskId: '',
+    revisionId: 0,
+    provisionalText: '',
+    committedSentenceText: '',
+    finalText: '',
+    status: '',
+  }
+}
+
+function cloneVoiceDraft(voiceDraft) {
+  return { ...createVoiceDraftState(), ...(voiceDraft || {}) }
+}
+
+function normalizeRevision(payload) {
+  const voiceEvent = payload?.voice_event || {}
+  const voiceState = payload?.voice_state || {}
+  const latestFromState = Number(voiceState.latest_revision_id || 0)
+  const latestFromEvent = Number(voiceEvent.revision_id || 0)
+  const latestFromEvents = Array.isArray(payload?.voice_events)
+    ? payload.voice_events.reduce((max, event) => Math.max(max, Number(event?.revision_id || 0)), 0)
+    : 0
+  return Math.max(latestFromState, latestFromEvent, latestFromEvents, 0)
+}
+
+export function applyChunkAsrResponse(state, payload) {
+  const nextVoiceDraft = cloneVoiceDraft(state.voiceDraft)
+  const nextRevision = normalizeRevision(payload)
+  if (nextRevision && nextRevision <= Number(nextVoiceDraft.revisionId || 0)) {
+    return state
+  }
+
+  const voiceState = payload?.voice_state || {}
+  const hasVoiceState = Object.keys(voiceState).length > 0
+  const confirmedText = String(
+    hasVoiceState
+      ? (voiceState.committed_sentence_text || state.voiceDraft?.committedSentenceText || '')
+      : (state.confirmedText || state.voiceDraft?.committedSentenceText || '')
+  )
+  const interimText = String(
+    voiceState.provisional_text ||
+    payload?.text ||
+    state.interimText ||
+    '',
+  )
+  const inputText = composeInputText(state.baseInputText || '', confirmedText, interimText)
+
+  nextVoiceDraft.taskId = String(payload?.task_id || nextVoiceDraft.taskId || '')
+  nextVoiceDraft.revisionId = nextRevision || Number(nextVoiceDraft.revisionId || 0)
+  nextVoiceDraft.provisionalText = interimText
+  nextVoiceDraft.committedSentenceText = confirmedText
+  nextVoiceDraft.finalText = String(voiceState.final_text || nextVoiceDraft.finalText || '')
+  nextVoiceDraft.status = 'chunk'
+
+  return {
+    ...state,
+    confirmedText,
+    interimText,
+    inputText,
+    voiceDraft: nextVoiceDraft,
+  }
+}
+
+export function applyFinalAsrResponse(state, payload) {
+  const nextVoiceDraft = cloneVoiceDraft(state.voiceDraft)
+  const voiceEvent = payload?.voice_event || {}
+  const voiceState = payload?.voice_state || {}
+  const nextRevision = normalizeRevision(payload)
+  if (nextRevision && nextRevision <= Number(nextVoiceDraft.revisionId || 0)) {
+    return state
+  }
+
+  const finalText = String(
+    voiceEvent.transcript ||
+    voiceState.final_text ||
+    payload?.text ||
+    '',
+  )
+  const inputText = composeInputText(state.baseInputText || '', finalText, '')
+
+  nextVoiceDraft.taskId = String(payload?.task_id || voiceEvent.task_id || nextVoiceDraft.taskId || '')
+  nextVoiceDraft.revisionId = nextRevision || Number(nextVoiceDraft.revisionId || 0)
+  nextVoiceDraft.provisionalText = ''
+  nextVoiceDraft.committedSentenceText = String(voiceState.committed_sentence_text || finalText)
+  nextVoiceDraft.finalText = finalText
+  nextVoiceDraft.status = String(voiceEvent.status || 'completed')
+
+  return {
+    ...state,
+    confirmedText: '',
+    interimText: '',
+    inputText,
+    voiceDraft: nextVoiceDraft,
+  }
+}

@@ -1,0 +1,2030 @@
+﻿<template>
+  <div class="flex h-full min-h-0 w-full flex-1">
+    <section
+      class="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[16px] border border-[#E6EAF2] bg-[rgba(255,255,255,0.97)] shadow-[0_8px_24px_rgba(16,24,40,0.06)]"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent="onDragOver"
+      @dragleave.prevent="onDragLeave"
+      @drop.prevent="onDropFiles"
+    >
+      <div v-if="isDraggingFiles" class="drag-upload-overlay">
+        <div class="drag-upload-panel">
+          <Paperclip class="size-5" :stroke-width="2" />
+          <span>松开以上传文件</span>
+        </div>
+      </div>
+      <div ref="messagesContainer" @scroll="onMessagesScroll" class="flex-1 space-y-5 overflow-y-auto bg-[radial-gradient(circle_at_top,rgba(238,241,255,0.9)_0%,rgba(252,252,254,0)_30%),linear-gradient(180deg,#FCFCFE_0%,#F7F8FB_100%)] px-6 py-8">
+        <template v-for="m in chat.messages" :key="m.id">
+          <div :class="m.role === 'user' ? 'message-row message-row-user' : 'message-row message-row-assistant'">
+            <div v-if="m.role === 'user'" class="user-message">
+              <div v-if="messageAttachments(m).length" class="user-attachment-list">
+                <template v-for="file in messageAttachments(m)" :key="file.id">
+                  <img
+                    v-if="isImageAttachment(file)"
+                    class="user-image-attachment"
+                    :src="fileDownloadUrl(file)"
+                    :alt="file.filename || '图片'"
+                    loading="lazy"
+                    @load="scrollToBottom()"
+                  />
+                  <a
+                    v-else
+                    class="user-file-attachment"
+                    :href="fileDownloadUrl(file)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Paperclip class="size-4 shrink-0" :stroke-width="2" />
+                    <span class="min-w-0 flex-1 truncate">{{ file.filename || '附件' }}</span>
+                    <span v-if="file.size" class="shrink-0 text-black/40">{{ formatFileSize(file.size) }}</span>
+                  </a>
+                </template>
+              </div>
+              <div v-if="m.content" class="user-text-bubble">{{ m.content }}</div>
+            </div>
+            <div v-else>
+              <div v-if="parseThink(m.content).think" class="mb-2">
+                <button @click="m._showThink = !m._showThink" class="flex items-center gap-1 text-[12px] text-black/40 hover:text-black/60">
+                  <span class="transition-transform" :class="m._showThink ? 'rotate-90' : ''">&#9654;</span>
+                  思考
+                </button>
+                <div v-show="m._showThink" class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ parseThink(m.content).think }}</div>
+              </div>
+              <div v-if="messageMainContent(m)" class="message-content assistant-content assistant-markdown" v-html="formatMessage(messageMainContent(m))"></div>
+              <div v-if="messageOutlineParts(m)" class="mt-3 w-full rounded-[14px] border border-[#E6EAF2] bg-white/92 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                  @click="toggleDocumentOutline(m)"
+                >
+                  <div class="min-w-0">
+                    <div class="text-[12px] font-medium tracking-[0.08em] text-[#6B7280]">文档大纲预览</div>
+                    <div class="truncate text-[14px] font-semibold text-[#1F2937]">{{ messageOutlineSummary(m) }}</div>
+                  </div>
+                  <span class="text-[12px] text-[#6B7280]">{{ isDocumentOutlineExpanded(m) ? '收起' : '展开' }}</span>
+                </button>
+                <div v-show="isDocumentOutlineExpanded(m)" class="border-t border-[#EEF2F7] px-4 py-3">
+                  <div class="assistant-content assistant-markdown" v-html="formatMessage(messageOutlineBody(m))"></div>
+                </div>
+              </div>
+              <div v-if="assistantStatusNote(m)" :class="['assistant-status-note', `assistant-status-note-${m.status || 'normal'}`]">
+                {{ assistantStatusNote(m) }}
+              </div>
+              <div v-for="task in messageDocTasks(m)" :key="task.task_id" class="doc-card mt-2">
+                <div class="min-w-0">
+                  <div class="doc-title">{{ task.file?.filename || task.title || 'Word 文档' }}</div>
+                  <div class="doc-meta">{{ docTaskStatusText(task) }} &middot; docx<span v-if="task.file?.size"> &middot; {{ formatFileSize(task.file.size) }}</span></div>
+                  <div class="doc-progress" :class="{ 'doc-progress-error': task.status === 'error' }" aria-hidden="true">
+                    <div class="doc-progress-bar" :style="{ width: docTaskProgress(task) + '%' }"></div>
+                  </div>
+                  <div v-if="task.error" class="doc-error">{{ task.error }}</div>
+                </div>
+                <button class="doc-download" :disabled="task.status !== 'done' || !task.file?.download_url" @click="downloadDoc(task)">下载</button>
+              </div>
+              <div v-if="messageActionText(m)" class="message-actions">
+                <button
+                  type="button"
+                  class="message-action-button"
+                  @click="copyAssistantMessage(m)"
+                  :aria-label="isMessageCopied(m) ? '已复制' : '复制'"
+                  :title="isMessageCopied(m) ? '已复制' : '复制'"
+                >
+                  <Check v-if="isMessageCopied(m)" class="size-4" :stroke-width="2.2" />
+                  <Copy v-else class="size-4" :stroke-width="2.2" />
+                </button>
+                <button
+                  type="button"
+                  @click="ttsPlayingId === m.id ? stopTTS() : playTTS(m.id, messageActionText(m))"
+                  :disabled="ttsLoading && ttsPlayingId !== m.id"
+                  class="message-action-button"
+                  :aria-label="ttsPlayingId === m.id ? '停止朗读' : '朗读'"
+                  :title="ttsPlayingId === m.id ? '停止朗读' : '朗读'"
+                >
+                  <VolumeX v-if="ttsPlayingId === m.id" class="size-4" :stroke-width="2.2" />
+                  <Volume2 v-else class="size-4" :stroke-width="2.2" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div v-if="isStreaming && !streamingText" class="message-row-assistant">
+          <div class="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-[8px] border border-black/[0.08] bg-[#fbfcfd] px-4">
+            <span class="typing-dot" aria-label="正在思考"></span>
+            <span v-if="streamingStatus" class="text-[13px] text-black/45">{{ streamingStatus }}</span>
+          </div>
+        </div>
+        <div v-else-if="streamingText" class="message-row-assistant">
+          <div v-if="streamingThink" class="mb-2">
+            <span class="text-[12px] text-black/40">&#9654; 思考中...</span>
+            <div class="mt-1 rounded-[8px] border border-dashed border-black/[0.1] bg-[#f9f9f9] px-3 py-2 text-[13px] leading-5 text-black/50 whitespace-pre-wrap">{{ streamingThink }}</div>
+          </div>
+          <div v-if="streamingMainContent" class="assistant-content assistant-markdown assistant-markdown-stream">
+            <div v-html="formatMessage(streamingMainContent)"></div><span class="animate-pulse">|</span>
+          </div>
+          <div v-if="streamingOutlineParts" class="mt-3 w-full rounded-[14px] border border-[#E6EAF2] bg-white/92 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+            <div class="px-4 py-3">
+              <div class="text-[12px] font-medium tracking-[0.08em] text-[#6B7280]">文档大纲预览</div>
+              <div class="mt-1 truncate text-[14px] font-semibold text-[#1F2937]">{{ streamingOutlineSummary }}</div>
+            </div>
+            <div class="border-t border-[#EEF2F7] px-4 py-3">
+              <div class="assistant-content assistant-markdown" v-html="formatMessage(streamingOutlineBody)"></div>
+            </div>
+          </div>
+          <div v-if="voiceDraftPreview" class="mt-2 rounded-[12px] border border-[#E6EAF2] bg-white/80 px-3 py-2 text-[14px] leading-6 text-black/70">
+            {{ voiceDraftPreview }}
+          </div>
+          <div v-if="streamingStatus" class="streaming-status-note">
+            <span class="typing-dot" aria-hidden="true"></span>
+            <span>{{ streamingStatus }}</span>
+          </div>
+          <div v-for="task in streamingTasks" :key="task.task_id" class="doc-card mt-2">
+            <div class="min-w-0">
+              <div class="doc-title">{{ task.file?.filename || task.title || 'Word 文档' }}</div>
+              <div class="doc-meta">{{ docTaskStatusText(task) }} &middot; docx<span v-if="task.file?.size"> &middot; {{ formatFileSize(task.file.size) }}</span></div>
+              <div class="doc-progress" :class="{ 'doc-progress-error': task.status === 'error' }" aria-hidden="true">
+                <div class="doc-progress-bar" :style="{ width: docTaskProgress(task) + '%' }"></div>
+              </div>
+              <div v-if="task.error" class="doc-error">{{ task.error }}</div>
+            </div>
+            <button class="doc-download" :disabled="task.status !== 'done' || !task.file?.download_url" @click="downloadDoc(task)">下载</button>
+          </div>
+        </div>
+
+        <div v-if="!chat.messages.length && !isStreaming && !streamingText" class="flex min-h-full items-center justify-center px-4">
+          <img class="empty-logo" :src="zkxcLogo" alt="中科信创" />
+        </div>
+      </div>
+      <input ref="fileInput" type="file" multiple class="hidden" @change="onAttachmentSelected" />
+      <ComposerBar
+        placeholder="请输入您想咨询的内容"
+        :suggestions="composerSuggestions"
+        :loading="chat.loading || isStreaming || uploadingAttachments"
+        @send="onSend"
+        @suggestion-click="onSuggestionClick"
+      >
+        <template #suggestion-prefix>
+          <div
+            ref="attachmentMenuRef"
+            class="attachment-tools"
+          >
+            <button
+              type="button"
+              class="attach-trigger"
+              :disabled="uploadingAttachments"
+              @click.stop="toggleAttachmentMenu"
+              :aria-expanded="attachmentMenuOpen ? 'true' : 'false'"
+              aria-label="添加附件"
+            >
+              <Plus class="size-4" :stroke-width="2.4" />
+            </button>
+            <div v-if="attachmentMenuOpen" class="attach-menu">
+              <button type="button" class="attach-menu-item" @click="openKnowledgeAttachment">
+                <Cloud class="size-4" :stroke-width="2" />
+                <span>选择知识库文件</span>
+              </button>
+              <button type="button" class="attach-menu-item" @click="openUploadAttachment">
+                <Upload class="size-4" :stroke-width="2" />
+                <span>上传文件或图片</span>
+              </button>
+            </div>
+          </div>
+          <span v-if="uploadingAttachments" class="attachment-inline-hint">上传中...</span>
+          <div v-for="file in attachedFiles" :key="file.id" class="attachment-chip-inline">
+            <Paperclip class="size-3.5 shrink-0" :stroke-width="2" />
+            <span class="attachment-chip-name">{{ file.filename }}</span>
+            <span class="attachment-chip-status">{{ parseTaskStatusText(file.parseTask) }}</span>
+            <button type="button" class="attachment-remove" @click="removeAttachment(file.id)" aria-label="移除附件">
+              <X class="size-3.5" :stroke-width="2" />
+            </button>
+          </div>
+        </template>
+      </ComposerBar>
+    </section>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref, watch, nextTick, onMounted, onUnmounted, reactive } from 'vue'
+import MarkdownIt from 'markdown-it'
+import { useRouter } from 'vue-router'
+import { Check, Copy, Paperclip, X, Plus, Cloud, Upload, Volume2, VolumeX } from 'lucide-vue-next'
+import { useChatStore } from '../stores/chat.js'
+import api, { handleUnauthorized } from '../api.js'
+import { getSessionToken } from '../stores/auth.js'
+import {
+  applyVoiceChunk,
+  applyVoiceDone,
+  buildStreamingAssistantText,
+  createChatVoiceDraftState,
+} from './chatVoiceDraftState.mjs'
+import {
+  extractDocTasksFromMessage,
+  extractDocumentOutlineParts,
+  buildAssistantActionText,
+  stripDocTaskMarkers,
+} from './documentMessageState.mjs'
+import ComposerBar from './ComposerBar.vue'
+import zkxcLogo from '../assets/zkxc-logo.svg'
+
+const markdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+})
+
+const defaultLinkOpen = markdown.renderer.rules.link_open || ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+markdown.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]
+  token.attrSet('target', '_blank')
+  token.attrSet('rel', 'noopener noreferrer')
+  token.attrJoin('class', 'message-link')
+  return defaultLinkOpen(tokens, idx, options, env, self)
+}
+
+const props = defineProps({
+  workflow: { type: String, default: 'chat' },
+  routeBase: { type: String, default: '/chat' },
+  activeTitle: { type: String, default: '当前对话' },
+  idleTitle: { type: String, default: '开始对话' },
+  emptyText: { type: String, default: '开始新的对话' },
+  suggestionContext: { type: String, default: '' },
+})
+const emit = defineEmits(['open-knowledge'])
+const effectiveWorkflow = props.workflow || 'chat'
+const PPT_URL = 'http://192.168.1.212:5000/'
+const TABLE_URL = 'http://192.168.1.212:7000/'
+// KNOWLEDGE_URL removed
+const chat = useChatStore()
+const router = useRouter()
+const messagesContainer = ref(null)
+const ttsPlayingId = ref(null)
+const ttsLoading = ref(false)
+const copiedMessageId = ref(null)
+const isStreaming = ref(false)
+const streamingText = ref('')
+const streamingThink = ref('')
+const streamingAnswer = ref('')
+const streamingStatus = ref('')
+const streamingTasks = ref([])
+const voiceDraft = ref(createChatVoiceDraftState())
+const docTasks = reactive({})
+const fileParseTasks = reactive({})
+const attachedFiles = ref([])
+const uploadingAttachments = ref(false)
+const isDraggingFiles = ref(false)
+const stickToBottom = ref(true)
+const fileInput = ref(null)
+const attachmentMenuOpen = ref(false)
+const attachmentMenuRef = ref(null)
+const pollingTimers = new Map()
+const parsePollingTimers = new Map()
+let dragDepth = 0
+let currentAudio = null
+let activeStreamController = null
+let streamVersion = 0
+let streamFlushTimer = 0
+let queuedStreamText = ''
+let streamTimeoutTimer = 0
+let streamTimedOut = false
+let copyStatusTimer = 0
+
+const composerSuggestions = computed(() => {
+  const context = props.suggestionContext || (props.workflow === 'document' ? 'document' : 'chat')
+  if (context === 'document') {
+    return [
+      { key: 'ppt', label: 'PPT生成' },
+      { key: 'chat', label: '聊天' },
+      { key: 'table', label: '写表格' },
+      { key: 'knowledge', label: '知识库' },
+    ]
+  }
+  if (context === 'library') {
+    return [
+      { key: 'ppt', label: 'PPT生成' },
+      { key: 'chat', label: '聊天' },
+      { key: 'document', label: '写文档' },
+      { key: 'table', label: '写表格' },
+      { key: 'knowledge', label: '知识库' },
+    ]
+  }
+  return [
+    { key: 'ppt', label: 'PPT生成' },
+    { key: 'document', label: '写文档' },
+    { key: 'table', label: '写表格' },
+    { key: 'knowledge', label: '知识库' },
+  ]
+})
+
+onMounted(async () => {
+  window.addEventListener('mqw-workspace-reset', resetLocalState)
+  window.addEventListener('pointerdown', handleWindowPointerDown)
+  await chat.loadConversations(50, props.workflow)
+  const pendingText = consumePendingRequest()
+  hydrateDocTasks()
+  if (pendingText) await sendPendingRequest(pendingText)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mqw-workspace-reset', resetLocalState)
+  window.removeEventListener('pointerdown', handleWindowPointerDown)
+  if (copyStatusTimer) window.clearTimeout(copyStatusTimer)
+  clearPollingTimers()
+  clearParsePollingTimers()
+})
+
+function scrollToBottom(behavior = 'auto') {
+  nextTick(() => {
+    const container = messagesContainer.value
+    if (!container || !stickToBottom.value) return
+    container.scrollTo({ top: container.scrollHeight, behavior })
+  })
+}
+
+function isNearBottom(threshold = 96) {
+  const container = messagesContainer.value
+  if (!container) return true
+  return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold
+}
+
+function onMessagesScroll() {
+  stickToBottom.value = isNearBottom()
+}
+
+watch(() => chat.messages.length, () => {
+  normalizeDocumentMessages()
+  hydrateDocTasks()
+  stickToBottom.value = true
+  scrollToBottom('auto')
+})
+
+watch(streamingText, () => {
+  scrollToBottom('auto')
+})
+
+const voiceDraftPreview = computed(() => {
+  const text = buildStreamingAssistantText({
+    streamingText: '',
+    voiceDraft: voiceDraft.value,
+  })
+  return text && text !== streamingText.value ? text : ''
+})
+
+watch(
+  () => chat.messages.map((m) => `${m.id || ''}\n${m.content || ''}\n${m.metadata_json || ''}`).join('\n'),
+  () => {
+    normalizeDocumentMessages()
+    hydrateDocTasks()
+  },
+)
+
+function clearPollingTimers() {
+  for (const timer of pollingTimers.values()) window.clearInterval(timer)
+  pollingTimers.clear()
+}
+
+function clearParsePollingTimers() {
+  for (const timer of parsePollingTimers.values()) window.clearInterval(timer)
+  parsePollingTimers.clear()
+}
+
+function clearDocTasks() {
+  for (const key of Object.keys(docTasks)) delete docTasks[key]
+}
+
+function clearFileParseTasks() {
+  for (const key of Object.keys(fileParseTasks)) delete fileParseTasks[key]
+}
+
+function resetLocalState() {
+  streamVersion += 1
+  if (activeStreamController) {
+    activeStreamController.abort()
+    activeStreamController = null
+  }
+  cancelQueuedStreamRender()
+  clearStreamTimeout()
+  clearPollingTimers()
+  clearParsePollingTimers()
+  clearDocTasks()
+  clearFileParseTasks()
+  attachedFiles.value = []
+  isDraggingFiles.value = false
+  dragDepth = 0
+  streamingText.value = ''
+  streamingThink.value = ''
+  streamingAnswer.value = ''
+  streamingStatus.value = ''
+  streamingTasks.value = []
+  voiceDraft.value = createChatVoiceDraftState()
+  isStreaming.value = false
+  ttsPlayingId.value = null
+  ttsLoading.value = false
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio = null
+  }
+}
+
+function onSuggestionClick(item) {
+  switch (item?.key) {
+    case 'chat':
+      router.push('/chat')
+      return
+    case 'document':
+      router.push('/document')
+      return
+    case 'table':
+      window.open(TABLE_URL, '_self')
+      return
+    case 'knowledge':
+      emit('open-knowledge')
+      return
+    case 'ppt':
+      window.open(PPT_URL, '_self')
+      return
+    default:
+      return
+  }
+}
+
+function clearStreamTimeout() {
+  if (streamTimeoutTimer) {
+    window.clearTimeout(streamTimeoutTimer)
+    streamTimeoutTimer = 0
+  }
+  streamTimedOut = false
+}
+
+function scheduleStreamTimeout(ms) {
+  if (streamTimeoutTimer) window.clearTimeout(streamTimeoutTimer)
+  streamTimeoutTimer = window.setTimeout(() => {
+    streamTimedOut = true
+    activeStreamController?.abort()
+  }, ms)
+}
+
+function cancelQueuedStreamRender() {
+  if (streamFlushTimer) {
+    window.clearTimeout(streamFlushTimer)
+    streamFlushTimer = 0
+  }
+  queuedStreamText = ''
+}
+
+function applyStreamingText(text) {
+  streamingText.value = text
+  const parsed = parseThink(text)
+  streamingThink.value = parsed.think
+  streamingAnswer.value = parsed.answer
+}
+
+function queueStreamingToken(token) {
+  const text = String(token || '')
+  if (!text) return
+  queuedStreamText += text
+  if (streamFlushTimer) return
+  streamFlushTimer = window.setTimeout(() => {
+    streamFlushTimer = 0
+    if (!queuedStreamText) return
+    applyStreamingText(streamingText.value + queuedStreamText)
+    queuedStreamText = ''
+  }, 45)
+}
+
+function flushStreamingTokens() {
+  if (!queuedStreamText) return
+  const nextText = streamingText.value + queuedStreamText
+  queuedStreamText = ''
+  if (streamFlushTimer) {
+    window.clearTimeout(streamFlushTimer)
+    streamFlushTimer = 0
+  }
+  applyStreamingText(nextText)
+}
+
+function replaceStreamingText(text) {
+  cancelQueuedStreamRender()
+  applyStreamingText(String(text || ''))
+}
+
+function parseSseBlock(block) {
+  const dataLines = []
+  let eventType = ''
+  for (const rawLine of String(block || '').split(/\r?\n/)) {
+    const line = rawLine.trimEnd()
+    if (!line || line.startsWith(':')) continue
+    if (line.startsWith('event:')) eventType = line.slice(6).trim()
+    if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+  }
+  const payload = dataLines.join('\n').trim()
+  if (!payload) return null
+  if (payload === '[DONE]') return { type: 'stream_end' }
+  try {
+    const data = JSON.parse(payload)
+    if (eventType && !data.type) data.type = eventType
+    return data
+  } catch {
+    return { type: 'parse_error', raw: payload }
+  }
+}
+
+function consumePendingRequest() {
+  try {
+    const raw = sessionStorage.getItem('mqw-pending-request')
+    if (!raw) return null
+    sessionStorage.removeItem('mqw-pending-request')
+    const parsed = JSON.parse(raw)
+    if (!parsed?.text) return null
+    let text = String(parsed.text).trim()
+    if (parsed.type === 'word' && !/(word|docx|\u6587\u6863|\u5468\u62a5|\u7b80\u5386|\u6e05\u5355|\u62a5\u544a)/i.test(text)) {
+      text = '\u8bf7\u751f\u6210Word\u6587\u6863\uff1a' + text
+    }
+    if (parsed.type === 'ppt' && !/(ppt|\u6f14\u793a|\u6c47\u62a5)/i.test(text)) {
+      text = '\u8bf7\u751f\u6210PPT\uff1a' + text
+    }
+    return text
+  } catch {
+    sessionStorage.removeItem('mqw-pending-request')
+    return null
+  }
+}
+
+async function sendPendingRequest(text) {
+  if (!text) return
+  await nextTick()
+  await onSend(text)
+}
+
+function upsertConversation(conv) {
+  if (!conv) return
+  if (conv.workflow_type && conv.workflow_type !== props.workflow) return
+  const idx = chat.conversations.findIndex((c) => c.id === conv.id)
+  if (idx >= 0) chat.conversations[idx] = { ...chat.conversations[idx], ...conv }
+  else chat.conversations.unshift(conv)
+}
+
+function parseThink(content) {
+  if (!content) return { think: '', answer: '' }
+  const raw = String(content || '')
+  const match = raw.match(/<think>([\s\S]*?)<\/think>\s*([\s\S]*)/)
+  if (match) {
+    const think = sanitizeAssistantText(match[1], { collapseRepeats: false })
+    const answer = sanitizeAssistantText(match[2])
+    if (shouldSuppressThink(think, answer)) {
+      return { think: '', answer: removeAnswerPrefixDuplicate(answer, think) }
+    }
+    return {
+      think,
+      answer: removeAnswerPrefixDuplicate(answer, think),
+    }
+  }
+  const danglingThink = raw.indexOf('<think>')
+  if (danglingThink >= 0) {
+    return { think: '', answer: sanitizeAssistantText(raw.slice(0, danglingThink)) }
+  }
+  return { think: '', answer: sanitizeAssistantText(raw) }
+}
+
+function formatMessage(content) {
+  return markdown.render(normalizeMarkdown(sanitizeAssistantText(content)))
+}
+
+function normalizeMarkdown(content) {
+  return String(content || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function sanitizeAssistantText(content, options = {}) {
+  const collapseRepeats = options.collapseRepeats !== false
+  let text = String(content || '').replace(/\r\n/g, '\n')
+  text = text
+    .replace(/<\/?think>/gi, '')
+    .replace(/^\s*<\/?think>\s*$/gim, '')
+    .replace(/^\s*assistant\s*:\s*$/gim, '')
+    .replace(/^\s*assistant\s*$/gim, '')
+    .replace(/^\s*user\s*:\s*$/gim, '')
+    .replace(/^\s*system\s*:\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (!collapseRepeats || !text) return text
+  return collapseRepeatedBlockSequences(text)
+}
+
+function collapseRepeatedBlockSequences(text) {
+  const blocks = String(text || '')
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+  if (blocks.length < 2) return text.trim()
+
+  const normalized = blocks.map((block) => block.replace(/\s+/g, ' ').trim())
+  for (let unit = Math.floor(blocks.length / 2); unit >= 1; unit -= 1) {
+    const pattern = normalized.slice(0, unit)
+    const patternLength = pattern.join(' ').length
+    if (patternLength < 80) continue
+
+    let cursor = unit
+    let repeats = 1
+    while (cursor + unit <= normalized.length) {
+      const segment = normalized.slice(cursor, cursor + unit)
+      let same = true
+      for (let i = 0; i < unit; i += 1) {
+        if (segment[i] !== pattern[i]) {
+          same = false
+          break
+        }
+      }
+      if (!same) break
+      repeats += 1
+      cursor += unit
+    }
+
+    if (repeats >= 2) {
+      return [...blocks.slice(0, unit), ...blocks.slice(cursor)].join('\n\n').trim()
+    }
+  }
+
+  return dedupeRepeatedPrefix(text)
+}
+
+function dedupeRepeatedPrefix(text) {
+  const source = String(text || '').trim()
+  if (source.length < 120) return source
+  const probe = source.slice(0, 80)
+  const duplicateAt = source.indexOf(probe, 80)
+  if (duplicateAt <= 0) return source
+  const head = source.slice(0, duplicateAt).trim()
+  const tail = source.slice(duplicateAt).trim()
+  const normalizedHead = head.replace(/\s+/g, ' ').trim()
+  const normalizedTail = tail.replace(/\s+/g, ' ').trim()
+  if (normalizedTail.startsWith(normalizedHead)) return head
+  return source
+}
+
+function normalizeForComparison(text) {
+  return String(text || '')
+    .replace(/<\/?think>/gi, '')
+    .replace(/^\s*(assistant|user|system)\s*:\s*/gim, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function shouldSuppressThink(think, answer) {
+  const normalizedThink = normalizeForComparison(think)
+  const normalizedAnswer = normalizeForComparison(answer)
+  if (!normalizedThink || !normalizedAnswer) return false
+  if (normalizedThink === normalizedAnswer) return true
+  if (normalizedThink.length > 80 && normalizedAnswer.includes(normalizedThink)) return true
+  if (normalizedAnswer.length > 80 && normalizedThink.includes(normalizedAnswer)) return true
+
+  const sampleLength = Math.min(normalizedThink.length, normalizedAnswer.length, 240)
+  if (sampleLength < 80) return false
+  const thinkSample = normalizedThink.slice(0, sampleLength)
+  const answerSample = normalizedAnswer.slice(0, sampleLength)
+  return thinkSample === answerSample
+}
+
+function removeAnswerPrefixDuplicate(answer, think) {
+  const rawAnswer = String(answer || '').trim()
+  const rawThink = String(think || '').trim()
+  if (!rawAnswer || !rawThink) return rawAnswer
+
+  const normalizedAnswer = normalizeForComparison(rawAnswer)
+  const normalizedThink = normalizeForComparison(rawThink)
+  if (!normalizedAnswer || !normalizedThink) return rawAnswer
+  if (!normalizedAnswer.startsWith(normalizedThink.slice(0, Math.min(normalizedThink.length, 200)))) return rawAnswer
+
+  const duplicateIndex = rawAnswer.indexOf('\n\n')
+  if (duplicateIndex <= 0) return rawAnswer
+
+  const candidate = rawAnswer.slice(duplicateIndex).trim()
+  const normalizedCandidate = normalizeForComparison(candidate)
+  if (normalizedCandidate && normalizedThink.startsWith(normalizedCandidate)) return candidate
+  return rawAnswer
+}
+
+function visibleMessage(content) {
+  return sanitizeAssistantText(stripDocTaskMarkers(String(content || '')))
+}
+
+function isFallbackOnlyMessage(content) {
+  const text = visibleMessage(parseThink(content).answer)
+  return [
+    '暂时没有拿到有效内容，请稍后重试。',
+    '我这次没有拿到有效模型输出，请换一种问法或稍后重试。',
+  ].includes(text)
+}
+
+function assistantStatusNote(message) {
+  if (!message || message.role !== 'assistant') return ''
+  if (!visibleMessage(parseThink(message.content).answer)) return ''
+  if (isFallbackOnlyMessage(message.content)) return ''
+  if (message.status === 'interrupted') return '本次输出提前结束，可继续发送“继续输出”补齐剩余内容。'
+  if (message.status === 'timeout') return '本次输出超时，已保留当前内容，可继续追问或重新发送。'
+  if (message.status === 'error') return '本次输出连接中断，请稍后重试。'
+  return ''
+}
+
+function normalizeTask(task) {
+  if (!task || !task.task_id) return null
+  return { ...(docTasks[task.task_id] || {}), ...task }
+}
+
+function upsertDocTask(task) {
+  const normalized = normalizeTask(task)
+  if (!normalized) return null
+  docTasks[normalized.task_id] = normalized
+  const streamingIdx = streamingTasks.value.findIndex((item) => item.task_id === normalized.task_id)
+  if (streamingIdx >= 0) streamingTasks.value[streamingIdx] = normalized
+  if (normalized.status !== 'done' && normalized.status !== 'error') startTaskPolling(normalized.task_id)
+  return normalized
+}
+
+function resolvedAnswerContent(message) {
+  return visibleMessage(parseThink(message?.content).answer)
+}
+
+function messageOutlineParts(message) {
+  return extractDocumentOutlineParts(resolvedAnswerContent(message))
+}
+
+function messageMainContent(message) {
+  const parts = messageOutlineParts(message)
+  return parts ? parts.main : resolvedAnswerContent(message)
+}
+
+function messageOutlineBody(message) {
+  return messageOutlineParts(message)?.body || ''
+}
+
+function messageOutlineSummary(message) {
+  return messageOutlineParts(message)?.summary || '已生成文档大纲'
+}
+
+function messageActionText(message) {
+  return buildAssistantActionText(messageMainContent(message), messageOutlineBody(message))
+}
+
+function messageActionId(message) {
+  return String(message?.id || '')
+}
+
+function isMessageCopied(message) {
+  const id = messageActionId(message)
+  return Boolean(id && copiedMessageId.value === id)
+}
+
+async function copyAssistantMessage(message) {
+  const text = messageActionText(message)
+  if (!text) return
+  await copyTextToClipboard(text)
+  copiedMessageId.value = messageActionId(message)
+  if (copyStatusTimer) window.clearTimeout(copyStatusTimer)
+  copyStatusTimer = window.setTimeout(() => {
+    if (copiedMessageId.value === messageActionId(message)) copiedMessageId.value = null
+  }, 1400)
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
+function isDocumentOutlineExpanded(message) {
+  return Boolean(message?._showDocumentOutline)
+}
+
+function toggleDocumentOutline(message) {
+  if (!message) return
+  message._showDocumentOutline = !isDocumentOutlineExpanded(message)
+}
+
+function normalizeDocumentMessages() {
+  for (const message of chat.messages) {
+    if (!message || message.role !== 'assistant') continue
+    const hasOutline = Boolean(messageOutlineParts(message))
+    if (hasOutline) {
+      if (typeof message._showDocumentOutline !== 'boolean') {
+        message._showDocumentOutline = false
+      }
+    } else if (message._showDocumentOutline) {
+      message._showDocumentOutline = false
+    }
+  }
+}
+
+function messageDocTasks(message) {
+  return extractDocTasksFromMessage(message).map((task) => docTasks[task.task_id] || task)
+}
+
+function hydrateDocTasks() {
+  for (const message of chat.messages) {
+    for (const task of extractDocTasksFromMessage(message)) upsertDocTask(task)
+  }
+}
+
+const streamingOutlineParts = computed(() => extractDocumentOutlineParts(visibleMessage(streamingAnswer.value)))
+const streamingMainContent = computed(() => streamingOutlineParts.value?.main || visibleMessage(streamingAnswer.value))
+const streamingOutlineBody = computed(() => streamingOutlineParts.value?.body || '')
+const streamingOutlineSummary = computed(() => streamingOutlineParts.value?.summary || '已生成文档大纲')
+
+async function refreshDocTask(taskId) {
+  try {
+    const { data } = await api.get('/documents/tasks/' + taskId)
+    if (data.code === 0) {
+      const task = upsertDocTask(data.data)
+      if (task && (task.status === 'done' || task.status === 'error')) stopTaskPolling(taskId)
+    }
+  } catch {}
+}
+
+function startTaskPolling(taskId) {
+  if (!taskId || pollingTimers.has(taskId)) return
+  refreshDocTask(taskId)
+  const timer = window.setInterval(() => refreshDocTask(taskId), 1500)
+  pollingTimers.set(taskId, timer)
+}
+
+function stopTaskPolling(taskId) {
+  const timer = pollingTimers.get(taskId)
+  if (timer) window.clearInterval(timer)
+  pollingTimers.delete(taskId)
+}
+
+function docTaskStatusText(task) {
+  if (task.status === 'done') return '已生成'
+  if (task.status === 'error') return '生成失败'
+  if (task.status === 'writing') return '正在写入 Word'
+  if (task.status === 'structuring') return '\u6b63\u5728\u6574\u7406\u5185\u5bb9'
+  return '生成中 ' + (task.progress || 0) + '%'
+}
+
+function docTaskProgress(task) {
+  if (task?.status === 'done') return 100
+  if (task?.status === 'error') return Math.max(8, Math.min(100, Number(task?.progress) || 100))
+  const progress = Number(task?.progress)
+  if (!Number.isFinite(progress)) return 6
+  return Math.max(6, Math.min(99, Math.round(progress)))
+}
+
+function formatFileSize(size) {
+  if (!size) return ''
+  if (size < 1024 * 1024) return Math.max(1, Math.round(size / 1024)) + 'KB'
+  return (size / 1024 / 1024).toFixed(1) + 'MB'
+}
+
+function messageAttachments(message) {
+  return Array.isArray(message?.attachments) ? message.attachments : []
+}
+
+function isImageAttachment(file) {
+  const type = String(file?.mime_type || file?.type || '').toLowerCase()
+  const name = String(file?.filename || '').toLowerCase()
+  return type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/.test(name)
+}
+
+function fileDownloadUrl(file) {
+  if (file?.download_url) return file.download_url
+  if (file?.id) return '/api/v1/files/' + file.id + '/download'
+  return '#'
+}
+
+function attachmentSnapshot(file) {
+  return {
+    id: file.id,
+    filename: file.filename,
+    size: file.size,
+    type: file.type,
+    download_url: file.download_url || (file.id ? '/api/v1/files/' + file.id + '/download' : ''),
+    parseTask: file.parseTask || null,
+  }
+}
+
+async function downloadDoc(task) {
+  if (!task?.file?.download_url) return
+  try {
+    const response = await api.get(task.file.download_url.replace('/api/v1', ''), { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = task.file.filename || 'document.docx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Download document failed:', error)
+    task.error = '下载失败，请重新登录后再试。'
+  }
+}
+
+function normalizeFileParseTask(task) {
+  if (!task || !task.task_id) return null
+  return { ...(fileParseTasks[task.task_id] || {}), ...task }
+}
+
+function upsertFileParseTask(task) {
+  const normalized = normalizeFileParseTask(task)
+  if (!normalized) return null
+  fileParseTasks[normalized.task_id] = normalized
+  const idx = attachedFiles.value.findIndex((file) => file.id === normalized.file_id)
+  if (idx >= 0) {
+    attachedFiles.value[idx] = { ...attachedFiles.value[idx], parseTask: normalized }
+  }
+  if (normalized.status !== 'done' && normalized.status !== 'error') startFileParsePolling(normalized)
+  else stopFileParsePolling(normalized.task_id)
+  return normalized
+}
+
+async function refreshFileParseTask(task) {
+  if (!task?.task_id || !task?.file_id) return
+  try {
+    const { data } = await api.get('/files/' + task.file_id + '/parse-tasks/' + task.task_id)
+    if (data.code === 0) upsertFileParseTask(data.data)
+  } catch {}
+}
+
+function startFileParsePolling(task) {
+  if (!task?.task_id || parsePollingTimers.has(task.task_id)) return
+  const timer = window.setInterval(() => refreshFileParseTask(task), 1800)
+  parsePollingTimers.set(task.task_id, timer)
+  refreshFileParseTask(task)
+}
+
+function stopFileParsePolling(taskId) {
+  const timer = parsePollingTimers.get(taskId)
+  if (timer) window.clearInterval(timer)
+  parsePollingTimers.delete(taskId)
+}
+
+function parseTaskStatusText(task) {
+  if (!task) return '未解析'
+  if (task.status === 'done') return '已解析'
+  if (task.status === 'error') return '解析失败'
+  if (task.stage) return task.stage
+  return '解析中 ' + (task.progress || 0) + '%'
+}
+
+async function onAttachmentSelected(event) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  await uploadFiles(files)
+}
+
+async function uploadFiles(files) {
+  if (!files.length || uploadingAttachments.value) return
+  uploadingAttachments.value = true
+  try {
+    for (const file of files) {
+      const formData = new FormData()
+      formData.append('file', file)
+      const { data } = await api.post('/files/upload', formData)
+      if (data.code !== 0 || !data.data?.id) continue
+      const uploaded = {
+        id: data.data.id,
+        filename: data.data.filename || file.name,
+        size: data.data.size || file.size,
+        type: data.data.type || file.type || '',
+        download_url: data.data.download_url || ('/api/v1/files/' + data.data.id + '/download'),
+        parseTask: data.data.parse_task || null,
+      }
+      const existing = attachedFiles.value.findIndex((item) => item.id === uploaded.id)
+      if (existing >= 0) attachedFiles.value[existing] = uploaded
+      else attachedFiles.value.push(uploaded)
+      if (uploaded.parseTask) upsertFileParseTask(uploaded.parseTask)
+    }
+  } catch (error) {
+    console.error('Upload attachment failed:', error)
+  } finally {
+    uploadingAttachments.value = false
+  }
+}
+
+function openAttachmentPicker() {
+  attachmentMenuOpen.value = false
+  fileInput.value?.click()
+}
+
+function toggleAttachmentMenu() {
+  if (uploadingAttachments.value) return
+  attachmentMenuOpen.value = !attachmentMenuOpen.value
+}
+
+function openKnowledgeAttachment() {
+  attachmentMenuOpen.value = false
+  window.open(KNOWLEDGE_URL, '_self')
+}
+
+function openUploadAttachment() {
+  openAttachmentPicker()
+}
+
+function handleWindowPointerDown(event) {
+  const root = attachmentMenuRef.value
+  if (!root) return
+  if (root.contains(event.target)) return
+  attachmentMenuOpen.value = false
+}
+
+function hasDraggedFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes('Files')
+}
+
+function onDragEnter(event) {
+  if (!hasDraggedFiles(event)) return
+  dragDepth += 1
+  isDraggingFiles.value = true
+}
+
+function onDragOver(event) {
+  if (!hasDraggedFiles(event)) return
+  event.dataTransfer.dropEffect = 'copy'
+  isDraggingFiles.value = true
+}
+
+function onDragLeave(event) {
+  if (!hasDraggedFiles(event)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) isDraggingFiles.value = false
+}
+
+async function onDropFiles(event) {
+  if (!hasDraggedFiles(event)) return
+  dragDepth = 0
+  isDraggingFiles.value = false
+  const files = Array.from(event.dataTransfer?.files || [])
+  await uploadFiles(files)
+}
+
+function removeAttachment(fileId) {
+  const file = attachedFiles.value.find((item) => item.id === fileId)
+  if (file?.parseTask?.task_id) stopFileParsePolling(file.parseTask.task_id)
+  attachedFiles.value = attachedFiles.value.filter((item) => item.id !== fileId)
+}
+
+function clearComposerAttachments() {
+  for (const file of attachedFiles.value) {
+    if (file?.parseTask?.task_id) stopFileParsePolling(file.parseTask.task_id)
+  }
+  attachedFiles.value = []
+}
+
+async function onSend(text) {
+  if (isStreaming.value || uploadingAttachments.value) return
+  const streamId = ++streamVersion
+  if (!chat.currentConvId) {
+    let conv = null
+    try {
+      conv = await chat.createConversation(text.slice(0, 20), props.workflow)
+    } catch (error) {
+      console.error('Create conversation failed:', error)
+      return
+    }
+    if (conv?.id) await router.replace(`${props.routeBase}/${conv.id}`)
+  }
+  if (streamId !== streamVersion || !chat.currentConvId) return
+
+  const conversationId = chat.currentConvId
+  const attachments = attachedFiles.value.map((file) => file.id)
+  const pendingAttachments = attachedFiles.value.map(attachmentSnapshot)
+  const userMsg = {
+    id: Date.now(),
+    role: 'user',
+    content: text,
+    msg_type: 'text',
+    created_at: new Date().toISOString(),
+    attachments: pendingAttachments,
+  }
+  chat.messages.push(userMsg)
+  if (attachments.length) clearComposerAttachments()
+
+  isStreaming.value = true
+  stickToBottom.value = true
+  streamingText.value = ''
+  streamingThink.value = ''
+  streamingAnswer.value = ''
+  streamingStatus.value = ''
+  streamingTasks.value = []
+  voiceDraft.value = createChatVoiceDraftState()
+  cancelQueuedStreamRender()
+  clearStreamTimeout()
+  activeStreamController = new AbortController()
+  scheduleStreamTimeout(180000)
+  let receivedDone = false
+  let assistantMessageId = null
+  let assistantCreatedAt = new Date().toISOString()
+  let fallbackAssistantMessage = null
+  let completedAssistantMessage = null
+  let completedDocTasks = []
+
+  try {
+    const response = await fetch('/api/v1/conversations/' + conversationId + '/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + getSessionToken(),
+      },
+      body: JSON.stringify({ content: text, stream: true, attachments, workflow_type: effectiveWorkflow }),
+      signal: activeStreamController.signal,
+    })
+
+    if (response.status === 401) {
+      handleUnauthorized()
+      throw new Error('HTTP 401 Unauthorized')
+    }
+
+    if (!response.ok || !response.body) {
+      throw new Error('HTTP ' + response.status + ' ' + (response.statusText || 'stream failed'))
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        buffer += decoder.decode()
+        break
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      const blocks = buffer.split(/\r?\n\r?\n/)
+      buffer = blocks.pop() || ''
+
+      if (streamId !== streamVersion) break
+      for (const block of blocks) {
+        if (streamId !== streamVersion) break
+        const data = parseSseBlock(block)
+        if (!data) continue
+        if (data.type === 'stream_end') {
+          receivedDone = true
+          continue
+        }
+
+        if (data.type === 'message_start') {
+          streamingStatus.value = ''
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'status') {
+          const message = String(data.message || data.content || '').trim()
+          if (message) streamingStatus.value = message
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'token') {
+          streamingStatus.value = ''
+          queueStreamingToken(data.content)
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'replace') {
+          streamingStatus.value = ''
+          flushStreamingTokens()
+          replaceStreamingText(data.content)
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'doc_task') {
+          const task = upsertDocTask(data.task)
+          streamingTasks.value = task ? [task] : []
+          completedDocTasks = task ? [task] : completedDocTasks
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'file_parse_task') {
+          upsertFileParseTask(data.task)
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'error') {
+          streamingStatus.value = ''
+          const message = String(data.message || '生成过程遇到错误，请稍后重试。').trim()
+          if (message && !streamingText.value.includes(message)) {
+            queueStreamingToken((streamingText.value.trim() ? '\n\n' : '') + message)
+          }
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'audio_chunk') {
+          voiceDraft.value = applyVoiceChunk(voiceDraft.value, data)
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'audio_done') {
+          voiceDraft.value = applyVoiceDone(voiceDraft.value, data)
+          applyStreamingText(buildStreamingAssistantText({
+            streamingText: streamingText.value,
+            voiceDraft: voiceDraft.value,
+          }))
+          scheduleStreamTimeout(300000)
+        } else if (data.type === 'done') {
+          flushStreamingTokens()
+          streamingStatus.value = ''
+          receivedDone = true
+          assistantMessageId = data.id || assistantMessageId
+          assistantCreatedAt = data.created_at || assistantCreatedAt
+          if (data.conversation) upsertConversation(data.conversation)
+          const finalContent = typeof data.content === 'string' ? data.content : streamingText.value
+          completedAssistantMessage = {
+            id: assistantMessageId || ('assistant-' + Date.now()),
+            role: 'assistant',
+            content: finalContent,
+            metadata_json: completedDocTasks.length ? JSON.stringify({ doc_tasks: completedDocTasks }) : '',
+            msg_type: 'text',
+            created_at: assistantCreatedAt,
+            _showThink: false,
+            _showDocumentOutline: Boolean(extractDocumentOutlineParts(visibleMessage(parseThink(finalContent).answer))),
+            status: 'done',
+          }
+          hydrateDocTasks()
+        } else if (data.type === 'user') {
+          if (data.conversation) upsertConversation(data.conversation)
+          const idx = chat.messages.findIndex((item) => item.id === userMsg.id && item.role === 'user')
+          if (idx >= 0 && data.id) {
+            chat.messages[idx] = {
+              ...chat.messages[idx],
+              id: data.id,
+              created_at: data.created_at || chat.messages[idx].created_at,
+              attachments: messageAttachments(data).length ? data.attachments : chat.messages[idx].attachments,
+            }
+          }
+        }
+      }
+    }
+
+    if (buffer.trim() && streamId === streamVersion) {
+      const data = parseSseBlock(buffer)
+      if (data?.type === 'token') queueStreamingToken(data.content)
+      else if (data?.type === 'done') {
+        flushStreamingTokens()
+        receivedDone = true
+        assistantMessageId = data.id || assistantMessageId
+        assistantCreatedAt = data.created_at || assistantCreatedAt
+        if (data.conversation) upsertConversation(data.conversation)
+        const finalContent = typeof data.content === 'string' ? data.content : streamingText.value
+        completedAssistantMessage = {
+          id: assistantMessageId || ('assistant-' + Date.now()),
+          role: 'assistant',
+          content: finalContent,
+          metadata_json: completedDocTasks.length ? JSON.stringify({ doc_tasks: completedDocTasks }) : '',
+          msg_type: 'text',
+          created_at: assistantCreatedAt,
+          _showThink: false,
+          _showDocumentOutline: Boolean(extractDocumentOutlineParts(visibleMessage(parseThink(finalContent).answer))),
+          status: 'done',
+        }
+      }
+    }
+
+    flushStreamingTokens()
+    if (!receivedDone && streamId === streamVersion && streamingText.value.trim()) {
+      fallbackAssistantMessage = {
+        id: assistantMessageId || ('assistant-partial-' + Date.now()),
+        role: 'assistant',
+        content: streamingText.value.trim(),
+        metadata_json: completedDocTasks.length ? JSON.stringify({ doc_tasks: completedDocTasks }) : '',
+        msg_type: 'text',
+        created_at: assistantCreatedAt,
+        _showThink: false,
+        _showDocumentOutline: Boolean(extractDocumentOutlineParts(visibleMessage(parseThink(streamingText.value.trim()).answer))),
+        status: 'interrupted',
+      }
+      chat.messages.push(fallbackAssistantMessage)
+      console.warn('Stream ended before done event; preserved partial assistant content.')
+    }
+  } catch (e) {
+    flushStreamingTokens()
+    if (streamTimedOut && streamId === streamVersion) {
+      const partial = streamingText.value.trim()
+      fallbackAssistantMessage = {
+        id: 'assistant-timeout-' + Date.now(),
+        role: 'assistant',
+        content: partial || '暂时没有拿到有效内容，请稍后重试。',
+        metadata_json: completedDocTasks.length ? JSON.stringify({ doc_tasks: completedDocTasks }) : '',
+        msg_type: 'text',
+        created_at: new Date().toISOString(),
+        _showThink: false,
+        _showDocumentOutline: Boolean(extractDocumentOutlineParts(visibleMessage(parseThink(partial).answer))),
+        status: 'timeout',
+      }
+      chat.messages.push(fallbackAssistantMessage)
+    } else if (e.message?.includes('HTTP 401') && streamId === streamVersion) {
+      const idx = chat.messages.findIndex((item) => item.id === userMsg.id && item.role === 'user')
+      if (idx >= 0) chat.messages.splice(idx, 1)
+    } else if (e.name !== 'AbortError' && streamId === streamVersion) {
+      console.error('Stream error:', e)
+      const partial = streamingText.value.trim()
+      fallbackAssistantMessage = {
+        id: 'assistant-error-' + Date.now(),
+        role: 'assistant',
+        content: partial || '暂时没有拿到有效内容，请稍后重试。',
+        metadata_json: completedDocTasks.length ? JSON.stringify({ doc_tasks: completedDocTasks }) : '',
+        msg_type: 'text',
+        created_at: new Date().toISOString(),
+        _showThink: false,
+        _showDocumentOutline: Boolean(extractDocumentOutlineParts(visibleMessage(parseThink(partial).answer))),
+        status: 'error',
+      }
+      chat.messages.push(fallbackAssistantMessage)
+    }
+  } finally {
+    if (streamId !== streamVersion) return
+    activeStreamController = null
+    isStreaming.value = false
+    cancelQueuedStreamRender()
+    clearStreamTimeout()
+    streamingText.value = ''
+    streamingThink.value = ''
+    streamingAnswer.value = ''
+    streamingStatus.value = ''
+    streamingTasks.value = []
+    voiceDraft.value = createChatVoiceDraftState()
+    if (chat.currentConvId === conversationId) {
+      const conv = chat.conversations.find((c) => c.id === conversationId)
+      const wfType = conv?.workflow_type || props.workflow
+      if (completedAssistantMessage) {
+        const existingAssistantIdx = chat.messages.findIndex(
+          (item) => item.id === completedAssistantMessage.id && item.role === 'assistant',
+        )
+        if (existingAssistantIdx >= 0) {
+          chat.messages[existingAssistantIdx] = {
+            ...chat.messages[existingAssistantIdx],
+            ...completedAssistantMessage,
+          }
+        } else {
+          chat.messages.push(completedAssistantMessage)
+        }
+      }
+      if (fallbackAssistantMessage) {
+        const marker = fallbackAssistantMessage.content.slice(0, 80)
+        const exists = chat.messages.some((message) => message.role === 'assistant' && String(message.content || '').includes(marker))
+        if (!exists) chat.messages.push(fallbackAssistantMessage)
+      }
+      hydrateDocTasks()
+      normalizeDocumentMessages()
+      await chat.loadConversations(50, wfType)
+      stickToBottom.value = true
+      scrollToBottom('auto')
+    }
+  }
+}
+
+async function playTTS(msgId, text) {
+  if (ttsLoading.value) return
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
+  ttsLoading.value = true
+  ttsPlayingId.value = msgId
+  try {
+    const response = await api.post('/tts/synthesize', { text }, { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'audio/wav' })
+    const url = URL.createObjectURL(blob)
+    currentAudio = new Audio(url)
+    currentAudio.onended = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    currentAudio.onerror = () => { ttsPlayingId.value = null; ttsLoading.value = false; URL.revokeObjectURL(url) }
+    await currentAudio.play()
+  } catch (e) {
+    console.error('TTS error:', e)
+    ttsPlayingId.value = null
+    ttsLoading.value = false
+  }
+}
+
+function stopTTS() {
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio.currentTime = 0
+    currentAudio = null
+  }
+  ttsPlayingId.value = null
+  ttsLoading.value = false
+}
+</script>
+
+<style scoped>
+.kb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.4);
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kb-toggle:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.6);
+}
+.kb-toggle-on {
+  background: #e8f4fd;
+  color: #2677a8;
+  border-color: #2677a8;
+}
+.kb-toggle-on:hover {
+  background: #d4ecf9;
+  color: #1d5f8a;
+}
+
+.empty-logo {
+  width: min(280px, 62vw);
+  max-width: 320px;
+  filter: drop-shadow(0 18px 36px rgba(17, 24, 39, 0.08));
+  user-select: none;
+  pointer-events: none;
+}
+
+.attachment-tools {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.attach-trigger {
+  display: inline-flex;
+  height: 36px;
+  width: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+  color: rgba(17, 24, 39, 0.78);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.attach-trigger:hover:not(:disabled) {
+  background: #f7f8fb;
+  color: #111827;
+  transform: translateY(-1px);
+}
+
+.attach-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.attach-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 12px);
+  z-index: 30;
+  min-width: 192px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(14px);
+}
+
+.attach-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 15px;
+  color: #111827;
+  transition: background 0.15s ease;
+}
+
+.attach-menu-item + .attach-menu-item {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.attach-menu-item:hover {
+  background: #f7f8fb;
+}
+
+.attachment-inline-hint {
+  font-size: 12px;
+  color: rgba(17, 24, 39, 0.45);
+}
+
+.attachment-chip-inline {
+  display: inline-flex;
+  max-width: min(280px, 72vw);
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgba(17, 24, 39, 0.72);
+}
+
+.attachment-chip-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.attachment-chip-status {
+  color: rgba(17, 24, 39, 0.42);
+}
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #111;
+  display: inline-block;
+  animation: typing-dot-jump 0.72s ease-in-out infinite;
+}
+
+@keyframes typing-dot-jump {
+  0%, 100% { transform: translateY(0); opacity: 0.45; }
+  50% { transform: translateY(-5px); opacity: 1; }
+}
+
+.streaming-status-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 7px 12px;
+  color: rgba(17, 24, 39, 0.48);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.streaming-status-note .typing-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+}
+
+.message-row {
+  width: 100%;
+}
+
+.message-row-user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message-row-assistant {
+  width: 100%;
+  max-width: 100%;
+  margin-right: auto;
+}
+
+.user-message {
+  display: flex;
+  max-width: min(560px, 78%);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.user-attachment-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.user-image-attachment {
+  width: min(178px, 52vw);
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.user-file-attachment {
+  display: inline-flex;
+  width: min(320px, 72vw);
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  background: #f3f4f6;
+  padding: 10px 12px;
+  color: rgba(0, 0, 0, 0.78);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.user-file-attachment:hover {
+  background: #eceef1;
+}
+
+.user-text-bubble {
+  max-width: 100%;
+  border-radius: 14px;
+  background: #f3f3f3;
+  padding: 10px 16px;
+  color: #111;
+  font-size: 16px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.assistant-content {
+  width: 100%;
+  max-width: 100%;
+  color: #252523;
+  font-size: 16px;
+  line-height: 1.9;
+  word-break: break-word;
+}
+
+.message-content {
+  width: 100%;
+}
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.message-action-button {
+  position: relative;
+  display: inline-flex;
+  height: 38px;
+  width: 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  padding: 0;
+  color: rgba(17, 24, 39, 0.68);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 0 0 0 rgba(94, 106, 210, 0);
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.message-action-button:hover:not(:disabled) {
+  border-color: rgba(94, 106, 210, 0.24);
+  background: #ffffff;
+  color: #111827;
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12), 0 0 0 6px rgba(94, 106, 210, 0.08);
+}
+
+.message-action-button:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10), 0 0 0 4px rgba(94, 106, 210, 0.08);
+}
+
+.message-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.assistant-markdown {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  font-size: 16.5px;
+  line-height: 1.92;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: #2a2927;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.assistant-markdown-stream {
+  position: relative;
+}
+
+.assistant-markdown :deep(*) {
+  box-sizing: border-box;
+}
+
+.assistant-markdown :deep(p) {
+  margin: 0 0 1.18em;
+}
+
+.assistant-markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.assistant-markdown :deep(h1),
+.assistant-markdown :deep(h2),
+.assistant-markdown :deep(h3),
+.assistant-markdown :deep(h4) {
+  margin: 1.55em 0 0.78em;
+  color: #171615;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.34;
+}
+
+.assistant-markdown :deep(h1) {
+  font-size: 1.8rem;
+}
+
+.assistant-markdown :deep(h2) {
+  font-size: 1.48rem;
+}
+
+.assistant-markdown :deep(h3) {
+  font-size: 1.22rem;
+}
+
+.assistant-markdown :deep(h4) {
+  font-size: 1.06rem;
+}
+
+.assistant-markdown :deep(ul),
+.assistant-markdown :deep(ol) {
+  margin: 0.78em 0 1.18em;
+  padding-left: 1.5em;
+}
+
+.assistant-markdown :deep(li) {
+  margin: 0.42em 0;
+  padding-left: 0.12em;
+}
+
+.assistant-markdown :deep(li > p) {
+  margin: 0.2em 0;
+}
+
+.assistant-markdown :deep(strong) {
+  color: #161513;
+  font-weight: 650;
+}
+
+.assistant-markdown :deep(em) {
+  color: #4a4845;
+}
+
+.assistant-markdown :deep(blockquote) {
+  margin: 1.18em 0;
+  border-left: 3px solid #d9d4cb;
+  background: linear-gradient(180deg, rgba(250, 249, 245, 0.95) 0%, rgba(245, 240, 232, 0.92) 100%);
+  border-radius: 0 14px 14px 0;
+  padding: 0.95em 1.05em;
+  color: #5b5854;
+  font-size: 0.98em;
+  line-height: 1.86;
+}
+
+.assistant-markdown :deep(hr) {
+  margin: 1.55em 0;
+  border: 0;
+  border-top: 1px solid #e6dfd8;
+}
+
+.assistant-markdown :deep(code) {
+  border-radius: 8px;
+  background: #f5f0e8;
+  padding: 0.18em 0.46em;
+  color: #995038;
+  font-size: 0.9em;
+  font-weight: 500;
+  letter-spacing: 0;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.assistant-markdown :deep(pre) {
+  overflow-x: auto;
+  margin: 1.12em 0 1.22em;
+  border: 1px solid #ece6dd;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffdfa 0%, #f7f3ec 100%);
+  padding: 1.02em 1.08em;
+  box-shadow: 0 10px 24px rgba(20, 20, 19, 0.05);
+}
+
+.assistant-markdown :deep(pre code) {
+  display: block;
+  background: transparent;
+  padding: 0;
+  color: #2f2d29;
+  font-size: 0.92em;
+  line-height: 1.8;
+}
+
+.assistant-markdown :deep(table) {
+  width: 100%;
+  margin: 1.18em 0 1.24em;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid #ece6dd;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.assistant-markdown :deep(th),
+.assistant-markdown :deep(td) {
+  padding: 0.76em 0.88em;
+  border-bottom: 1px solid #f1ece4;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.72;
+}
+
+.assistant-markdown :deep(th) {
+  background: #faf7f1;
+  color: #141413;
+  font-weight: 650;
+}
+
+.assistant-markdown :deep(tr:last-child td) {
+  border-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .user-message {
+    max-width: 86%;
+  }
+
+  .message-row-assistant {
+    max-width: 100%;
+  }
+
+  .assistant-markdown :deep(h1) {
+    font-size: 1.6rem;
+  }
+
+  .assistant-markdown :deep(h2) {
+    font-size: 1.36rem;
+  }
+}
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 460px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.doc-card > .min-w-0 {
+  flex: 1 1 auto;
+}
+
+.doc-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.82);
+}
+
+.doc-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.doc-progress {
+  margin-top: 8px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(94, 106, 210, 0.12);
+}
+
+.doc-progress-bar {
+  height: 100%;
+  min-width: 6px;
+  border-radius: inherit;
+  background: #5e6ad2;
+  transition: width 0.45s ease;
+}
+
+.doc-progress-error {
+  background: rgba(185, 28, 28, 0.1);
+}
+
+.doc-progress-error .doc-progress-bar {
+  background: #b91c1c;
+}
+
+.doc-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #b91c1c;
+}
+
+.doc-download {
+  opacity: 0;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  padding: 7px 12px;
+  font-size: 13px;
+  transition: opacity 0.18s ease, background 0.18s ease;
+}
+
+.doc-card:hover .doc-download {
+  opacity: 1;
+}
+
+.doc-download:not(:disabled) {
+  opacity: 1;
+}
+
+.doc-download:disabled {
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.16);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.assistant-status-note {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.assistant-status-note-timeout,
+.assistant-status-note-error {
+  color: #b45309;
+}
+
+.drag-upload-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.drag-upload-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(3, 105, 161, 0.24);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px 16px;
+  color: rgba(0, 0, 0, 0.78);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.attachment-chip {
+  display: inline-flex;
+  max-width: min(320px, 100%);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 5px 7px 5px 9px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgba(0, 0, 0, 0.72);
+}
+
+.attachment-remove {
+  display: inline-flex;
+  height: 20px;
+  width: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.attachment-remove:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.72);
+}
+
+.assistant-markdown :deep(.message-link) {
+  color: #0369a1;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(3, 105, 161, 0.28);
+  text-underline-offset: 2px;
+}
+</style>

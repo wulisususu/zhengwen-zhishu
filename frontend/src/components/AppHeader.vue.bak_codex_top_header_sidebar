@@ -1,0 +1,28 @@
+<template>
+  <header class="flex h-14 shrink-0 items-center justify-between border-b border-black/[0.08] bg-white px-4">
+    <button type="button" class="min-w-0 text-left" @click="$emit('goHome')">
+      <div class="truncate text-[15px] font-semibold leading-5 text-black">{{ title }}</div>
+      <div v-if="subtitle" class="truncate text-[12px] leading-4 text-black/40">{{ subtitle }}</div>
+    </button>
+    <button type="button" class="rounded-[8px] px-3 py-1.5 text-[13px] text-black/55 hover:bg-black/[0.04]" @click="logout">
+      退出
+    </button>
+  </header>
+</template>
+
+<script setup>
+import { useAuthStore } from '../stores/auth.js'
+
+defineProps({
+  title: { type: String, default: '' },
+  subtitle: { type: String, default: '' },
+})
+
+const emit = defineEmits(['goHome', 'logout'])
+const auth = useAuthStore()
+
+function logout() {
+  auth.clearSession()
+  emit('logout')
+}
+</script>

@@ -1,0 +1,2102 @@
+from __future__ import annotations
+
+from concurrent.futures import Future, ThreadPoolExecutor
+import json
+import os
+import re
+import time
+from typing import Any
+from urllib import error, request
+from pathlib import Path
+
+from app.config import get_config
+
+_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _openclaw_cfg() -> dict[str, Any]:
+    cfg = (get_config().get("openclaw") or {}) if isinstance(get_config(), dict) else {}
+    enabled_raw = os.getenv("OPENCLAW_ENABLED")
+    if enabled_raw is None:
+        enabled = bool(cfg.get("enabled"))
+    else:
+        enabled = enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+    timeout = os.getenv("OPENCLAW_TIMEOUT_SECONDS") or cfg.get("timeout_seconds") or 180
+    try:
+        timeout = int(timeout)
+    except Exception:
+        timeout = 180
+    task_wait_seconds = os.getenv("OPENCLAW_TASK_WAIT_SECONDS") or cfg.get("task_wait_seconds") or 45
+    try:
+        task_wait_seconds = int(task_wait_seconds)
+    except Exception:
+        task_wait_seconds = 45
+    poll_seconds = os.getenv("OPENCLAW_TASK_POLL_SECONDS") or cfg.get("task_poll_seconds") or 1.0
+    try:
+        poll_seconds = float(poll_seconds)
+    except Exception:
+        poll_seconds = 1.0
+    return {
+        "enabled": enabled,
+        "gateway_base_url": str(
+            os.getenv("OPENCLAW_GATEWAY_BASE_URL")
+            or cfg.get("gateway_base_url")
+            or "http://127.0.0.1:18789"
+        ).rstrip("/"),
+        "gateway_token": str(os.getenv("OPENCLAW_GATEWAY_TOKEN") or cfg.get("gateway_token") or "").strip(),
+        "chat_model": str(
+            os.getenv("OPENCLAW_CHAT_MODEL")
+            or cfg.get("chat_model")
+            or "openclaw"
+        ).strip() or "openclaw",
+        "chat_agent_id": str(
+            os.getenv("OPENCLAW_CHAT_AGENT_ID")
+            or cfg.get("chat_agent_id")
+            or "main"
+        ).strip() or "main",
+        "knowledge_model": str(
+            os.getenv("OPENCLAW_KNOWLEDGE_MODEL")
+            or cfg.get("knowledge_model")
+            or cfg.get("chat_model")
+            or "openclaw"
+        ).strip() or "openclaw",
+        "knowledge_agent_id": str(
+            os.getenv("OPENCLAW_KNOWLEDGE_AGENT_ID")
+            or cfg.get("knowledge_agent_id")
+            or cfg.get("chat_agent_id")
+            or "main"
+        ).strip() or "main",
+        "document_model": str(
+            os.getenv("OPENCLAW_DOCUMENT_MODEL")
+            or cfg.get("document_model")
+            or "openclaw/docgen"
+        ).strip() or "openclaw/docgen",
+        "document_agent_id": str(
+            os.getenv("OPENCLAW_DOCUMENT_AGENT_ID")
+            or cfg.get("document_agent_id")
+            or "docgen"
+        ).strip() or "docgen",
+        "timeout_seconds": max(10, timeout),
+        "task_wait_seconds": max(5, task_wait_seconds),
+        "task_poll_seconds": max(0.2, poll_seconds),
+    }
+
+
+def is_openclaw_document_enabled() -> bool:
+    cfg = _openclaw_cfg()
+    return bool(cfg["enabled"] and cfg["gateway_token"])
+
+
+def get_openclaw_document_runtime() -> dict[str, Any]:
+    return _openclaw_cfg()
+
+
+def is_openclaw_chat_enabled() -> bool:
+    cfg = _openclaw_cfg()
+    return bool(cfg["enabled"] and cfg["gateway_token"])
+
+
+def get_openclaw_chat_runtime() -> dict[str, Any]:
+    return _openclaw_cfg()
+
+
+def is_openclaw_knowledge_enabled() -> bool:
+    cfg = _openclaw_cfg()
+    return bool(cfg["enabled"] and cfg["gateway_token"])
+
+
+def get_openclaw_knowledge_runtime() -> dict[str, Any]:
+    return _openclaw_cfg()
+
+
+def get_openclaw_voice_runtime() -> dict[str, Any]:
+    """Return OpenClaw runtime config for voice input agent."""
+    base = _openclaw_cfg()
+    return {
+        **base,
+        "voice_input_model": base.get("voice_input_model", "openclaw/voice-input"),
+        "voice_input_agent_id": base.get("voice_input_agent_id", "voice-input"),
+        "voice_input_timeout_seconds": base.get("voice_input_timeout_seconds", 60),
+    }
+
+
+def is_openclaw_voice_enabled() -> bool:
+    cfg = _openclaw_cfg()
+    return bool(cfg["enabled"] and cfg["gateway_token"])
+
+
+def _normalize_int_list(values: list[int] | None) -> list[int]:
+    normalized: list[int] = []
+    for item in values or []:
+        try:
+            value = int(item)
+        except Exception:
+            continue
+        if value > 0 and value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def _is_explicit_tts_request(content: str) -> bool:
+    text = str(content or "").strip()
+    if not text:
+        return False
+    patterns = [
+        r"读出来",
+        r"念出来",
+        r"读给我听",
+        r"念给我听",
+        r"朗读",
+        r"播报",
+        r"播放.*语音",
+        r"生成.*语音",
+        r"\bTTS\b",
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def _is_explicit_asr_request(content: str) -> bool:
+    text = str(content or "").strip()
+    if not text:
+        return False
+    patterns = [
+        r"转写",
+        r"识别.*音频",
+        r"识别.*语音",
+        r"听写",
+        r"字幕",
+        r"音频.*转成文字",
+        r"语音.*转成文字",
+        r"录音.*转成文字",
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def build_chat_input(
+    content: str,
+    history_messages: list[dict[str, str]] | None = None,
+    attachment_context: str = "",
+    conversation_id: int | None = None,
+    user_id: int | None = None,
+    attachment_ids: list[int] | None = None,
+    audio_attachment_ids: list[int] | None = None,
+    preflight: dict[str, Any] | None = None,
+) -> str:
+    attachment_ids = _normalize_int_list(attachment_ids)
+    audio_attachment_ids = _normalize_int_list(audio_attachment_ids)
+    lines = [
+        "你是一个自然、稳妥、会承接上下文的中文助手。",
+        "优先直接帮助用户推进，不要输出思考过程。",
+        "工具调用规则：",
+        "1. 如果用户明确要求朗读、播报、生成语音、播放语音或 TTS，必须调用 synthesize_speech，不要只口头说明会去处理。",
+        "2. synthesize_speech 的 text 参数必须是准备播报给用户的最终中文内容，不要输出 audio_bytes=... 之类的调试文本。",
+        "3. 如果用户要求转写、识别、听写当前已上传音频，且当前存在可用音频附件 file_id，必须调用 transcribe_audio，不要直接伪造转写结果。",
+        "4. 调用 transcribe_audio 时，必须原样带上 conversation_id、user_id 和其中一个 file_id；如果有多个音频 file_id，优先使用列表最后一个。",
+        "5. 如果没有可用音频附件，就不要调用 transcribe_audio，改为明确提示用户先上传音频。",
+        "6. 如果不是明确的语音生成或音频转写请求，就直接正常回答，不要为了展示工具而调用工具。",
+        "7. 工具调用失败时，不要伪造完成状态，先回到上一步修正后再继续。",
+        "",
+    ]
+    if conversation_id:
+        lines.append(f"当前 conversation_id={int(conversation_id)}。")
+    if user_id:
+        lines.append(f"当前 user_id={int(user_id)}。")
+    if attachment_ids:
+        lines.append(f"当前消息可用附件 file_id 列表：{attachment_ids}。")
+    if audio_attachment_ids:
+        lines.append(f"当前消息可用于 ASR 的音频 file_id 列表：{audio_attachment_ids}。")
+    else:
+        lines.append("当前消息没有可用于 ASR 的音频附件 file_id。")
+    if _is_explicit_tts_request(content):
+        lines.extend([
+            "当前用户消息是一次明确的 TTS 请求。",
+            "你本轮必须调用 synthesize_speech，不允许只给文字解释。",
+            "不要输出音标、拼读、发音解释、释义，或询问用户是否还要生成音频。",
+            "如果用户在冒号、引号或书名号后给了要朗读的正文，synthesize_speech.text 应直接使用那段正文；否则就朗读用户明确指定的正文。",
+        ])
+    if _is_explicit_asr_request(content) and audio_attachment_ids:
+        lines.extend([
+            "当前用户消息是一次明确的 ASR 请求。",
+            "你本轮必须调用 transcribe_audio，不允许直接凭空写出转写结果。",
+            "优先使用当前音频 file_id 列表中的最后一个 file_id 作为本轮转写目标。",
+            "不要把转写任务改写成摘要、翻译或解释，先完成逐字转写。",
+        ])
+    if preflight:
+        summary = str(preflight.get("summary") or "").strip()
+        refined_prompt = str(preflight.get("refined_prompt") or "").strip()
+        lines.extend([
+            "",
+            "Chat preflight：",
+            "原始用户输入优先级最高；小模型整理结果只作为辅助理解，不能覆盖或替代原始用户输入。",
+        ])
+        if summary:
+            lines.append(f"小模型任务理解：{summary[:600]}")
+        if refined_prompt:
+            lines.append(f"小模型整理后的提示：{refined_prompt[:1200]}")
+    lines.extend([
+        "",
+        "最近对话：",
+    ])
+    for item in history_messages or []:
+        role = str(item.get("role") or "").strip() or "user"
+        text = str(item.get("content") or "").strip()
+        if not text:
+            continue
+        lines.append(f"{role}: {text[:1200]}")
+    if attachment_context:
+        lines.extend([
+            "",
+            "附件解析摘要：",
+            attachment_context.strip(),
+        ])
+    lines.extend([
+        "",
+        "当前用户消息：",
+        (content or "").strip(),
+    ])
+    return "\n".join(lines).strip()
+
+
+def build_knowledge_input(
+    content: str,
+    history_messages: list[dict[str, str]] | None = None,
+) -> str:
+    lines = [
+        "你正在处理知识库问答。",
+        "必须先调用 kb_search，再根据检索结果回答。",
+        "如果不调用 kb_search，这次回答就是无效的，不要直接解释工具列表或系统能力概览。",
+        "如果 kb_search 没有返回有效 sources，请明确说明当前回答未命中知识库，不要伪造引用。",
+        "",
+        "最近对话：",
+    ]
+    for item in history_messages or []:
+        role = str(item.get("role") or "").strip() or "user"
+        text = str(item.get("content") or "").strip()
+        if not text:
+            continue
+        lines.append(f"{role}: {text[:1200]}")
+    lines.extend([
+        "",
+        "当前用户消息：",
+        (content or "").strip(),
+    ])
+    return "\n".join(lines).strip()
+
+
+def build_document_input(
+    content: str,
+    conversation_id: int,
+    user_id: int,
+    attachment_ids: list[int] | None = None,
+    attachment_context: str = "",
+) -> str:
+    attachment_ids = attachment_ids or []
+    lines = [
+        "你正在处理一个文档生成请求，必须使用 doc-gen skill。",
+        "主路径由 OpenClaw document agent 编排，后端只提供工具和渲染能力。",
+        "必须先输出 2-3 句小总结，再继续输出完整 markdown 正文。",
+        "完整 markdown 正文输出完成后，必须调用 document_render_docx，并把正文作为 content 参数传入。",
+        "本轮响应在 document_render_docx 工具调用完成前不算完成；禁止只输出 markdown 后结束。",
+        "不要用自然语言声称已创建卡片，必须让 document_render_docx 的工具结果产生 task_id/status/title。",
+        "不要输出“现在调用工具”“正在查询任务状态”“文档任务已提交”等工具过程话术。",
+        "不要输出“项目|值”“字段|值”这类任务状态表格。",
+        "不要把正文包在 ```markdown 或 ``` 代码块里；直接输出可渲染 markdown。",
+        "不要把小总结、工具调用说明、任务表格、报告生成者、数据源、联系方式写入 document_render_docx.content。",
+        "local_small_model 只能用于小总结或意图规整，不能生成长正文。",
+        "不要调用旧 generate_document 作为主路径；旧后端正文生成只能 fallback。",
+        f"当前 conversation_id={conversation_id}。",
+        f"当前 user_id={user_id}。",
+        f"用户需求：{(content or '').strip()}",
+    ]
+    if attachment_ids:
+        lines.append(f"可用附件 file_id 列表：{attachment_ids}。")
+        lines.append("如果文档需要引用附件内容，请先使用 attachment_parse 或附件解析摘要；渲染时再把这些 file_id 传给 document_render_docx.attachments。")
+    if attachment_context:
+        lines.append("附件解析摘要如下，可作为工具调用前的参考：")
+        lines.append(attachment_context.strip())
+    lines.append("调用 document_render_docx、document_task_status、download_url 时务必带上 conversation_id 和 user_id。")
+    lines.append("最终必须返回 task_id、status、title，以及可用时的 download_url。")
+    return "\n".join(part for part in lines if part).strip()
+
+
+_DOCUMENT_TAIL_PATTERNS = [
+    r"\n\s*-{3,}\s*\n\s*现在生成正式文档",
+    r"现在生成正式文档",
+    r"现在我将调用文档渲染工具生成正式的\s*DOCX\s*文件",
+    r"现在调用.*?(?:文档渲染|document_render_docx|DOCX)",
+    r"我将调用.*?(?:文档渲染|document_render_docx|DOCX)",
+    r"文档任务已提交",
+    r"文档任务已创建",
+    r"正在处理中",
+    r"让我查询任务状态",
+    r"查询任务状态",
+    r"\*\*文档任务已创建\*\*",
+    r"MEDIA:document_render_docx",
+    r"\|\s*\*\*task_id\*\*",
+    r"\|\s*task_id\s*\|",
+    r"\*\*任务\s*ID\*\*",
+    r"任务\s*ID\s*[:：]",
+    r"\*\*状态\*\*\s*[:：]\s*done",
+    r"\*\*标题\*\*\s*[:：]",
+    r"\*\*下载链接\*\*\s*[:：]",
+    r"\|\s*项目\s*\|\s*值\s*\|",
+    r"文档内容已生成完成",
+    r"Markdown\s*正文已渲染为\s*DOCX\s*任务",
+    r"报告生成\s*[:：]\s*OpenClaw",
+    r"报告编制\s*[:：]\s*OpenClaw",
+    r"数据周期\s*[:：].*?(?:##\s*)?任务状态",
+    r"##\s*任务状态",
+    r"##\s*文档任务信息",
+    r"文档任务信息",
+    r"##\s*文档生成完成",
+    r"文档生成完成",
+    r"\|\s*字段\s*\|\s*值\s*\|",
+    r"\n\s*-{3,}\s*\n\s*任务已完成",
+    r"任务已完成",
+    r"\*\*status\s*:\*\*",
+    r"\*\*title\s*:\*\*",
+    r"\*\*status\*\*\s*:",
+    r"\*\*title\*\*\s*:",
+    r"\bstatus\s*:\s*done\b",
+    r"\btitle\s*:\s*",
+]
+
+
+def find_document_render_tail_index(text: str) -> int:
+    source = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    matches: list[int] = []
+    for pattern in _DOCUMENT_TAIL_PATTERNS:
+        match = re.search(pattern, source, flags=re.IGNORECASE)
+        if match:
+            matches.append(match.start())
+    return min(matches) if matches else -1
+
+
+def merge_openclaw_text_delta(current: str, delta: str) -> str:
+    base = str(current or "")
+    incoming = str(delta or "")
+    if not incoming:
+        return base
+    if not base:
+        return incoming
+    if incoming == base:
+        return base
+    if incoming.startswith(base):
+        return incoming
+    if len(incoming) >= 80 and incoming in base:
+        return base
+    max_overlap = min(len(base), len(incoming))
+    for size in range(max_overlap, 0, -1):
+        if base.endswith(incoming[:size]):
+            return base + incoming[size:]
+    return base + incoming
+
+
+def _is_openclaw_empty_placeholder(text: str) -> bool:
+    return str(text or "").strip() == "No response from OpenClaw."
+
+
+def _remove_openclaw_empty_placeholder(text: str) -> str:
+    source = str(text or "")
+    source = re.sub(
+        r"(?m)^\s*No response from OpenClaw\.\s*$\n?",
+        "",
+        source,
+    )
+    return source
+
+
+def _remove_document_section_complete_markers(text: str) -> str:
+    return re.sub(r"<!--\s*SECTION_COMPLETE\s*:\s*[^>]*-->", "", str(text or ""))
+
+
+def _strip_document_tail(text: str) -> str:
+    source = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    index = find_document_render_tail_index(source)
+    if index >= 0:
+        source = source[:index]
+    return source
+
+
+def _strip_full_document_code_fence(text: str) -> str:
+    source = str(text or "").strip()
+    if not source.startswith("```"):
+        return str(text or "")
+    match = re.fullmatch(r"```(?:markdown|md|text)?\s*\n([\s\S]*?)\n```\s*", source, flags=re.IGNORECASE)
+    if match:
+        body = match.group(1).strip()
+        return body if body else str(text or "")
+    body = re.sub(r"^```(?:markdown|md|text)?\s*\n?", "", source, flags=re.IGNORECASE).strip()
+    body = re.sub(r"\n?```\s*$", "", body).strip()
+    return body if body else str(text or "")
+
+
+def _drop_footer_metadata_lines(text: str) -> str:
+    kept: list[str] = []
+    for line in str(text or "").split("\n"):
+        stripped = line.strip()
+        normalized = re.sub(r"\s+", "", stripped)
+        if not stripped:
+            kept.append(line.rstrip())
+            continue
+        if re.match(r"^```(?:markdown|md|text)?\s*$", stripped, flags=re.IGNORECASE):
+            continue
+        if stripped in {"现在", "现在我", "现在我将", "接下来", "接下来我", "下面", "下面我"}:
+            continue
+        metadata_line = re.sub(r"\*+", "", stripped).strip()
+        if re.match(r"^(报告生成|报告编制人?|报告编号|编制人|审核人|审核|批准人?|审批人|分发范围|编制日期|报告日期|数据源|数据周期|联系方式)\s*[:：]", metadata_line):
+            continue
+        if re.match(r"^(报告生成|报告编制人?|报告编号|编制人|审核人|审核|批准人?|审批人|分发范围|编制日期|报告日期|数据源|数据周期|联系方式)\s*[:：]", stripped.replace("**", "")):
+            continue
+        if re.match(r"^(现在我将|现在调用|我将调用|接下来调用).*(文档渲染|DOCX|document_render_docx|工具)", stripped, flags=re.IGNORECASE):
+            continue
+        if re.search(r"(文档任务已提交|文档任务已创建|让我查询任务状态|查询任务状态|正在处理中)", stripped):
+            continue
+        status_line = stripped.replace("**", "")
+        if re.search(r"(任务已完成|\bstatus\s*:\s*done\b|\btitle\s*:|任务\s*ID\s*[:：]|状态\s*[:：]\s*done|标题\s*[:：]|下载链接\s*[:：])", status_line, flags=re.IGNORECASE):
+            continue
+        if re.match(r"^\|\s*(项目|字段)\s*\|\s*值\s*\|", stripped):
+            continue
+        if re.match(r"^\|\s*[-:]+\s*\|\s*[-:]+\s*\|", stripped):
+            continue
+        if normalized in {"项目值", "字段值"}:
+            continue
+        if re.search(r"(task_id|download_url|MEDIA:document_render_docx|document_render_docx)", stripped, flags=re.IGNORECASE):
+            continue
+        if "OpenClaw 文档 Agent" in stripped or "OpenClaw 文档生成系统" in stripped:
+            continue
+        if "operations@company.com" in stripped:
+            continue
+        kept.append(line.rstrip())
+    return "\n".join(kept)
+
+
+def compact_document_filename(instruction: str = "", markdown: str = "", *, max_chars: int = 10) -> str:
+    source = f"{instruction or ''}\n{markdown or ''}"
+    candidates = [
+        (r"运维手册|部署手册|使用手册|操作手册", "运维手册"),
+        (r"运维|监控巡检|备份恢复", "运维服务"),
+        (r"事故|网络中断|故障调查|事故调查|整改措施", "事故调查报告"),
+        (r"一卡通|公交支付|校园支付|停车管理|电子钱包", "一卡通投标文件"),
+        (r"投标|标书|招标", "投标技术文件"),
+        (r"月度运营|运营分析", "月度运营报告"),
+        (r"周报", "项目周报"),
+        (r"日报", "工作日报"),
+        (r"实施方案|部署方案", "实施方案"),
+        (r"技术方案", "技术方案"),
+        (r"安全设计", "安全设计"),
+        (r"售后", "运维服务"),
+    ]
+    for pattern, title in candidates:
+        if re.search(pattern, source):
+            return title[:max_chars]
+    heading = re.search(r"(?m)^#\s+(.+?)\s*$", str(markdown or ""))
+    value = heading.group(1) if heading else str(instruction or "文档").strip()
+    value = re.sub(r"[《》“”\"'（）()\[\]【】]", "", value)
+    value = re.sub(r"^(请|帮我|根据以下数据|编写|撰写|生成|输出|制作|一份)+", "", value)
+    value = re.sub(r"(技术部分|正式文档|Word文档|word文档|文档)$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", value)
+    return (value or "文档")[:max_chars]
+
+
+_LONG_DOCUMENT_KEYWORDS = [
+    "运维手册",
+    "部署手册",
+    "使用手册",
+    "操作手册",
+    "SOP",
+    "技术方案",
+    "项目方案",
+    "实施方案",
+    "投标文件",
+    "需求规格说明书",
+    "说明书",
+    "制度",
+    "报告",
+    "方案",
+    "手册",
+    "运维",
+    "部署",
+    "实施",
+    "技术文档",
+    "详细",
+    "完整",
+    "全面",
+    "超详细",
+]
+
+
+def should_use_document_chunk_mode(
+    content: str,
+    *,
+    estimated_sections: int = 0,
+    estimated_chars: int = 0,
+    max_tokens_risk: bool = False,
+) -> bool:
+    text = str(content or "")
+    if not text.strip():
+        return False
+    if max_tokens_risk:
+        return True
+    if estimated_sections and estimated_sections > 5:
+        return True
+    if estimated_chars and estimated_chars >= 3000:
+        return True
+    if re.search(r"(不少于|至少|超过|大于)?\s*[3-9]\d{3,}\s*(字|中文字|字符)", text):
+        return True
+    if re.search(r"(不少于|至少|超过|大于)?\s*[1-9]\d{4,}\s*(字|中文字|字符)", text):
+        return True
+    chapter_matches = re.findall(r"第[一二三四五六七八九十\d]+章|(?:^|\n)\s*\d+[\.、]\s*\S+", text)
+    if len(chapter_matches) > 5:
+        return True
+    lowered = text.lower()
+    return any(keyword.lower() in lowered for keyword in _LONG_DOCUMENT_KEYWORDS)
+
+
+def build_document_outline_input(
+    *,
+    content: str,
+    conversation_id: int,
+    user_id: int,
+    attachment_context: str = "",
+) -> str:
+    lines = [
+        "你正在为文档页生成后台大纲。这一步用户不可见，只用于 generation_state 控制长文分段。",
+        "只返回 JSON，不要输出 markdown，不要解释，不要调用任何工具。",
+        "JSON 结构必须包含 title 和 outline；outline 是章节数组，每项包含 id、title、level、writing_goal、children。",
+        "必须覆盖用户要求的所有章节；如果用户指定了章节名称，按原顺序保留。",
+        "建议一级章节 6-10 个，每个一级章节可包含必要二级/三级小节。",
+        "必须包含 generation_state 初始字段：current_section_id、completed_sections、chunk_index、is_final_chunk、estimated_total_chunks。",
+        f"conversation_id={int(conversation_id)}",
+        f"user_id={int(user_id)}",
+        "",
+        "用户原始需求：",
+        str(content or "").strip(),
+    ]
+    if attachment_context:
+        lines.extend(["", "附件解析摘要：", attachment_context.strip()])
+    return "\n".join(lines).strip()
+
+
+def _default_outline_title(content: str) -> str:
+    if "运维" in content:
+        return "运维手册"
+    if "需求规格" in content or "SRS" in content.upper():
+        return "软件需求规格说明书"
+    if "投标" in content or "标书" in content:
+        return "投标技术文件"
+    if "事故" in content or "故障" in content:
+        return "事故调查报告"
+    if "运营" in content:
+        return "运营分析报告"
+    if "方案" in content:
+        return "技术方案"
+    return compact_document_filename(content, max_chars=12) or "正式文档"
+
+
+def build_fallback_document_outline(content: str, *, max_sections: int = 10) -> dict[str, Any]:
+    text = str(content or "")
+    title = _default_outline_title(text)
+    explicit: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip(" \t\r\n*-•")
+        if not line:
+            continue
+        line = re.sub(r"^\d+[\.、]\s*", "", line).strip()
+        if re.match(r"^第[一二三四五六七八九十\d]+章\s*", line):
+            explicit.append(line)
+            continue
+        if len(line) <= 24 and re.search(r"(概述|需求|架构|设计|方案|部署|实施|测试|运维|保障|接口|数据库|安全|服务)", line):
+            explicit.append(line)
+    if len(explicit) < 3:
+        if "运维" in text:
+            explicit = ["系统概述", "运行环境", "部署与发布", "监控巡检", "备份恢复", "故障处理", "安全管理", "应急预案", "运维SOP", "附录"]
+        elif "需求规格" in text or "SRS" in text.upper():
+            explicit = ["项目概述", "功能需求", "非功能需求", "系统架构", "数据库设计", "接口设计", "部署方案", "测试方案"]
+        elif "投标" in text:
+            explicit = ["项目理解", "技术方案", "安全设计", "实施方案", "运维服务", "售后保障"]
+        else:
+            explicit = ["项目概述", "需求分析", "总体方案", "详细设计", "实施计划", "质量保障", "运维支持", "风险控制"]
+    sections = []
+    seen: set[str] = set()
+    for index, name in enumerate(explicit[:max_sections], start=1):
+        clean = re.sub(r"^第[一二三四五六七八九十\d]+章\s*", "", name).strip(" ：:")
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        sections.append({
+            "id": str(len(sections) + 1),
+            "title": clean,
+            "level": 1,
+            "writing_goal": f"围绕“{clean}”展开，结合用户原始需求写成正式文档正文。",
+            "children": [],
+        })
+    return {"title": title, "outline": ensure_outline_covers_requirements(sections, text)[:max_sections]}
+
+
+def parse_document_outline_response(text: str, *, fallback_content: str = "") -> dict[str, Any]:
+    source = str(text or "").strip()
+    if source.startswith("```"):
+        source = _strip_full_document_code_fence(source)
+    candidates = [source]
+    match = re.search(r"\{[\s\S]*\}", source)
+    if match:
+        candidates.insert(0, match.group(0))
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except Exception:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        outline = parsed.get("outline")
+        if isinstance(outline, list) and outline:
+            title = str(parsed.get("title") or _default_outline_title(fallback_content)).strip()
+            return {"title": title, "outline": ensure_outline_covers_requirements(_normalize_document_outline(outline), fallback_content)}
+    return build_fallback_document_outline(fallback_content)
+
+
+def _normalize_document_outline(outline: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(outline, start=1):
+        if isinstance(item, str):
+            title = item.strip()
+            raw_children: list[Any] = []
+            level = 1
+            writing_goal = ""
+        elif isinstance(item, dict):
+            title = str(item.get("title") or item.get("name") or "").strip()
+            raw_children = item.get("children") if isinstance(item.get("children"), list) else []
+            try:
+                level = int(item.get("level") or 1)
+            except Exception:
+                level = 1
+            writing_goal = str(item.get("writing_goal") or item.get("goal") or "").strip()
+        else:
+            continue
+        if not title:
+            continue
+        section_id = str(item.get("id") if isinstance(item, dict) and item.get("id") else len(normalized) + 1)
+        normalized.append({
+            "id": section_id,
+            "title": title[:80],
+            "level": max(1, min(level, 3)),
+            "writing_goal": writing_goal[:300] or f"完成“{title}”章节正文。",
+            "children": _normalize_document_outline(raw_children) if raw_children else [],
+        })
+    return normalized
+
+
+def _document_outline_sections(outline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [item for item in outline if isinstance(item, dict) and str(item.get("id") or "").strip()]
+
+
+def ensure_outline_covers_requirements(outline: list[Any], content: str) -> list[dict[str, Any]]:
+    """Append explicit user-requested modules that the model outline missed."""
+    normalized = _normalize_document_outline(outline)
+    text = str(content or "")
+    required_candidates = [
+        "统一身份认证",
+        "身份认证",
+        "权限管理",
+        "数据加密",
+        "日志审计",
+        "漏洞管理",
+        "灾备方案",
+        "备份恢复",
+        "公交支付",
+        "校园支付",
+        "停车管理",
+        "电子钱包",
+        "项目概述",
+        "功能需求",
+        "非功能需求",
+        "系统架构",
+        "数据库设计",
+        "接口设计",
+        "部署方案",
+        "测试方案",
+        "安全设计",
+        "实施方案",
+        "运维服务",
+        "售后保障",
+    ]
+    required: list[str] = []
+    for name in required_candidates:
+        if name in text and not any(name in existing for existing in required):
+            required.append(name)
+
+    def matches_existing(name: str) -> bool:
+        for section in normalized:
+            title = str(section.get("title") or "")
+            if name in title or title in name:
+                return True
+        return False
+
+    for name in required:
+        if matches_existing(name):
+            continue
+        normalized.append({
+            "id": str(len(normalized) + 1),
+            "title": name,
+            "level": 1,
+            "writing_goal": f"围绕用户明确要求的“{name}”模块展开，写成正式文档正文。",
+            "children": [],
+        })
+
+    renumbered: list[dict[str, Any]] = []
+    for index, section in enumerate(normalized, start=1):
+        item = dict(section)
+        item["id"] = str(index)
+        renumbered.append(item)
+    return renumbered
+
+
+def create_document_generation_state(
+    *,
+    doc_id: int | str,
+    outline: list[dict[str, Any]],
+    title: str = "",
+) -> dict[str, Any]:
+    normalized_outline = _normalize_document_outline(outline)
+    sections = _document_outline_sections(normalized_outline)
+    first_id = str(sections[0].get("id")) if sections else ""
+    return {
+        "doc_id": str(doc_id),
+        "mode": "chunked_document",
+        "title": title or "正式文档",
+        "outline": normalized_outline,
+        "current_section_id": first_id,
+        "completed_sections": [],
+        "chunk_index": 0,
+        "last_output_tail": "",
+        "full_markdown": "",
+        "is_final_chunk": False,
+        "estimated_total_chunks": len(sections),
+        "status": "generating",
+    }
+
+
+def _current_generation_section(generation_state: dict[str, Any]) -> dict[str, Any]:
+    current_id = str((generation_state or {}).get("current_section_id") or "").strip()
+    for section in _document_outline_sections((generation_state or {}).get("outline") or []):
+        if str(section.get("id") or "").strip() == current_id:
+            return section
+    sections = _document_outline_sections((generation_state or {}).get("outline") or [])
+    return sections[0] if sections else {}
+
+
+def _clip_text(text: str, limit: int) -> str:
+    value = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _extract_required_sections(content: str, outline: list[dict[str, Any]] | None = None) -> list[str]:
+    text = str(content or "")
+    candidates = [
+        "身份认证", "统一身份认证", "权限管理", "数据加密", "日志审计", "漏洞管理", "灾备方案",
+        "等级保护三级", "数据安全法", "个人信息保护法", "公交支付", "校园支付", "停车管理", "电子钱包",
+        "项目概述", "功能需求", "非功能需求", "系统架构", "数据库设计", "接口设计", "部署方案", "测试方案",
+    ]
+    required: list[str] = []
+    for item in candidates:
+        if item in text and item not in required:
+            required.append(item)
+    if not required:
+        for section in _document_outline_sections(outline or []):
+            title = str(section.get("title") or "").strip()
+            if title and title not in required:
+                required.append(title)
+            if len(required) >= 8:
+                break
+    return required[:12]
+
+
+def _outline_neighbor_titles(generation_state: dict[str, Any]) -> tuple[str, str]:
+    sections = _document_outline_sections((generation_state or {}).get("outline") or [])
+    current_id = str((generation_state or {}).get("current_section_id") or "").strip()
+    current_index = next((idx for idx, section in enumerate(sections) if str(section.get("id") or "") == current_id), -1)
+    previous_title = str(sections[current_index - 1].get("title") or "") if current_index > 0 else ""
+    next_title = str(sections[current_index + 1].get("title") or "") if 0 <= current_index < len(sections) - 1 else ""
+    return previous_title, next_title
+
+
+def _section_slice(section: dict[str, Any]) -> dict[str, Any]:
+    children = []
+    for child in (section or {}).get("children") or []:
+        if not isinstance(child, dict):
+            continue
+        children.append({
+            "id": str(child.get("id") or "")[:24],
+            "title": _clip_text(str(child.get("title") or ""), 48),
+            "goal": _clip_text(str(child.get("writing_goal") or child.get("goal") or ""), 100),
+        })
+        if len(children) >= 5:
+            break
+    return {
+        "id": str((section or {}).get("id") or ""),
+        "title": _clip_text(str((section or {}).get("title") or ""), 80),
+        "level": int((section or {}).get("level") or 1) if str((section or {}).get("level") or "1").isdigit() else 1,
+        "goal": _clip_text(str((section or {}).get("writing_goal") or (section or {}).get("goal") or ""), 220),
+        "children": children,
+    }
+
+
+def build_document_prompt_budget(
+    *,
+    user_prompt: str,
+    outline_text: str = "",
+    state_text: str = "",
+    tail_text: str = "",
+    system_prompt_chars: int = 0,
+    max_allowed_chars: int = 8000,
+) -> dict[str, Any]:
+    user_prompt_chars = len(str(user_prompt or ""))
+    outline_chars = len(str(outline_text or ""))
+    state_chars = len(str(state_text or ""))
+    tail_chars = len(str(tail_text or ""))
+    total_chars = int(system_prompt_chars or 0) + user_prompt_chars + outline_chars + state_chars + tail_chars
+    compressed = user_prompt_chars > 3000 or outline_chars > 800 or tail_chars > 500 or total_chars > int(max_allowed_chars * 0.85)
+    status = "overflow_blocked" if total_chars > max_allowed_chars else ("compressed" if compressed else "ok")
+    return {
+        "system_prompt_chars": int(system_prompt_chars or 0),
+        "user_prompt_chars": user_prompt_chars,
+        "outline_chars": outline_chars,
+        "state_chars": state_chars,
+        "tail_chars": tail_chars,
+        "total_chars": total_chars,
+        "max_allowed_chars": int(max_allowed_chars),
+        "budget_status": status,
+    }
+
+
+def build_document_chunk_input(
+    *,
+    content: str,
+    generation_state: dict[str, Any],
+    conversation_id: int,
+    user_id: int,
+    attachment_context: str = "",
+) -> str:
+    current_section = _current_generation_section(generation_state)
+    outline_sections = _document_outline_sections((generation_state or {}).get("outline") or [])
+    completed = [str(item) for item in (generation_state or {}).get("completed_sections") or []]
+    tail = str((generation_state or {}).get("last_output_tail") or "")[-500:]
+    is_final = bool((generation_state or {}).get("is_final_chunk"))
+    previous_title, next_title = _outline_neighbor_titles(generation_state)
+    section_slice = _section_slice(current_section)
+    required_sections = _extract_required_sections(content, outline_sections)
+    request_summary = _clip_text(content, 800)
+    lines = [
+        "你是文档章节续写器，只生成当前章节的 markdown 正文。",
+        "不要调用 document_render_docx、document_task_status、download_url 或任何工具。",
+        "禁止输出“下面继续”“第 2 段开始”“由于篇幅限制”“我将分几次生成”“未完待续”。",
+        "不能重写前文，不要跳章，不要总结全文，不要输出分段说明、模型自述或 JSON。",
+        "当前章节完成时，末尾单独输出内部标记：<!--SECTION_COMPLETE:%s-->" % (section_slice.get("id") or ""),
+        f"conversation_id={int(conversation_id)}",
+        f"user_id={int(user_id)}",
+        f"当前 cursor/current_section_id：{generation_state.get('current_section_id') or ''}",
+        "",
+        f"文档标题：{generation_state.get('title') or _default_outline_title(content)}",
+        f"用户需求摘要：{request_summary}",
+        f"必备模块：{('、'.join(required_sections) if required_sections else '按用户需求覆盖')}",
+        f"当前章节：{json.dumps(section_slice, ensure_ascii=False)}",
+        f"上一章节：{previous_title or '无'}",
+        f"下一章节：{next_title or '无'}",
+        f"已完成章节：{', '.join(completed) if completed else '无'}",
+        f"chunk_index：{generation_state.get('chunk_index', 0)}；is_final_chunk：{str(is_final).lower()}",
+        "",
+        "上一段输出末尾 continuation context：",
+        tail or "无",
+    ]
+    if attachment_context:
+        lines.extend(["", "附件摘要：", _clip_text(attachment_context, 500)])
+    lines.extend([
+        "",
+        "本次任务：从上一段尾部自然续写当前章节。非最终章节禁止全文总结。",
+    ])
+    return "\n".join(lines).strip()
+
+
+def constrain_document_summary(text: str, *, max_chars: int = 150) -> str:
+    source = prepare_document_text_for_display(text)
+    source = _strip_full_document_code_fence(source)
+    if len(source) > 300 or re.search(r"(^|\n)\s*#{1,6}\s|第[一二三四五六七八九十\d]+章|<!--SECTION_COMPLETE:", source):
+        return "我会根据你的要求生成结构完整的正式文档，覆盖指定法规要求和核心模块。接下来将按章节连续输出正文，并在全文完成后生成可下载文档。"
+    lines = []
+    for raw in source.splitlines():
+        line = raw.strip(" #*\t\r\n")
+        if not line or re.search(r"第[一二三四五六七八九十\d]+章|^[-*]\s+", line):
+            continue
+        lines.append(line)
+        if len("".join(lines)) >= max_chars:
+            break
+    summary = re.sub(r"\s+", " ", " ".join(lines)).strip()
+    if not summary:
+        summary = "我会根据你的要求生成结构完整的正式文档，并在正文完成后生成可下载文档。"
+    return summary[:max_chars].rstrip()
+
+
+def clean_document_chunk_output(text: str) -> str:
+    source = prepare_document_text_for_display(text)
+    source = _strip_full_document_code_fence(source)
+    source = _remove_openclaw_empty_placeholder(source)
+    source = _remove_document_section_complete_markers(source)
+    forbidden = [
+        r"^\s*下面继续[：:]?\s*",
+        r"^\s*第\s*\d+\s*段开始[：:]?\s*",
+        r"由于篇幅限制[，,。]?",
+        r"我将分几次生成[，,。]?",
+        r"未完待续[。.]?",
+    ]
+    for pattern in forbidden:
+        source = re.sub(pattern, "", source, flags=re.IGNORECASE | re.MULTILINE)
+    return _drop_footer_metadata_lines(source).strip()
+
+
+def update_document_generation_state(
+    generation_state: dict[str, Any],
+    chunk_text: str,
+    *,
+    stop_reason: str = "",
+    tail_chars: int = 800,
+) -> dict[str, Any]:
+    state = dict(generation_state or {})
+    outline = _document_outline_sections(state.get("outline") or [])
+    current_id = str(state.get("current_section_id") or "").strip()
+    completed = [str(item) for item in state.get("completed_sections") or []]
+    clean_chunk = clean_document_chunk_output(chunk_text)
+    full_markdown = clean_document_chunk_output(str(state.get("full_markdown") or ""))
+    if clean_chunk:
+        full_markdown = f"{full_markdown.rstrip()}\n\n{clean_chunk.strip()}".strip()
+    should_continue = should_continue_document_chunk(state, stop_reason=stop_reason, chunk_text=clean_chunk)
+    if current_id and current_id not in completed and not should_continue:
+        completed.append(current_id)
+    remaining = [section for section in outline if str(section.get("id") or "") not in completed]
+    next_id = current_id if should_continue else (str(remaining[0].get("id")) if remaining else "")
+    state.update({
+        "completed_sections": completed,
+        "current_section_id": next_id,
+        "chunk_index": int(state.get("chunk_index") or 0) + 1,
+        "last_output_tail": full_markdown[-max(300, min(tail_chars, 800)):],
+        "full_markdown": full_markdown,
+        "last_stop_reason": str(stop_reason or "").strip().lower(),
+        "is_final_chunk": not bool(next_id) and not should_continue,
+        "estimated_total_chunks": int(state.get("estimated_total_chunks") or len(outline)),
+        "status": "generating" if should_continue else ("completed" if not next_id else "generating"),
+    })
+    return state
+
+
+def extract_openclaw_stop_reason(payload: Any) -> str:
+    found: list[str] = []
+
+    def walk(value: Any) -> None:
+        if found:
+            return
+        if isinstance(value, dict):
+            for key in ("stopReason", "stop_reason", "finish_reason", "finishReason"):
+                reason = value.get(key)
+                if reason:
+                    found.append(str(reason).strip().lower())
+                    return
+            for nested in value.values():
+                walk(nested)
+                if found:
+                    return
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+                if found:
+                    return
+
+    walk(payload)
+    return found[0] if found else ""
+
+
+def should_continue_document_chunk(
+    generation_state: dict[str, Any] | None,
+    *,
+    stop_reason: str = "",
+    chunk_text: str = "",
+) -> bool:
+    reason = str(stop_reason or "").strip().lower()
+    if reason in {"length", "max_tokens", "max_token", "token_limit", "context_length"}:
+        return True
+    text = str(chunk_text or "").strip()
+    if not text:
+        return False
+    incomplete_tails = ("，", "、", "：", "；", "（", "(", "的", "和", "与", "及", "说明", "应急")
+    if text.endswith(incomplete_tails) and (generation_state or {}).get("current_section_id"):
+        return True
+    return False
+
+
+def extract_openclaw_prompt_error(payload: Any) -> dict[str, str]:
+    found: list[str] = []
+
+    def walk(value: Any) -> None:
+        if found:
+            return
+        if isinstance(value, dict):
+            for key in ("promptError", "prompt_error", "errorMessage", "error_message", "errorBody", "error_body", "error", "message"):
+                raw = value.get(key)
+                if isinstance(raw, str) and raw.strip():
+                    raw_text = raw.strip()
+                    if key in {"errorBody", "error_body"}:
+                        try:
+                            parsed = json.loads(raw_text)
+                        except Exception:
+                            parsed = None
+                        if isinstance(parsed, dict):
+                            walk(parsed)
+                            if found:
+                                return
+                    found.append(raw_text)
+                    return
+                if isinstance(raw, dict):
+                    walk(raw)
+                    if found:
+                        return
+            for nested in value.values():
+                walk(nested)
+                if found:
+                    return
+        elif isinstance(value, list):
+            for nested in value:
+                walk(nested)
+                if found:
+                    return
+
+    walk(payload)
+    message = found[0] if found else ""
+    lowered = message.lower()
+    if not message:
+        return {"error_type": "", "message": ""}
+    if (
+        "context overflow" in lowered
+        or "prompt too large" in lowered
+        or "context_length" in lowered
+        or "context size has been exceeded" in lowered
+        or "context size exceeded" in lowered
+    ):
+        error_type = "context_overflow"
+    elif "precheck" in lowered:
+        error_type = "precheck_failed"
+    else:
+        error_type = "openclaw_error"
+    return {"error_type": error_type, "message": message}
+
+
+def classify_openclaw_provider_error(exc: Any, *, provider_url: str = "") -> dict[str, str]:
+    message = str(exc or "")
+    lowered = message.lower()
+    if (
+        "context overflow" in lowered
+        or "prompt too large" in lowered
+        or "context size has been exceeded" in lowered
+        or "context size exceeded" in lowered
+    ):
+        error_type = "context_overflow"
+    elif isinstance(exc, ConnectionRefusedError) or "econnrefused" in lowered or "connection refused" in lowered:
+        error_type = "connection_refused"
+    elif "timeout" in lowered or "timed out" in lowered:
+        error_type = "timeout"
+    elif "empty" in lowered or "no content" in lowered:
+        error_type = "empty_response"
+    elif "network" in lowered or "urlopen error" in lowered:
+        error_type = "network_error"
+    else:
+        error_type = "provider_error"
+    display = "192.168.1.212:8081"
+    match = re.search(r"(\d+\.\d+\.\d+\.\d+:\d+)", provider_url)
+    if match:
+        display = match.group(1)
+    if error_type == "context_overflow":
+        user_message = "当前文档生成请求过大，已触发上下文限制，未生成正文。"
+    else:
+        user_message = f"大模型服务当前不可用，请检查 {display}"
+    return {
+        "error_type": error_type,
+        "message": user_message,
+        "raw_error": message,
+        "provider_url": provider_url,
+    }
+
+
+def _openclaw_provider_details(agent_id: str = "docgen") -> dict[str, str]:
+    configured = str(os.getenv("OPENCLAW_PROVIDER_BASE_URL") or "").strip()
+    if configured:
+        return {"provider_url": configured.rstrip("/"), "model": str(os.getenv("OPENCLAW_PROVIDER_MODEL") or "").strip()}
+    config_path = Path(os.getenv("OPENCLAW_CONFIG_PATH") or (Path.home() / ".openclaw/openclaw.json"))
+    try:
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"provider_url": "", "model": ""}
+    agents = ((cfg.get("agents") or {}).get("list") or [])
+    model = ""
+    for agent in agents:
+        if isinstance(agent, dict) and str(agent.get("id") or "") == agent_id:
+            model = str(agent.get("model") or "").strip()
+            break
+    if not model:
+        model = str((((cfg.get("agents") or {}).get("defaults") or {}).get("model") or {}).get("primary") or "").strip()
+    provider_name = model.split("/", 1)[0] if "/" in model else ""
+    provider = (
+        ((cfg.get("models") or {}).get("providers") or {}).get(provider_name)
+        or ((cfg.get("tools") or {}).get("providers") or {}).get(provider_name)
+        or {}
+    )
+    provider_url = str(provider.get("baseUrl") or provider.get("baseURL") or "").strip().rstrip("/")
+    model_name = model.split("/", 1)[1] if "/" in model else model
+    return {"provider_url": provider_url, "model": model_name}
+
+
+def _get_json(url: str, headers: dict[str, str] | None = None, timeout_seconds: int = 5) -> tuple[int, dict[str, Any], str]:
+    req = request.Request(url, headers=headers or {}, method="GET")
+    try:
+        with request.urlopen(req, timeout=timeout_seconds) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            payload = json.loads(raw) if raw.strip().startswith("{") else {}
+            return int(getattr(resp, "status", 200) or 200), payload, raw
+    except error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        payload = json.loads(raw) if raw.strip().startswith("{") else {}
+        return int(exc.code or 500), payload, raw
+
+
+def preflight_openclaw_provider(
+    *,
+    agent_id: str = "docgen",
+    timeout_seconds: int = 5,
+) -> dict[str, Any]:
+    details = _openclaw_provider_details(agent_id)
+    provider_url = details.get("provider_url") or ""
+    model = details.get("model") or ""
+    if not provider_url:
+        return {"ok": True, "provider_url": "", "model": model, "skipped": True}
+    base_no_v1 = re.sub(r"/v1/?$", "", provider_url)
+    headers = {"Authorization": f"Bearer {os.getenv('OPENCLAW_PROVIDER_API_KEY') or 'local'}", "Content-Type": "application/json"}
+    stages = [
+        ("health", "GET", f"{base_no_v1}/health", None),
+        ("models", "GET", f"{provider_url}/models", None),
+        ("chat_completions", "POST", f"{provider_url}/chat/completions", {
+            "model": model,
+            "messages": [{"role": "user", "content": "请只回复 OK"}],
+            "max_tokens": 8,
+            "temperature": 0,
+            "stream": False,
+        }),
+    ]
+    for stage, method, url, body in stages:
+        try:
+            if method == "GET":
+                status_code, payload, raw = _get_json(url, headers=headers, timeout_seconds=timeout_seconds)
+            else:
+                status_code, payload, raw = _post_json(url, headers, body or {}, timeout_seconds)
+            if status_code >= 400:
+                err = RuntimeError(f"{stage} returned http {status_code}: {raw[:200]}")
+                classified = classify_openclaw_provider_error(err, provider_url=provider_url)
+                return {"ok": False, "stage": stage, **classified}
+            if stage == "chat_completions":
+                text = extract_response_text(payload)
+                choices = payload.get("choices") if isinstance(payload, dict) else None
+                if not text and isinstance(choices, list) and choices:
+                    text = extract_response_text(choices[0])
+                    if not text and isinstance(choices[0], dict):
+                        message = choices[0].get("message") if isinstance(choices[0].get("message"), dict) else {}
+                        text = str(message.get("reasoning_content") or "").strip()
+                if not text:
+                    classified = classify_openclaw_provider_error(RuntimeError("empty response"), provider_url=provider_url)
+                    return {"ok": False, "stage": stage, **classified}
+        except Exception as exc:
+            classified = classify_openclaw_provider_error(exc, provider_url=provider_url)
+            return {"ok": False, "stage": stage, **classified}
+    return {"ok": True, "provider_url": provider_url, "model": model, "stage": "chat_completions"}
+
+
+def _strip_outer_separators(text: str) -> str:
+    lines = [line.rstrip() for line in str(text or "").split("\n")]
+    separator = re.compile(r"^\s*(?:-{3,}|─{3,}|—{3,}|_{3,})\s*$")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and separator.match(lines[0]):
+        lines.pop(0)
+        while lines and not lines[0].strip():
+            lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    while lines and separator.match(lines[-1]):
+        lines.pop()
+        while lines and not lines[-1].strip():
+            lines.pop()
+    return "\n".join(lines).strip()
+
+
+def prepare_document_text_for_display(text: str) -> str:
+    cleaned = _strip_document_tail(text)
+    cleaned = _strip_full_document_code_fence(cleaned)
+    cleaned = _remove_document_section_complete_markers(cleaned)
+    cleaned = _drop_footer_metadata_lines(cleaned)
+    return _strip_outer_separators(cleaned)
+
+
+def _strip_leading_summary(text: str) -> str:
+    source = str(text or "").strip()
+    if not source:
+        return ""
+    heading = re.search(r"(?m)^#(?!#)\s+\S.*$", source)
+    if heading:
+        return source[heading.start():].strip()
+    lines = source.split("\n")
+    first_nonempty = next((index for index, line in enumerate(lines) if line.strip()), None)
+    if first_nonempty is None:
+        return ""
+    first_line = lines[first_nonempty].strip()
+    looks_like_summary = bool(re.search(r"(小总结|简要总结|摘要|本周总结|总结)", first_line))
+    separator = re.compile(r"^\s*(?:-{3,}|─{3,}|—{3,}|_{3,})\s*$")
+    if looks_like_summary:
+        for index in range(first_nonempty + 1, min(len(lines), first_nonempty + 12)):
+            if separator.match(lines[index]):
+                return "\n".join(lines[index + 1:]).strip()
+        for index in range(first_nonempty + 1, min(len(lines), first_nonempty + 8)):
+            if not lines[index].strip():
+                return "\n".join(lines[index + 1:]).strip()
+    return source
+
+
+def prepare_document_markdown_for_render(text: str) -> str:
+    display_text = prepare_document_text_for_display(text)
+    display_text = _strip_full_document_code_fence(display_text)
+    body = _strip_leading_summary(display_text)
+    body = _drop_footer_metadata_lines(body)
+    return _strip_outer_separators(body)
+
+
+def extract_document_task_payload(payload: Any) -> dict[str, Any] | None:
+    if isinstance(payload, dict):
+        task_id = payload.get("task_id")
+        status = payload.get("status")
+        if task_id and status:
+            result = {
+                "task_id": str(task_id),
+                "status": str(status),
+                "workflow_type": str(payload.get("workflow_type") or "document"),
+            }
+            for key in ("title", "progress", "download_url", "file_id", "file", "status_text", "stage"):
+                if key in payload:
+                    result[key] = payload.get(key)
+            return result
+        for value in payload.values():
+            result = extract_document_task_payload(value)
+            if result:
+                return result
+    elif isinstance(payload, list):
+        for item in payload:
+            result = extract_document_task_payload(item)
+            if result:
+                return result
+    return None
+
+
+def validate_document_task_payload(task: Any) -> dict[str, Any] | None:
+    if not isinstance(task, dict):
+        return None
+    task_id = str(task.get("task_id") or "").strip()
+    status = str(task.get("status") or "").strip()
+    if not task_id or not status:
+        return None
+    normalized = dict(task)
+    normalized["task_id"] = task_id
+    normalized["status"] = status
+    return normalized
+
+
+def _document_provider_failure_text(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    status = str(payload.get("status") or "").strip().lower()
+    error_payload = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+    error_message = str((error_payload or {}).get("message") or "").strip()
+    error_code = str((error_payload or {}).get("code") or "").strip()
+    if status != "failed" and not error_message:
+        return ""
+    lowered = error_message.lower()
+    if "timeout" in lowered:
+        return "中科信创自研模型上游模型超时，本次没有创建文档任务。请稍后重试，或先缩短文档篇幅后再生成。"
+    if error_message:
+        return f"中科信创自研模型文档生成失败：{error_message}"
+    if error_code:
+        return f"中科信创自研模型文档生成失败：{error_code}"
+    return "中科信创自研模型文档生成失败，本次没有创建文档任务。"
+
+
+def extract_kb_grounding_payload(payload: Any) -> dict[str, Any] | None:
+    matches: list[dict[str, Any]] = []
+
+    def normalize_sources(raw_sources: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_sources, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for item in raw_sources:
+            if not isinstance(item, dict):
+                continue
+            normalized.append({
+                "chunk_id": item.get("chunk_id"),
+                "filename": item.get("filename"),
+                "score": item.get("score"),
+                "chunk_text": item.get("chunk_text"),
+            })
+        return normalized
+
+    def walk(node: Any, kb_context: bool = False) -> None:
+        current_kb_context = kb_context
+        if isinstance(node, dict):
+            name = str(node.get("name") or "").strip()
+            if name == "kb_search":
+                current_kb_context = True
+            passages = node.get("passages")
+            sources = node.get("sources")
+            if current_kb_context and isinstance(passages, list) and isinstance(sources, list):
+                normalized_sources = normalize_sources(sources)
+                matches.append({
+                    "grounded": bool(normalized_sources),
+                    "source_count": len(normalized_sources),
+                    "sources": normalized_sources,
+                    "passages": passages,
+                })
+            for value in node.values():
+                walk(value, current_kb_context)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item, current_kb_context)
+
+    walk(payload)
+    return matches[0] if matches else None
+
+
+def extract_kb_grounding_from_trace_rows(
+    rows: list[str],
+    known_call_ids: set[str] | None = None,
+) -> dict[str, Any] | None:
+    known_call_ids = known_call_ids or set()
+    for raw in reversed(rows):
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("tool_name") or "").strip() != "kb_search":
+            continue
+        if str(payload.get("status") or "").strip() not in {"validated", "completed"}:
+            continue
+        call_id = str(payload.get("call_id") or "").strip()
+        if call_id and call_id in known_call_ids:
+            continue
+        result_snapshot = payload.get("result_snapshot") or {}
+        if not isinstance(result_snapshot, dict):
+            continue
+        sources = result_snapshot.get("sources")
+        passages = result_snapshot.get("passages")
+        if not isinstance(sources, list) or not isinstance(passages, list):
+            continue
+        normalized_sources = []
+        for item in sources:
+            if not isinstance(item, dict):
+                continue
+            normalized_sources.append({
+                "chunk_id": item.get("chunk_id"),
+                "filename": item.get("filename"),
+                "score": item.get("score"),
+                "chunk_text": item.get("chunk_text"),
+            })
+        return {
+            "call_id": call_id,
+            "grounded": bool(normalized_sources),
+            "source_count": len(normalized_sources),
+            "sources": normalized_sources,
+            "passages": passages,
+        }
+    return None
+
+
+def load_tool_trace_call_ids(tool_name: str, trace_dir: str = "") -> set[str]:
+    path = _resolve_tool_trace_path(tool_name, trace_dir)
+    if not path.exists():
+        return set()
+    call_ids: set[str] = set()
+    try:
+        for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            call_id = str(payload.get("call_id") or "").strip()
+            if call_id:
+                call_ids.add(call_id)
+    except Exception:
+        return set()
+    return call_ids
+
+
+def load_latest_tool_trace_result(
+    tool_name: str,
+    *,
+    known_call_ids: set[str] | None = None,
+    trace_dir: str = "",
+    allowed_statuses: set[str] | None = None,
+) -> dict[str, Any] | None:
+    path = _resolve_tool_trace_path(tool_name, trace_dir)
+    if not path.exists():
+        return None
+    try:
+        rows = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+
+    known_call_ids = known_call_ids or set()
+    allowed_statuses = allowed_statuses or {"validated", "completed"}
+    for raw in reversed(rows):
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("tool_name") or "").strip() != tool_name:
+            continue
+        if str(payload.get("status") or "").strip() not in allowed_statuses:
+            continue
+        call_id = str(payload.get("call_id") or "").strip()
+        if call_id and call_id in known_call_ids:
+            continue
+        result_snapshot = payload.get("result_snapshot") or {}
+        if not isinstance(result_snapshot, dict):
+            continue
+        return {
+            "call_id": call_id,
+            "status": str(payload.get("status") or "").strip(),
+            "result_snapshot": result_snapshot,
+            "input_snapshot": payload.get("input_snapshot") or {},
+            "previous_step_hint": payload.get("previous_step_hint"),
+        }
+    return None
+
+
+def wait_for_tool_trace_result(
+    tool_name: str,
+    *,
+    known_call_ids: set[str] | None = None,
+    trace_dir: str = "",
+    wait_seconds: float = 3.0,
+    poll_seconds: float = 0.25,
+    allowed_statuses: set[str] | None = None,
+) -> dict[str, Any] | None:
+    deadline = time.time() + max(0.0, wait_seconds)
+    latest = None
+    while time.time() <= deadline:
+        latest = load_latest_tool_trace_result(
+            tool_name,
+            known_call_ids=known_call_ids,
+            trace_dir=trace_dir,
+            allowed_statuses=allowed_statuses,
+        )
+        if latest:
+            return latest
+        time.sleep(max(0.05, poll_seconds))
+    return latest
+
+
+def load_latest_tts_result_from_trace(known_call_ids: set[str] | None = None, trace_dir: str = "") -> dict[str, Any] | None:
+    record = load_latest_tool_trace_result("synthesize_speech", known_call_ids=known_call_ids, trace_dir=trace_dir)
+    if not record:
+        return None
+    result_snapshot = record.get("result_snapshot") or {}
+    task_id = str(result_snapshot.get("task_id") or "").strip()
+    audio_url = str(result_snapshot.get("audio_url") or "").strip()
+    mime_type = str(result_snapshot.get("mime_type") or "").strip()
+    if not task_id or not audio_url or not mime_type.startswith("audio/"):
+        return None
+    return {
+        "call_id": record.get("call_id"),
+        "task_id": task_id,
+        "audio_url": audio_url,
+        "mime_type": mime_type,
+        "audio_bytes": result_snapshot.get("audio_bytes"),
+    }
+
+
+def wait_for_tts_result_from_trace(
+    known_call_ids: set[str] | None = None,
+    trace_dir: str = "",
+    wait_seconds: float = 3.0,
+    poll_seconds: float = 0.25,
+) -> dict[str, Any] | None:
+    deadline = time.time() + max(0.0, wait_seconds)
+    latest = None
+    while time.time() <= deadline:
+        latest = load_latest_tts_result_from_trace(known_call_ids=known_call_ids, trace_dir=trace_dir)
+        if latest:
+            return latest
+        time.sleep(max(0.05, poll_seconds))
+    return latest
+
+
+def load_latest_asr_result_from_trace(known_call_ids: set[str] | None = None, trace_dir: str = "") -> dict[str, Any] | None:
+    record = load_latest_tool_trace_result("transcribe_audio", known_call_ids=known_call_ids, trace_dir=trace_dir)
+    if not record:
+        return None
+    result_snapshot = record.get("result_snapshot") or {}
+    transcript = str(result_snapshot.get("text") or "").strip()
+    backend = str(result_snapshot.get("backend") or "").strip()
+    mode = str(result_snapshot.get("mode") or "").strip()
+    task_id = str(record.get("call_id") or result_snapshot.get("task_id") or "").strip()
+    if not transcript or not backend or not mode or not task_id:
+        return None
+    return {
+        "call_id": record.get("call_id"),
+        "task_id": task_id,
+        "transcript": transcript,
+        "raw_transcript": str(result_snapshot.get("raw_transcript") or transcript).strip(),
+        "backend": backend,
+        "mode": mode,
+        "file_id": result_snapshot.get("file_id"),
+        "filename": result_snapshot.get("filename"),
+        "voice_events": list(result_snapshot.get("voice_events") or []),
+        "voice_state": dict(result_snapshot.get("voice_state") or {}),
+        "voice_event": dict(result_snapshot.get("voice_event") or {}),
+    }
+
+
+def wait_for_asr_result_from_trace(
+    known_call_ids: set[str] | None = None,
+    trace_dir: str = "",
+    wait_seconds: float = 3.0,
+    poll_seconds: float = 0.25,
+) -> dict[str, Any] | None:
+    deadline = time.time() + max(0.0, wait_seconds)
+    latest = None
+    while time.time() <= deadline:
+        latest = load_latest_asr_result_from_trace(known_call_ids=known_call_ids, trace_dir=trace_dir)
+        if latest:
+            return latest
+        time.sleep(max(0.05, poll_seconds))
+    return latest
+
+
+def load_kb_trace_call_ids(trace_dir: str = "") -> set[str]:
+    return load_tool_trace_call_ids("kb_search", trace_dir)
+
+
+def load_kb_grounding_from_trace(known_call_ids: set[str] | None = None, trace_dir: str = "") -> dict[str, Any] | None:
+    path = _resolve_tool_trace_path("kb_search", trace_dir)
+    if not path.exists():
+        return None
+    try:
+        rows = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return None
+    return extract_kb_grounding_from_trace_rows(rows, known_call_ids=known_call_ids)
+
+
+def _resolve_tool_trace_path(tool_name: str, trace_dir: str = "") -> Path:
+    candidates: list[Path] = []
+    configured = trace_dir.strip() or os.getenv("OPENCLAW_TOOL_TRACE_DIR") or ""
+    if configured:
+        candidates.append(Path(configured))
+    candidates.append(Path(".openclaw/state/runtime"))
+    candidates.append(Path.home() / ".openclaw/state/runtime")
+    for base in candidates:
+        path = base / f"{tool_name}.jsonl"
+        if path.exists():
+            return path
+    return candidates[0] / f"{tool_name}.jsonl"
+
+
+def wait_for_kb_grounding_from_trace(
+    known_call_ids: set[str] | None = None,
+    trace_dir: str = "",
+    wait_seconds: float = 3.0,
+    poll_seconds: float = 0.25,
+) -> dict[str, Any] | None:
+    deadline = time.time() + max(0.0, wait_seconds)
+    latest = None
+    while time.time() <= deadline:
+        latest = load_kb_grounding_from_trace(known_call_ids=known_call_ids, trace_dir=trace_dir)
+        if latest:
+            return latest
+        time.sleep(max(0.05, poll_seconds))
+    return latest
+
+
+def extract_response_text(payload: Any) -> str:
+    found: list[str] = []
+
+    def add(text: Any) -> None:
+        if not isinstance(text, str):
+            return
+        value = text.strip()
+        if _is_openclaw_empty_placeholder(value):
+            return
+        if value and value not in found:
+            found.append(value)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            node_type = str(node.get("type") or "").strip().lower()
+            if isinstance(node.get("output_text"), str):
+                add(node.get("output_text"))
+            if node_type in {"output_text", "text"} and isinstance(node.get("text"), str):
+                add(node.get("text"))
+            if isinstance(node.get("content"), str):
+                add(node.get("content"))
+            if isinstance(node.get("message"), str):
+                add(node.get("message"))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(payload)
+    return "\n".join(found).strip()
+
+
+def parse_openclaw_sse_event(raw_line: str, pending_event: str = "") -> tuple[str, dict[str, Any] | None]:
+    line = (raw_line or "").strip()
+    if not line:
+        return pending_event, None
+    if line.startswith("event: "):
+        return line[7:].strip(), None
+    if not line.startswith("data: "):
+        return pending_event, None
+    data = line[6:].strip()
+    if data == "[DONE]":
+        return pending_event, {"type": "[DONE]"}
+    try:
+        payload = json.loads(data)
+    except Exception:
+        return pending_event, None
+    event_type = str(payload.get("type") or pending_event or "").strip()
+    return pending_event, {"event": event_type, "payload": payload}
+
+
+def extract_openclaw_stream_delta(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    payload_type = str(payload.get("type") or "").strip()
+    if payload_type == "response.output_text.delta":
+        return str(payload.get("delta") or "")
+    if payload_type == "response.output_text.done":
+        return str(payload.get("text") or "")
+    if payload_type in {"response.output_item.done", "response.completed"}:
+        return extract_response_text(payload)
+    if payload_type == "response.output_item.added":
+        return extract_response_text(payload)
+    return ""
+
+
+def extract_openclaw_completed_text(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    if str(payload.get("type") or "").strip() != "response.completed":
+        return ""
+    response = payload.get("response")
+    return extract_response_text(response) if response is not None else ""
+
+
+def collect_openclaw_done_flag(events: list[dict[str, Any]] | None) -> bool:
+    for item in events or []:
+        payload = (item or {}).get("payload") or {}
+        if str(payload.get("type") or "").strip() == "response.completed":
+            return True
+    return False
+
+
+def collect_openclaw_text_fragments(events: list[dict[str, Any]] | None) -> str:
+    collected: list[str] = []
+    seen: set[str] = set()
+    for item in events or []:
+        payload = (item or {}).get("payload") or {}
+        text = (
+            extract_openclaw_stream_delta(payload)
+            if str(payload.get("type") or "").strip() != "response.completed"
+            else extract_openclaw_completed_text(payload)
+        )
+        value = str(text or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        collected.append(value)
+    if not collected:
+        return ""
+    final_text = collected[-1]
+    if len(collected) > 1 and final_text == "".join(collected[:-1]):
+        return final_text
+    return "".join(collected)
+
+
+def normalize_grounding_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    payload = payload or {}
+    raw_sources = payload.get("sources")
+    normalized_sources: list[dict[str, Any]] = []
+    if isinstance(raw_sources, list):
+        for item in raw_sources:
+            if not isinstance(item, dict):
+                continue
+            normalized_sources.append({
+                "chunk_id": item.get("chunk_id"),
+                "filename": item.get("filename"),
+                "score": item.get("score"),
+                "chunk_text": item.get("chunk_text"),
+            })
+    grounded = bool(payload.get("grounded"))
+    source_count = len(normalized_sources)
+    if grounded and source_count <= 0:
+        grounded = False
+    return {
+        "grounded": grounded,
+        "source_count": source_count,
+        "sources": normalized_sources,
+    }
+
+
+def synthesize_document_reply(task: dict[str, Any] | None, response_text: str) -> str:
+    text = (response_text or "").strip()
+    if task:
+        lowered = text.lower()
+        queue_receipt_markers = [
+            "task id",
+            "状态: 已加入队列",
+            "文档生成任务已提交",
+            '"object":"response"',
+            '"model":"openclaw/docgen"',
+        ]
+        if (not text) or any(marker in lowered for marker in queue_receipt_markers):
+            return "中科信创自研模型已受理文档生成任务，正在后台生成，请稍候查看结果。"
+        if text:
+            return text
+        return "中科信创自研模型已受理文档生成任务，正在后台生成，请稍候查看结果。"
+    repair = (
+        "中科信创自研模型这一步没有产出有效的文档任务。"
+        "请回到上一步检查 tool 参数、conversation_id、user_id、Gateway token 和 provider 的 tool calling 后再重试。"
+    )
+    return f"{text}\n\n{repair}".strip() if text else repair
+
+
+def finalize_document_outcome(task: dict[str, Any] | None, response_text: str, timed_out: bool = False) -> dict[str, Any]:
+    normalized_task = validate_document_task_payload(task)
+    if normalized_task:
+        return {
+            "task_detected": True,
+            "task": normalized_task,
+            "reply_text": synthesize_document_reply(normalized_task, response_text),
+            "status": "task_detected",
+            "timed_out": bool(timed_out),
+        }
+    if timed_out:
+        reply_text = (
+            "中科信创自研模型在当前等待窗口内没有产出可校验的文档任务。"
+            "请回到上一步检查 tool 参数、conversation_id、user_id、Gateway token 和 provider 的 tool calling 后再重试。"
+        )
+        if response_text.strip():
+            reply_text = f"{response_text.strip()}\n\n{reply_text}"
+        return {
+            "task_detected": False,
+            "task": None,
+            "reply_text": reply_text,
+            "status": "timeout_without_task",
+            "timed_out": True,
+        }
+    return {
+        "task_detected": False,
+        "task": None,
+        "reply_text": synthesize_document_reply(None, response_text),
+        "status": "no_task",
+        "timed_out": False,
+    }
+
+
+def stream_openclaw_agent_response(
+    model: str,
+    agent_id: str,
+    input_text: str,
+    timeout_seconds: int,
+    base_url: str | None = None,
+    token: str | None = None,
+) -> dict[str, Any]:
+    cfg = _openclaw_cfg()
+    final_base_url = (base_url or cfg["gateway_base_url"]).rstrip("/")
+    final_token = (token or cfg["gateway_token"]).strip()
+    headers = {
+        "Authorization": f"Bearer {final_token}",
+        "Content-Type": "application/json",
+    }
+    if agent_id:
+        headers["x-openclaw-agent-id"] = agent_id
+    payload = {
+        "model": model,
+        "input": input_text,
+        "stream": True,
+    }
+    request_obj = request.Request(
+        f"{final_base_url}/v1/responses",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    content_text = ""
+    preview_events: list[dict[str, Any]] = []
+    pending_event = ""
+    with request.urlopen(request_obj, timeout=timeout_seconds) as resp:
+        for raw_line in resp:
+            decoded = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+            pending_event, parsed = parse_openclaw_sse_event(decoded, pending_event)
+            if not parsed:
+                continue
+            if parsed.get("type") == "[DONE]":
+                break
+            event_type = str(parsed.get("event") or "").strip()
+            payload_obj = parsed.get("payload") or {}
+            preview_events.append({"event": event_type, "type": payload_obj.get("type"), "payload": payload_obj})
+            delta = extract_openclaw_stream_delta(payload_obj)
+            if delta:
+                content_text += delta
+    return {
+        "ok": True,
+        "text": content_text.strip(),
+        "events": preview_events,
+    }
+
+
+def iter_openclaw_agent_events(
+    model: str,
+    agent_id: str,
+    input_text: str,
+    timeout_seconds: int,
+    base_url: str | None = None,
+    token: str | None = None,
+):
+    cfg = _openclaw_cfg()
+    final_base_url = (base_url or cfg["gateway_base_url"]).rstrip("/")
+    final_token = (token or cfg["gateway_token"]).strip()
+    headers = {
+        "Authorization": f"Bearer {final_token}",
+        "Content-Type": "application/json",
+    }
+    if agent_id:
+        headers["x-openclaw-agent-id"] = agent_id
+    payload = {
+        "model": model,
+        "input": input_text,
+        "stream": True,
+    }
+    request_obj = request.Request(
+        f"{final_base_url}/v1/responses",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with request.urlopen(request_obj, timeout=timeout_seconds) as resp:
+        pending_event = ""
+        for raw_line in resp:
+            decoded = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+            pending_event, parsed = parse_openclaw_sse_event(decoded, pending_event)
+            if not parsed:
+                continue
+            yield parsed
+            if parsed.get("type") == "[DONE]":
+                break
+
+
+def invoke_openclaw_tool(
+    *,
+    name: str,
+    args: dict[str, Any],
+    agent_id: str = "docgen",
+    timeout_seconds: int | None = None,
+) -> dict[str, Any]:
+    cfg = _openclaw_cfg()
+    if not cfg["enabled"] or not cfg["gateway_token"]:
+        return {"ok": False, "error": {"message": "OpenClaw gateway is not enabled"}}
+    headers = {
+        "Authorization": f"Bearer {cfg['gateway_token']}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "name": name,
+        "agentId": agent_id,
+        "args": args,
+    }
+    status_code, payload, _raw = _post_json(
+        f"{cfg['gateway_base_url']}/tools/invoke",
+        headers,
+        body,
+        timeout_seconds or cfg["timeout_seconds"],
+    )
+    if status_code >= 400:
+        return {"ok": False, "status_code": status_code, **payload}
+    return {"ok": True, "status_code": status_code, **payload}
+
+
+def invoke_backend_document_render_docx(
+    args: dict[str, Any],
+    *,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    """Bridge fallback for the same render tool endpoint when plugin auth context is lost."""
+    cfg = get_config() if isinstance(get_config(), dict) else {}
+    internal = cfg.get("internal", {}) or {}
+    token = str(
+        os.getenv("BACKEND_INTERNAL_SERVICE_TOKEN")
+        or os.getenv("BACKEND_SERVICE_TOKEN")
+        or internal.get("service_token")
+        or ""
+    ).strip()
+    if not token:
+        return {"ok": False, "status_code": 0, "error": {"message": "internal service token is not configured"}}
+    base_url = str(
+        os.getenv("BACKEND_BASE_URL")
+        or os.getenv("OPENCLAW_BACKEND_BASE_URL")
+        or "http://127.0.0.1:8000"
+    ).rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    status_code, payload, _raw = _post_json(
+        f"{base_url}/api/v1/internal/document-render-docx",
+        headers,
+        args,
+        timeout_seconds,
+    )
+    if status_code >= 400:
+        return {"ok": False, "status_code": status_code, **payload}
+    return {"ok": True, "status_code": status_code, **payload}
+
+
+def extract_openclaw_tool_result_data(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return {}
+    details = result.get("details")
+    if not isinstance(details, dict):
+        return {}
+    data = details.get("data")
+    return data if isinstance(data, dict) else {}
+
+
+def _post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout_seconds: int) -> tuple[int, dict[str, Any], str]:
+    raw_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    req = request.Request(url, data=raw_body, headers=headers, method="POST")
+    try:
+        with request.urlopen(req, timeout=timeout_seconds) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            payload = json.loads(raw) if raw.strip() else {}
+            return int(getattr(resp, "status", 200) or 200), payload, raw
+    except error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        payload = json.loads(raw) if raw.strip().startswith("{") else {}
+        return int(exc.code or 500), payload, raw
+
+
+def call_openclaw_document(
+    content: str,
+    conversation_id: int,
+    user_id: int,
+    attachment_ids: list[int] | None = None,
+    attachment_context: str = "",
+) -> dict[str, Any]:
+    cfg = _openclaw_cfg()
+    if not cfg["enabled"]:
+        return {
+            "ok": False,
+            "status_code": 0,
+            "task": None,
+            "response_json": {},
+            "assistant_text": "中科信创自研模型文档编排未启用，请先开启 openclaw.enabled 后再重试。",
+            "previous_step_hint": "Enable the OpenClaw document adapter in backend/config.yaml before retrying.",
+        }
+    if not cfg["gateway_token"]:
+        return {
+            "ok": False,
+            "status_code": 0,
+            "task": None,
+            "response_json": {},
+            "assistant_text": "中科信创自研模型 Gateway token 尚未配置，请先补齐授权边界后再重试。",
+            "previous_step_hint": "Set openclaw.gateway_token before retrying the document tool loop.",
+        }
+
+    payload = {
+        "model": cfg["document_model"],
+        "input": build_document_input(
+            content=content,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            attachment_ids=attachment_ids or [],
+            attachment_context=attachment_context,
+        ),
+        "stream": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {cfg['gateway_token']}",
+        "Content-Type": "application/json",
+    }
+    if cfg["document_agent_id"]:
+        headers["x-openclaw-agent-id"] = cfg["document_agent_id"]
+
+    try:
+        status_code, response_json, raw_text = _post_json(
+            f"{cfg['gateway_base_url']}/v1/responses",
+            headers,
+            payload,
+            cfg["timeout_seconds"],
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status_code": 0,
+            "task": None,
+            "response_json": {},
+            "assistant_text": (
+                "中科信创自研模型文档编排调用失败。"
+                "请回到上一步检查 Gateway 连通性、agent 选择和 provider 配置后再重试。"
+            ),
+            "previous_step_hint": f"Gateway request exception: {exc}",
+        }
+
+    provider_failure_text = _document_provider_failure_text(response_json)
+    task = None if provider_failure_text else extract_document_task_payload(response_json)
+    response_text = extract_response_text(response_json)
+    return {
+        "ok": status_code < 400 and not provider_failure_text,
+        "status_code": status_code,
+        "task": task,
+        "response_json": response_json,
+        "assistant_text": provider_failure_text or synthesize_document_reply(task, response_text),
+        "previous_step_hint": raw_text[:1000],
+    }
+
+
+def submit_openclaw_document(
+    content: str,
+    conversation_id: int,
+    user_id: int,
+    attachment_ids: list[int] | None = None,
+    attachment_context: str = "",
+) -> Future:
+    return _executor.submit(
+        call_openclaw_document,
+        content,
+        conversation_id,
+        user_id,
+        attachment_ids,
+        attachment_context,
+    )

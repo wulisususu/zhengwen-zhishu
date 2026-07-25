@@ -1,0 +1,13 @@
+import axios from 'axios'
+
+const api = axios.create({ baseURL: '/api/v1' })
+
+api.interceptors.request.use((config) => {
+  try {
+    const s = JSON.parse(localStorage.getItem('mqw-session') || '{}')
+    if (s.token) config.headers.Authorization = 'Bearer ' + s.token
+  } catch {}
+  return config
+})
+
+export default api

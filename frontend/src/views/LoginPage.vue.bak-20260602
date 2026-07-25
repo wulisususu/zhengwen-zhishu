@@ -1,0 +1,112 @@
+<template>
+  <main class="flex h-dvh items-center justify-center bg-[#f6f7f8] px-4 text-black">
+    <section class="w-full max-w-[380px] rounded-[8px] border border-black/[0.08] bg-white p-5 shadow-[0_16px_48px_rgba(15,23,42,0.08)]">
+      <div class="mb-5">
+        <button type="button" class="text-[13px] leading-5 text-black/45 hover:text-black/70" @click="router.push('/')">
+          返回首页
+        </button>
+        <h1 class="mt-3 text-[24px] font-semibold leading-8">登录</h1>
+        <p class="mt-1 text-[14px] leading-6 text-black/45">
+          {{ expired ? '登录状态已失效，请重新登录。' : '请输入账号和密码继续使用。' }}
+        </p>
+      </div>
+
+      <form class="space-y-3" @submit.prevent="submit">
+        <label class="block">
+          <span class="mb-1 block text-[13px] leading-5 text-black/55">账号</span>
+          <input
+            v-model.trim="username"
+            autocomplete="username"
+            class="h-10 w-full rounded-[8px] border border-black/[0.1] bg-[#fbfcfd] px-3 text-[14px] outline-none focus:border-[#5aa7d8] focus:ring-4 focus:ring-[#5aa7d8]/15"
+            placeholder="请输入账号"
+          />
+        </label>
+
+        <label class="block">
+          <span class="mb-1 block text-[13px] leading-5 text-black/55">密码</span>
+          <input
+            v-model="password"
+            autocomplete="current-password"
+            class="h-10 w-full rounded-[8px] border border-black/[0.1] bg-[#fbfcfd] px-3 text-[14px] outline-none focus:border-[#5aa7d8] focus:ring-4 focus:ring-[#5aa7d8]/15"
+            placeholder="请输入密码"
+            type="password"
+          />
+        </label>
+
+        <p v-if="error" class="rounded-[8px] bg-red-50 px-3 py-2 text-[13px] leading-5 text-red-600">{{ error }}</p>
+
+        <button
+          type="submit"
+          :disabled="loading"
+          class="flex h-10 w-full items-center justify-center rounded-[8px] bg-[#232629] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#111315] disabled:opacity-50"
+        >
+          {{ loading ? '登录中...' : '登录' }}
+        </button>
+      </form>
+    </section>
+  </main>
+</template>
+
+<script setup>
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import api from '../api.js'
+import { useAuthStore } from '../stores/auth.js'
+
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+
+const username = ref('')
+const password = ref('')
+const loading = ref(false)
+const error = ref('')
+const expired = computed(() => route.query.expired === '1')
+
+function safeNextPath(value) {
+  const next = Array.isArray(value) ? value[0] : value
+  if (!next || typeof next !== 'string') return '/chat'
+  if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/login')) return '/chat'
+  return next
+}
+
+async function submit() {
+  error.value = ''
+  const user = username.value.trim()
+  if (!user || !password.value) {
+    error.value = '请输入账号和密码'
+    return
+  }
+  loading.value = true
+  try {
+    const { data } = await api.post('/auth/login', { username: user, password: password.value })
+    if (data.code !== 0 || !data.data?.access_token) {
+      error.value = data.message || '登录失败'
+      return
+    }
+
+    auth.setSession({
+      token: data.data.access_token,
+      token_type: data.data.token_type || 'bearer',
+      username: user,
+    })
+
+    try {
+      const me = await api.get('/auth/me')
+      if (me.data.code === 0) {
+        auth.setSession({
+          ...auth.session,
+          user: me.data.data,
+          username: me.data.data?.username || user,
+        })
+      }
+    } catch {}
+
+    await router.replace(safeNextPath(route.query.next))
+  } catch (e) {
+    error.value = e?.response?.data?.message || e.message || '登录失败'
+  } finally {
+    loading.value = false
+  }
+}
+</script>

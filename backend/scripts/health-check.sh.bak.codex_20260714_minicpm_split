@@ -1,0 +1,247 @@
+#!/bin/bash
+# ============================================================
+# PI Agent Backend 健康检测 & 自动恢复脚本
+# 检测范围：backend(:8000), chat-agent(:18790), doc-agent(:18791),
+#          MiniCPM(:8002), 35B模型(192.168.10.212:8081), frontend(:3000)
+# 每 12 小时由 crontab 自动执行
+# ============================================================
+set -euo pipefail
+
+LOG_FILE="/home/youyeetoo/backend/data/health-check.log"
+MAX_LOG_SIZE=$((2 * 1024 * 1024))  # 2MB 上限自动截断
+BACKEND_DIR="/home/youyeetoo/backend"
+PI_AGENT_DIR="$BACKEND_DIR/.pi-agent"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+# --- 日志截断（防止磁盘占满）---
+if [ -f "$LOG_FILE" ]; then
+    SIZE=$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
+    if [ "$SIZE" -gt "$MAX_LOG_SIZE" ]; then
+        tail -c 1048576 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+        echo "[$TIMESTAMP] LOG_TRUNCATED: was $SIZE bytes, truncated to 1MB" >> "$LOG_FILE"
+    fi
+fi
+
+# --- 日志函数 ---
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+log "========== HEALTH CHECK START =========="
+
+# --- 检查函数：TCP 端口是否在监听 ---
+check_port() {
+    local port=$1
+    if ss -tlnp 2>/dev/null | grep -q ":${port}\\b"; then
+        return 0
+    fi
+    return 1
+}
+
+# --- 检查函数：HTTP 健康端点 ---
+check_http() {
+    local url=$1
+    local timeout=${2:-5}
+    if curl -sf --connect-timeout "$timeout" --max-time "$timeout" "$url" > /dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+# ============================================================
+# 1. 检测 backend (:8000)
+# ============================================================
+RESTARTED_ANY=false
+
+if ! check_http "http://127.0.0.1:8000/api/v1/health" 10; then
+    log "CRITICAL: Backend (:8000) is DOWN — attempting restart..."
+
+    # 先干掉可能僵死的进程
+    fuser -k 8000/tcp 2>/dev/null || true
+    sleep 3
+
+    cd "$BACKEND_DIR"
+    source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate
+    export LD_LIBRARY_PATH=/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/lib:$LD_LIBRARY_PATH
+    export LLM_06B_SERVICE_URL=http://127.0.0.1:8002
+    export HF_ENDPOINT=https://hf-mirror.com
+    export BACKEND_INTERNAL_SERVICE_TOKEN="${BACKEND_INTERNAL_SERVICE_TOKEN:-change-me-internal-service-token}"
+
+    export PI_AGENT_CHAT=1
+    export PI_AGENT_DOC=1
+    nohup /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/python run.py > "$BACKEND_DIR/data/server.log" 2>&1 &
+    log "  Backend restarted (PID $!)"
+
+    # 等它就绪
+    for i in $(seq 1 30); do
+        sleep 2
+        if check_http "http://127.0.0.1:8000/api/v1/health" 3; then
+            log "  Backend healthy after ${i}x2=${((i*2))}s"
+            RESTARTED_ANY=true
+            break
+        fi
+    done
+
+    if ! check_http "http://127.0.0.1:8000/api/v1/health" 3; then
+        log "  ERROR: Backend still DOWN after 60s wait!"
+    fi
+else
+    log "OK: Backend (:8000)"
+fi
+
+# ============================================================
+# 2. 检测 chat-agent (:18790)
+# ============================================================
+if ! check_http "http://127.0.0.1:18790/health" 5; then
+    log "WARN: Chat Agent (:18790) is DOWN — restarting..."
+    fuser -k 18790/tcp 2>/dev/null || true
+    sleep 2
+
+    export PATH="$HOME/.npm-global/bin:$PATH"
+    export PI_AGENT_TOKEN="${PI_AGENT_TOKEN:-pi-agent-local-token}"
+
+    OPENCLAW_CONFIG_PATH="$PI_AGENT_DIR/chat/openclaw.json" \
+    OPENCLAW_STATE_DIR="$PI_AGENT_DIR/chat/state" \
+    nohup openclaw gateway --port 18790 --bind loopback \
+      > "$BACKEND_DIR/data/pi-agent-chat.log" 2>&1 &
+    log "  Chat Agent restarted (PID $!)"
+    RESTARTED_ANY=true
+
+    sleep 3
+    if check_http "http://127.0.0.1:18790/health" 5; then
+        log "  Chat Agent healthy"
+    else
+        log "  ERROR: Chat Agent still DOWN!"
+    fi
+else
+    log "OK: Chat Agent (:18790)"
+fi
+
+# ============================================================
+
+# ===================================================
+# 2.5. 掀测 PCW (:8099)
+# ===================================================
+if ! check_http "http://127.0.0.1:8099/health" 5; then
+    log "WARN: PCW (:8099) is DOWN — restarting..."
+    fuser -k 8099/tcp 2>/dev/null || true
+    sleep 2
+    cd /home/youyeetoo/backend
+    source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate
+    nohup python python_chat_workflow.py > "$BACKEND_DIR/data/pcw.log" 2>&1 &
+    log "  PCW restarted (PID $!)"
+    RESTARTED_ANY=true
+    sleep 3
+    if check_http "http://127.0.0.1:8099/health" 5; then
+        log "  PCW healthy"
+    else
+        log "  ERROR: PCW still DOWN!"
+    fi
+else
+    log "OK: PCW (:8099)"
+fi
+# 3. 检测 doc-agent (:18791)
+# ============================================================
+if ! check_http "http://127.0.0.1:18791/health" 5; then
+    log "WARN: Doc Agent (:18791) is DOWN — restarting..."
+    fuser -k 18791/tcp 2>/dev/null || true
+    sleep 2
+    # Clean stale session state to prevent session recovery deadlock
+    rm -f "$PI_AGENT_DIR/doc/state/agents/doc/sessions/"*.jsonl 2>/dev/null || true
+    log "  Cleaned stale doc-agent session state"
+
+    export PATH="$HOME/.npm-global/bin:$PATH"
+    export PI_AGENT_TOKEN="${PI_AGENT_TOKEN:-pi-agent-local-token}"
+
+    OPENCLAW_CONFIG_PATH="$PI_AGENT_DIR/doc/openclaw.json" \
+    OPENCLAW_STATE_DIR="$PI_AGENT_DIR/doc/state" \
+    nohup openclaw gateway --port 18791 --bind loopback \
+      > "$BACKEND_DIR/data/pi-agent-doc.log" 2>&1 &
+    log "  Doc Agent restarted (PID $!)"
+    RESTARTED_ANY=true
+
+    sleep 3
+    if check_http "http://127.0.0.1:18791/health" 5; then
+        log "  Doc Agent healthy"
+    else
+        log "  ERROR: Doc Agent still DOWN!"
+    fi
+else
+    log "OK: Doc Agent (:18791)"
+fi
+
+# ============================================================
+# 4. 检测 MiniCPM (:8002)
+# ============================================================
+if ! check_http "http://127.0.0.1:8002/health" 5; then
+    log "WARN: MiniCPM Vision (:8002) is DOWN — restarting..."
+    fuser -k 8002/tcp 2>/dev/null || true
+    sleep 2
+
+    cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm
+    export LD_LIBRARY_PATH=/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/lib:$LD_LIBRARY_PATH
+    export LLM_06B_PORT=8002
+    nohup .venv/bin/python3 /home/youyeetoo/backend/app/services/minicpm_vision_service.py \
+      > "$BACKEND_DIR/data/minicpm_vision_service.log" 2>&1 &
+    log "  MiniCPM restarted (PID $!)"
+    RESTARTED_ANY=true
+else
+    log "OK: MiniCPM Vision (:8002)"
+fi
+
+# ============================================================
+# 5. 检测 35B 模型 (192.168.10.212:8081)
+# ============================================================
+if check_http "http://192.168.10.212:8081/v1/models" 5; then
+    log "OK: 35B Model (192.168.10.212:8081)"
+else
+    log "WARN: 35B Model (192.168.10.212:8081) — unreachable (external, cannot restart)"
+fi
+
+# ============================================================
+# 6. 检测前端 (:3000)
+# ============================================================
+if check_http "http://127.0.0.1:3000" 5; then
+    log "OK: Frontend (:3000)"
+else
+    log "WARN: Frontend (:3000) is DOWN — restarting..."
+    fuser -k 3000/tcp 2>/dev/null || true
+    sleep 2
+
+    cd /home/youyeetoo/web
+    nohup node node_modules/.bin/vite --host 0.0.0.0 --port 3000 \
+      > "$BACKEND_DIR/data/frontend.log" 2>&1 &
+    log "  Frontend restarted (PID $!)"
+    RESTARTED_ANY=true
+fi
+
+# ============================================================
+# 7. 兜底：如果有任何服务被重启，再做一次全链路验证
+# ============================================================
+if [ "$RESTARTED_ANY" = true ]; then
+    log "Some services were restarted — running full verification..."
+    sleep 10
+
+    # Backend + PI Agents 健康验证
+    for endpoint in "http://127.0.0.1:8000/api/v1/health" \
+                    "http://127.0.0.1:18790/health" \
+                    "http://127.0.0.1:18791/health" \
+                    "http://127.0.0.1:8002/health"; do
+        if check_http "$endpoint" 5; then
+            log "  VERIFY OK: $endpoint"
+        else
+            log "  VERIFY FAIL: $endpoint"
+        fi
+    done
+fi
+
+# ============================================================
+# 8. 磁盘空间预警
+# ============================================================
+DISK_USAGE=$(df -h / | tail -1 | awk '{print $5}' | sed 's/%//')
+if [ "$DISK_USAGE" -gt 85 ]; then
+    log "WARNING: Disk usage at ${DISK_USAGE}%!"
+fi
+
+log "========== HEALTH CHECK DONE =========="
+log ""

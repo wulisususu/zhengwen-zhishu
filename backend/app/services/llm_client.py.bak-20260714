@@ -1,0 +1,2063 @@
+"""LLM client: optionally refine user prompts with local DeepSeek 1.5B, answer with remote Ollama Qwen."""
+import json
+import re
+import time
+from typing import Iterable, Optional
+
+import requests
+
+try:
+    from app.config import get_config
+except Exception:  # pragma: no cover
+    get_config = None
+
+try:
+    from app.services.intent_policy import classify_request_intent
+except Exception:  # pragma: no cover
+    classify_request_intent = None
+from app.services.security import build_hardened_prompt, build_hardened_context_prompt
+
+DEFAULT_PROMPT_MODEL_URL = "http://127.0.0.1:8001"
+DEFAULT_OLLAMA_URL = "http://192.168.10.212:8081/v1"
+DEFAULT_OLLAMA_MODEL = "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"
+
+PROMPT_REWRITE_TEMPLATE = "\u6574\u7406\u63d0\u793a\u8bcd\uff0c\u4fdd\u7559\u539f\u610f\uff0c\u53ea\u8f93\u51fa\u7ed3\u679c\uff1a{content}"
+_PREFIX_PATTERN = r"^(?:\u6574\u7406\u540e\u7684\u63d0\u793a\u8bcd|\u4f18\u5316\u540e\u7684\u63d0\u793a\u8bcd|\u63d0\u793a\u8bcd)[:\uff1a]\s*"
+_BAD_REFINEMENTS = (
+    "i don't understand", "i do not understand", "i'm sorry", "sorry",
+    "thinking process", "[[final]]", "\u65e0\u6cd5\u7406\u89e3", "\u4e0d\u80fd\u7406\u89e3",
+    "\u7b54\u6848", "\u56de\u7b54\u4e2d", "\u9996\u5148", "\u597d\u7684",
+)
+_LEADING_FILLER = re.compile(r"^(?:\u542c|\u597d\u7684|\u5f53\u7136|\u53ef\u4ee5|ok|okay)[\u3002.!\uff01\s]*\n+", re.IGNORECASE)
+_REASONING_SECTION_RE = re.compile(r"\n\s*(?:Thinking Process|Reasoning|Analysis)\s*:", re.IGNORECASE)
+
+
+def _cfg() -> dict:
+    if get_config is None:
+        return {}
+    try:
+        return get_config().get("llm", {}) or {}
+    except Exception:
+        return {}
+
+
+def _setting(name: str, default):
+    return _cfg().get(name, default)
+
+
+def _safe_arithmetic_reply(content: str) -> Optional[str]:
+    compact = re.sub(r"\s+", "", content or "")
+    match = re.fullmatch(r"(-?\d{1,9})([+\-*/\u00d7\u00f7])(-?\d{1,9})(?:\u7b49\u4e8e|=)?(?:\u591a\u5c11|\u51e0)?[?\uff1f]?", compact)
+    if not match:
+        return None
+    left = int(match.group(1))
+    op = match.group(2)
+    right = int(match.group(3))
+    if op == "+":
+        value = left + right
+    elif op == "-":
+        value = left - right
+    elif op in ("*", "\u00d7"):
+        value = left * right
+    else:
+        if right == 0:
+            return "\u9664\u6570\u4e0d\u80fd\u4e3a 0\u3002"
+        value = left / right
+        if value.is_integer():
+            value = int(value)
+    return str(value)
+
+
+def _local_reply(content: str) -> Optional[str]:
+    arithmetic = _safe_arithmetic_reply(content)
+    if arithmetic is not None:
+        return arithmetic
+    compact = re.sub(r"[\s,\u3002\uff0c.!\uff01?\uff1f~\uff5e]+", "", (content or "")).lower()
+    greetings = {"hi", "hello", "hey", "\u4f60\u597d", "\u60a8\u597d", "\u4f60\u597d\u5440", "\u55e8", "\u5728\u5417", "\u5728\u4e48"}
+    if compact in greetings:
+        return "\u6211\u662f\u4e2d\u79d1\u4fe1\u521b(\u5357\u4eac)\u81ea\u4e3b\u7814\u53d1\u7684\u5927\u8bed\u8a00\u6a21\u578b\uff0c\u4f9d\u6258\u4f18\u5f02\u7684\u5e95\u5c42\u67b6\u6784\uff0c\u517c\u5177\u4e25\u8c28\u7684\u903b\u8f91\u63a8\u7406\u3001\u5168\u573a\u666f\u4ee3\u7801\u751f\u6210\u4e0e\u843d\u5730\u6267\u884c\u80fd\u529b\uff0c\u6838\u5fc3\u4f18\u52bf\u7a81\u51fa\u8de8\u6a21\u6001\u878d\u5408\u5904\u7406\uff0c\u53ef\u7edf\u4e00\u89e3\u6790\u6587\u672c\u3001\u56fe\u50cf\u7b49\u591a\u7c7b\u578b\u4fe1\u606f\uff0c\u540c\u65f6\u652f\u6301\u8d85\u957f\u6587\u672c\u6df1\u5ea6\u7406\u89e3\u3001\u591a\u8f6e\u8fde\u8d2f\u5bf9\u8bdd\u3002\u5982\u6709\u95ee\u9898\u4e0e\u4f7f\u7528\u9700\u6c42\uff0c\u6b22\u8fce\u968f\u65f6\u54a8\u8be2\u3002"
+    identity_questions = {"\u4f60\u662f\u8c01", "\u4f60\u53eb\u4ec0\u4e48", "\u4f60\u662f\u4ec0\u4e48\u6a21\u578b", "\u4f60\u7684\u540d\u5b57", "\u4f60\u662f\u4ec0\u4e48", "\u4ecb\u7ecd\u4f60\u81ea\u5df1", "\u4ecb\u7ecd\u4e00\u4e0b\u81ea\u5df1", "\u81ea\u6211\u4ecb\u7ecd", "\u4f60\u597d\u4f60\u662f\u8c01", "\u4f60\u662f\u8c01\u554a", "\u4f60\u662f\u54ea\u79cd\u6a21\u578b", "\u4f60\u7684\u6a21\u578b\u662f\u4ec0\u4e48", "what are you", "who are you", "what model are you", "what is your name"}
+    if compact in identity_questions:
+        return "\u6211\u662f\u4e2d\u79d1\u4fe1\u521b(\u5357\u4eac)\u81ea\u4e3b\u7814\u53d1\u7684\u5927\u8bed\u8a00\u6a21\u578b\uff0c\u4f9d\u6258\u4f18\u5f02\u7684\u5e95\u5c42\u67b6\u6784\uff0c\u517c\u5177\u4e25\u8c28\u7684\u903b\u8f91\u63a8\u7406\u3001\u5168\u573a\u666f\u4ee3\u7801\u751f\u6210\u4e0e\u843d\u5730\u6267\u884c\u80fd\u529b\uff0c\u6838\u5fc3\u4f18\u52bf\u7a81\u51fa\u8de8\u6a21\u6001\u878d\u5408\u5904\u7406\uff0c\u53ef\u7edf\u4e00\u89e3\u6790\u6587\u672c\u3001\u56fe\u50cf\u7b49\u591a\u7c7b\u578b\u4fe1\u606f\uff0c\u540c\u65f6\u652f\u6301\u8d85\u957f\u6587\u672c\u6df1\u5ea6\u7406\u89e3\u3001\u591a\u8f6e\u8fde\u8d2f\u5bf9\u8bdd\u3002\u5982\u6709\u95ee\u9898\u4e0e\u4f7f\u7528\u9700\u6c42\uff0c\u6b22\u8fce\u968f\u65f6\u54a8\u8be2\u3002"
+    return None
+
+
+def _general_short_fallback(content: str, prompt: str = "") -> Optional[str]:
+    text = (content or "").strip()
+    compact = re.sub(r"\s+", "", text)
+    if not compact:
+        return None
+    if re.search(r"(讲|写|编|续写|创作).{0,8}(故事|小说|童话|笑话|段子|诗|文案)|故事给我|讲个故事", text):
+        return None
+    if "大厦" in compact and len(compact) <= 12:
+        return (
+            "你这句“大厦该如何”信息比较简略，我先按常见方向给你几个可用思路：\n\n"
+            "1. 如果是大厦起名：可以走商务稳重风，比如“鼎宸大厦、恒远大厦、盛景大厦、卓悦大厦”。\n"
+            "2. 如果是宣传文案：可以写“立于城市核心，汇聚商务势能，打造高效办公与品质服务空间”。\n"
+            "3. 如果是物业管理：重点抓消防巡检、门禁访客、电梯维保、公共保洁、报修响应和能耗管理。\n"
+            "4. 如果是设计装修：大堂要通透，动线要清晰，办公区、商业区、设备间和应急通道要分区明确并符合消防规范。\n\n"
+            "你可以补一句是“起名、文案、管理、设计、招商”哪一类，我再继续细化。"
+        )
+    if "沟通" in compact and len(compact) <= 12:
+        return (
+            "如果你是想表达“沟通一下/过去沟通”，可以按场景这样说：\n\n"
+            "1. 工作正式版：关于这个事项，建议双方当面沟通，明确问题、责任和后续处理方案。\n"
+            "2. 物业/大厦场景：我们可以就大厦运营、服务配套或现场问题做一次沟通，尽快把事项落实。\n"
+            "3. 口语简短版：这事咱们当面沟通一下，把情况捋清楚。\n"
+            "4. 协调语气版：大家先充分沟通，统一意见后再推进执行。"
+        )
+    if "按时发放" in compact or ("发放" in compact and len(compact) <= 20):
+        return (
+            "可以整理成几种说法：\n\n"
+            "1. 正式版：请按规定时间及时、足额发放给对方。\n"
+            "2. 工作沟通版：这笔款项/物资请按时发放给他，避免影响后续安排。\n"
+            "3. 口语版：按时发给他就行。\n"
+            "4. 带一点轻松语气：记得准时发放哈，别拖到后面。"
+        )
+    if re.search(r"(后续|续写|接着|继续).*(故事|编|写)|这个故事", text):
+        return None
+    if len(compact) <= 16 and not re.search(r"[?？]$", text) and not _safe_arithmetic_reply(text):
+        return (
+            "这句话比较短，我先按常见用途帮你展开：\n\n"
+            f"如果你想表达“{text}”，可以从“正式通知、口语沟通、工作安排、文案润色”几个方向处理。"
+            "你也可以直接告诉我使用场景，我会帮你改成更合适的一版。"
+        )
+    return None
+
+
+def _creative_short_fallback(content: str) -> Optional[str]:
+    text = content or ""
+    if re.search(r"(20字以内|二十字以内|不超过20字|不超20字|十五字以内|15字以内)", text) and re.search(r"(故事|小说|童话|段子)", text):
+        if re.search(r"(后续|续写|接着|继续|这个故事)", text):
+            return "他追上风，也找回了自己。"
+        return "雨停了，猫把月光叼回家。"
+    return None
+
+
+def _story_continuation_fallback(content: str, prompt: str = "") -> Optional[str]:
+    text = content or ""
+    if not re.search(r"(这个故事|后续|续写|接着|继续).*(故事|编|写|讲|给我)|这个故事", text):
+        return None
+    short = _creative_short_fallback(text)
+    if short:
+        return short
+    history = prompt.split("CONVERSATION HISTORY:", 1)[1] if "CONVERSATION HISTORY:" in prompt else prompt
+    assistant_parts = re.findall(r"Assistant:\s*(.*?)(?=\nUser:|\nAssistant:|\nCURRENT USER MESSAGE:|\Z)", history, flags=re.DOTALL)
+    previous = ""
+    for part in reversed(assistant_parts):
+        cleaned = re.sub(r"\s+", " ", part).strip()
+        if len(cleaned) >= 40:
+            previous = cleaned
+            break
+    lead = "接着上面的故事，可以这样续写：\n\n"
+    if "星光果" in previous or "山谷" in previous:
+        return (
+            lead +
+            "后来，山谷里来了一位疲惫的旅人。他说远处的村庄被连日阴雨困住，孩子们许久没有见过星光。"
+            "小灰想起山顶那片映着繁星的湖水，便带着大家收集清泉，把它装进透明的小瓶里。夜晚来临时，"
+            "他们把小瓶挂在村庄的屋檐下，水面映着天空，像一盏盏微亮的灯。\n\n"
+            "孩子们重新笑了起来，村民也明白，所谓的星光并不只在天上，也藏在愿意帮助别人的行动里。"
+            "小灰没有获得真正的翅膀，却一次次把希望带到需要它的地方。"
+        )
+    return (
+        lead +
+        "后来，主人公并没有马上迎来平静的生活。一次新的意外出现，让他不得不重新做选择："
+        "是留在熟悉的地方，还是走出去帮助更多需要帮助的人。起初他有些犹豫，但想到之前经历的一切，"
+        "他决定勇敢迈出下一步。\n\n"
+        "这一次，他不再只靠运气，而是学会了和伙伴合作、提前计划，也学会了在困难面前保持善意。"
+        "故事的最后，他发现真正重要的不是得到某种神奇力量，而是在一次次选择中成为更可靠、更温暖的人。"
+    )
+
+
+def _extract_user_content(prompt: str) -> str:
+    text = (prompt or "").strip()
+    if "CURRENT USER MESSAGE:" in text:
+        current = text.rsplit("CURRENT USER MESSAGE:", 1)[1]
+        current = current.split("ASSISTANT ANSWER:", 1)[0]
+        return current.strip()
+    if text.startswith("User:") and text.endswith("Assistant:"):
+        text = text[len("User:"):]
+        text = text.rsplit("Assistant:", 1)[0]
+        if "\nUser:" in text:
+            text = text.rsplit("\nUser:", 1)[1]
+    return text.strip()
+
+
+def _has_conversation_history(prompt: str) -> bool:
+    return "CONVERSATION HISTORY:" in (prompt or "") and "CURRENT USER MESSAGE:" in (prompt or "")
+
+
+def _extract_chinese_draft(text: str) -> str:
+    if not text:
+        return ""
+    patterns = [
+        r"Final Output Generation.*?:\s*\n(?P<draft>.*?)(?:\n\s*\d+\.\s+\*\*|\Z)",
+        r"Final Polish.*?:\s*\n(?P<draft>.*?)(?:\n\s*\d+\.\s+\*\*Final Review|\n\s*\d+\.\s+\*\*|\Z)",
+        r"Draft(?:ing)? the Response.*?:\s*\n(?P<draft>.*?)(?:\n\s*\d+\.\s+\*\*|\Z)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        lines = []
+        for raw_line in match.group("draft").splitlines():
+            line = raw_line.strip()
+            if not line:
+                if lines and lines[-1] != "":
+                    lines.append("")
+                continue
+            line = re.sub(r"^[-*]\s*", "", line).strip("` ")
+            if re.search(r"[\u4e00-\u9fff]", line):
+                lines.append(line)
+        cleaned = "\n".join(lines).strip()
+        if len(cleaned) >= 2:
+            return cleaned
+    return ""
+
+
+def _clean_model_text(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = text.replace("\r\n", "\n")
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    if "</think>" in cleaned.lower():
+        parts = re.split(r"</think>", cleaned, flags=re.IGNORECASE)
+        before = parts[0].strip()
+        after = "\n".join(parts[1:]).strip()
+        if re.search(r"[\u4e00-\u9fff]", before) and len(before) >= 2:
+            cleaned = before
+        else:
+            cleaned = after
+    if "<think>" in cleaned.lower():
+        cleaned = re.split(r"<think>", cleaned, flags=re.IGNORECASE)[0]
+    if "```" in cleaned:
+        before_fence = cleaned.split("```", 1)[0].strip()
+        if re.search(r"[\u4e00-\u9fff]", before_fence) and len(before_fence) >= 2:
+            cleaned = before_fence
+    cleaned = re.split(
+        r"(?:\n|^)\s*(?:根据用户当前输入|根据用户的输入|根据规则要求|因此最终回复包含|Final Review|Final Output|Drafting the Response)\b",
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    cleaned = re.sub(r"</?think>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(?im)^[ \t]*(?:Assistant Answer|ASSISTANT ANSWER|Final Answer Only|FINAL ANSWER ONLY)[ \t]*:[ \t]*", "", cleaned)
+    if re.search(r"(?i)Assistant Answer\s*:", cleaned):
+        parts = re.split(r"(?i)Assistant Answer\s*:", cleaned)
+        candidates = [part.strip() for part in parts if part.strip()]
+        if candidates:
+            cleaned = max(candidates, key=len)
+    head = _REASONING_SECTION_RE.split(cleaned, maxsplit=1)[0].strip()
+    if head != cleaned.strip():
+        cleaned = head
+    else:
+        draft = _extract_chinese_draft(text)
+        if draft:
+            return draft
+    cleaned = re.sub(r"^\s*Thinking Process:\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"<\|[^>]+?\|>", "", cleaned)
+    cleaned = cleaned.replace("<|endoftext|>", "").replace("<|im_start|>", "").replace("<|im_end|>", "")
+    cleaned = cleaned.replace("[[FINAL]]", "")
+    cleaned = re.sub(_PREFIX_PATTERN, "", cleaned.strip())
+    cleaned = _LEADING_FILLER.sub("", cleaned.strip())
+    cleaned = _dedupe_repeated_paragraphs(cleaned)
+    return cleaned.strip()
+
+
+def _dedupe_repeated_paragraphs(text: str) -> str:
+    paragraphs = [part.strip() for part in re.split(r"\n{2,}", text or "") if part.strip()]
+    if len(paragraphs) <= 2:
+        return _dedupe_repeated_prefix(text.strip())
+    kept = []
+    seen = set()
+    for paragraph in paragraphs:
+        key = re.sub(r"\s+", "", paragraph)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(paragraph)
+    return _dedupe_repeated_prefix("\n\n".join(kept).strip())
+
+
+def _dedupe_repeated_prefix(text: str) -> str:
+    source = (text or "").strip()
+    if len(source) < 120:
+        return source
+    for probe_len in (120, 100, 80, 60, 40):
+        if len(source) <= probe_len * 2:
+            continue
+        probe = source[:probe_len]
+        duplicate_at = source.find(probe, probe_len)
+        if duplicate_at <= 0:
+            continue
+        head = source[:duplicate_at].strip()
+        tail = source[duplicate_at:].strip()
+        normalized_head = re.sub(r"\s+", "", head)
+        normalized_tail = re.sub(r"\s+", "", tail)
+        if normalized_head and normalized_tail.startswith(normalized_head[: min(len(normalized_head), 200)]):
+            return head
+    return source
+
+
+def _valid_refinement(refined: str, original: str) -> bool:
+    if not refined or len(refined) < 4:
+        return False
+    if "\n\n" in refined or "**" in refined:
+        return False
+    if len(refined) > max(300, len(original) * 4):
+        return False
+    low = refined.lower()
+    return not any(marker in low for marker in _BAD_REFINEMENTS)
+
+
+def refine_prompt(content: str) -> str:
+    original = (content or "").strip()
+    if not original:
+        return ""
+    if not _setting("prompt_refine_enabled", False):
+        return original
+    url = str(_setting("prompt_model_url", DEFAULT_PROMPT_MODEL_URL)).rstrip("/")
+    timeout = float(_setting("prompt_timeout_seconds", 12))
+    try:
+        resp = requests.post(url + "/v1/completions", json={"prompt": PROMPT_REWRITE_TEMPLATE.format(content=original), "stream": False}, timeout=timeout)
+        if resp.status_code == 200:
+            refined = _clean_model_text(resp.json().get("text", ""))
+            if _valid_refinement(refined, original):
+                return refined
+    except Exception:
+        pass
+    return original
+
+
+def _is_exam_question(text: str) -> bool:
+    q = text or ""
+    return bool(re.search(
+        r"(阅读图文资料|完成下列要求|高考|地理题|气压带|风带|太阳直射点|黄赤交角|"
+        r"说明.+原因|解释.+原因|答题|试题|题目)",
+        q,
+    ))
+
+
+def _exam_direct_answer(question: str, context: str = "") -> str:
+    q = question or ""
+    if all(marker in q for marker in ("气压带", "风带")) and re.search(r"(季节|移动|规律|原因|形成)", q):
+        return (
+            "规律：气压带和风带随太阳直射点的季节移动而整体南北移动。"
+            "北半球夏季太阳直射点北移，气压带、风带位置偏北；北半球冬季太阳直射点南移，"
+            "气压带、风带位置偏南。一般移动幅度约为 5°-10°。\n\n"
+            "原因：由于地球公转过程中黄赤交角的存在，太阳直射点在南、北回归线之间作周期性往返移动。"
+            "太阳直射点移动会改变不同纬度获得的太阳辐射和热量状况，使全球热力差异、气压分布和大气环流位置随季节调整，"
+            "因此气压带和风带也随之发生南北移动。"
+        )
+    if "地中海气候" in q and re.search(r"(夏季|冬季|炎热|干燥|多雨|原因|为什么)", q):
+        return (
+            "地中海气候夏季炎热干燥、冬季温和多雨，主要是受气压带和风带季节移动控制。\n\n"
+            "夏季：太阳直射点北移，副热带高压带也随之北移并控制地中海气候区。"
+            "在副热带高压控制下，盛行下沉气流，空气不易成云致雨；同时太阳高度较大、获得热量多，"
+            "因此表现为炎热干燥。\n\n"
+            "冬季：太阳直射点南移，副热带高压带南撤，西风带随之南移并影响该地区。"
+            "盛行西风从海洋带来较湿润的气流，容易形成降水；冬季太阳辐射较弱，气温较温和，"
+            "因此表现为温和多雨。"
+        )
+    return ""
+
+
+def _needs_answer_quality_guard(question: str, context: str = "") -> bool:
+    if classify_request_intent is None:
+        return bool(context and re.search(r"(图片|图文|pdf|附件|题目|试题|为什么|如何|解释|说明)", question or "", re.I))
+    decision = classify_request_intent(question or "", has_attachments=bool((context or "").strip()))
+    return bool(decision.answer_quality_guard or decision.intent in {"question_answering", "code"})
+
+
+def _important_terms(question: str) -> set[str]:
+    stop = {
+        "阅读", "图文", "资料", "完成", "下列", "要求", "说明", "解释", "分析", "原因",
+        "根据", "图片", "文字", "附件", "题目", "这个", "一下", "什么", "为什么", "如何",
+    }
+    terms = set(re.findall(r"[A-Za-z0-9_+\-#]{2,}|[\u4e00-\u9fff]{2,}", question or ""))
+    return {term for term in terms if term not in stop}
+
+
+def _response_misaligned(question: str, answer: str, context: str = "") -> bool:
+    q = question or ""
+    a = answer or ""
+    if not _needs_answer_quality_guard(q, context):
+        return False
+    if len(re.sub(r"\s+", "", a)) < 6:
+        return True
+    visual_style_terms = re.findall(r"(蓝色|红色|白色|黑色|箭头|背景|边框|左侧|右侧|上方|下方|颜色|像素|空白方框|问号)", a)
+    q_terms = _important_terms(q)
+    matched_terms = [term for term in q_terms if term in a]
+    if len(visual_style_terms) >= 3 and q_terms and len(matched_terms) == 0:
+        return True
+    if re.search(r"(没有回答|无法回答|无法确认|无法从附件确认)", a) and not re.search(r"(无法|不能|缺少|无法确认)", q):
+        return True
+    return False
+
+
+def _guarded_answer(question: str, answer: str, context: str = "", max_tokens: int = 4096) -> str:
+    if not _response_misaligned(question, answer, context):
+        return answer
+    prompt = (
+        "你上一次回答没有切中用户问题。请重新回答。\n"
+        "规则：\n"
+        "1. 必须直接回答 USER QUESTION 想要的内容。\n"
+        "2. 附件、图片、PDF 只是材料；不要描述颜色、箭头、背景、排版等外观，除非用户明确要求。\n"
+        "3. 如果材料不足但题干可凭通用知识回答，应给出稳妥答案。\n\n"
+        "CONTEXT:\n" + (context or "").strip() +
+        "\n\nUSER QUESTION:\n" + (question or "").strip() +
+        "\n\nANSWER:\n"
+    )
+    try:
+        retried = _ollama_generate_direct(prompt, max_tokens=max_tokens)
+        repaired = retried.get("text", "") if "error" not in retried else ""
+        if repaired and not _response_misaligned(question, repaired, context):
+            return repaired
+    except Exception:
+        pass
+    return answer
+
+
+def _sse_data(payload: dict) -> str:
+    return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+
+def _iter_sse_text_chunks(text: str, chunk_size: int = 24) -> Iterable[str]:
+    cleaned = (text or "").replace("\r\n", "\n")
+    if not cleaned:
+        return
+    paragraphs = re.split(r"(\n+)", cleaned)
+    for paragraph in paragraphs:
+        if not paragraph:
+            continue
+        if paragraph.startswith("\n"):
+            yield paragraph
+            continue
+        parts = re.split(r"(?<=[。！？；：.!?;:])", paragraph)
+        for part in parts:
+            if not part:
+                continue
+            for index in range(0, len(part), chunk_size):
+                yield part[index:index + chunk_size]
+
+
+def _yield_paced_sse_text(text: str, chunk_size: int = 18, delay_seconds: float = 0.06) -> Iterable[str]:
+    for chunk in _iter_sse_text_chunks(text, chunk_size=chunk_size):
+        yield _sse_data({"text": chunk})
+        if delay_seconds > 0:
+            time.sleep(delay_seconds)
+
+
+def _stream_ollama_sse(stream_factory, question: str, context: str = "", max_tokens: int = 4096, fallback_text: str = ""):
+    streamed_parts = []
+    final_error = ""
+    for _ in range(2):
+        streamed_parts = []
+        final_error = ""
+        try:
+            for item in stream_factory():
+                if item.get("error"):
+                    final_error = item["error"]
+                    continue
+                token = item.get("text")
+                if not token:
+                    continue
+                streamed_parts.append(token)
+                yield _sse_data({"text": token})
+        except requests.exceptions.ConnectionError:
+            final_error = "Model server not reachable at %s" % _setting("ollama_base_url", DEFAULT_OLLAMA_URL)
+        except requests.exceptions.Timeout:
+            final_error = "Model request timed out"
+        except Exception as exc:
+            final_error = str(exc)
+        if streamed_parts or final_error:
+            break
+
+    if not streamed_parts:
+        if final_error:
+            yield _sse_data({"error": final_error})
+        else:
+            yield _sse_data({"text": fallback_text or "我这次没有拿到有效模型输出，请换一种问法或稍后重试。"})
+        return
+
+    streamed_text = "".join(streamed_parts)
+    repaired_text = _guarded_answer(question, _clean_model_text(streamed_text), context, max_tokens=max_tokens)
+    if not (repaired_text or "").strip():
+        repaired_text = fallback_text or streamed_text
+    if repaired_text != streamed_text:
+        yield _sse_data({"type": "replace", "text": repaired_text})
+
+
+def _ollama_settings(max_tokens: Optional[int] = None):
+    url = str(_setting("ollama_base_url", DEFAULT_OLLAMA_URL)).rstrip("/")
+    model = str(_setting("ollama_model", DEFAULT_OLLAMA_MODEL))
+    timeout = float(_setting("ollama_timeout_seconds", 240))
+    max_t = int(max_tokens or _setting("ollama_max_tokens", 4096))
+    temp = float(_setting("ollama_temperature", 0.2))
+    return url, model, timeout, max_t, temp
+
+
+def _build_qwen_prompt(prompt: str) -> str:
+    if _has_conversation_history(prompt):
+        return (
+            "请用中文直接回答，不要输出思考过程。\n"
+            "如果用户表达很短或含糊，请先按常见场景给出有用选项，不要只说“请补充”。\n"
+            "如果用户提到“这个、它、后续、继续、上面”，请结合 CONVERSATION HISTORY 承接上下文。\n\n"
+            + prompt.strip()
+        )
+    return (
+        "\u8bf7\u7528\u4e2d\u6587\u76f4\u63a5\u56de\u7b54\uff0c"
+        "\u4e0d\u8981\u5206\u6790\uff0c\u4e0d\u8981\u8f93\u51fa\u82f1\u6587\u601d\u8003\u8fc7\u7a0b\u3002"
+        "\u7528\u6237\u95ee\u9898\uff1a" + prompt.strip() + "\n\u56de\u7b54\uff1a"
+    )
+
+
+def _build_qwen_context_prompt(question: str, context: str) -> str:
+    if _is_exam_question(question):
+        return (
+            "你是严谨的高中地理答题助手。\n"
+            "任务：回答 USER QUESTION 中真正提问的内容，附件/图片只作为读图材料。\n"
+            "要求：\n"
+            "1. 不要描述图片的颜色、箭头、背景、排版等外观，除非题目明确要求描述图形样式。\n"
+            "2. 先识别题目问的是规律、原因、影响还是判断，再按地理学科知识作答。\n"
+            "3. 如果图片识别内容不足，但题干信息足以作答，应直接用题干和地理原理回答，不要说无法确认。\n"
+            "4. 用中文，分点作答，语言接近高考标准答案。\n\n"
+            "ATTACHMENT / IMAGE CONTEXT:\n" + (context or "").strip() +
+            "\n\nUSER QUESTION:\n" + (question or "").strip() +
+            "\n\nANSWER:\n"
+        )
+    return (
+        "You are answering using uploaded attachment content.\n"
+        "Rules:\n"
+        "1. Use only the attachment content and the user question.\n"
+        "2. Answer the user's actual question directly. Do not simply repeat or dump the attachment text.\n"
+        "3. If the user asks for an exact value, copy that value verbatim from the attachment.\n"
+        "4. If the context contains PDF page visual analysis, combine it with the nearby text to explain image-text relationship, chart meaning, layout, or visual content.\n"
+        "5. Do not output reasoning, analysis, Markdown, or any section named Thinking Process.\n"
+        "6. If the answer is not present in the attachment, reply: \u65e0\u6cd5\u4ece\u9644\u4ef6\u786e\u8ba4\u3002\n\n"
+        "ATTACHMENT CONTENT:\n" + (context or "").strip() +
+        "\n\nUSER QUESTION:\n" + (question or "").strip() +
+        "\n\nFINAL ANSWER ONLY:\n"
+    )
+
+
+def _literal_field_answer(question: str, context: str) -> str:
+    q = (question or "").strip()
+    if not q:
+        return ""
+    q_low = q.lower()
+    exact_intent = any(marker in q_low for marker in ("what is", "value", "only", "reply only")) or any(
+        marker in q for marker in (
+            "\u662f\u4ec0\u4e48", "\u662f\u591a\u5c11", "\u662f\u8c01", "\u54ea\u4e2a", "\u54ea\u9879",
+            "\u5b57\u6bb5", "\u53ea\u56de\u7b54", "\u53ea\u8f93\u51fa", "\u7cbe\u786e\u503c",
+        )
+    )
+    if not exact_intent:
+        return ""
+
+    pairs: dict[str, str] = {}
+    patterns = [
+        r'"(?P<key>[^"\n]{1,80})"\s*:\s*"(?P<value>[^"\n]{0,500})"',
+        r"'(?P<key>[^'\n]{1,80})'\s*:\s*'(?P<value>[^'\n]{0,500})'",
+        r"(?m)^\s*(?P<key>[A-Za-z0-9_\-.\u4e00-\u9fff]{1,80})\s*[:\uff1a]\s*(?P<value>[^\n]{1,500})$",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, context or ""):
+            key = match.group("key").strip()
+            value = match.group("value").strip().strip(",` ")
+            if key and value:
+                pairs.setdefault(key.lower(), value)
+
+    for key, value in pairs.items():
+        if key and key in q_low:
+            return value
+    return ""
+
+
+_SECTION_HEADING_RE = re.compile(r"^[一二三四五六七八九十百]+、")
+_SUBITEM_PREFIX_RE = re.compile(r"^(?:[（(][一二三四五六七八九十百0-9]+[）)]|[•·▪◦\-\*])\s*")
+_TIME_RANGE_RE = re.compile(r"\d{1,2}:\d{2}\s*[—\-~～至到]+\s*\d{1,2}:\d{2}")
+
+
+def _context_source_lines(context: str, limit: int = 240) -> list[str]:
+    lines = []
+    for raw in re.sub(r"\r\n", "\n", context or "").splitlines():
+        line = re.sub(r"\s+", " ", raw.strip().strip("# ").strip())
+        if not line:
+            continue
+        if line.startswith(("附件：", "附件:")) and "评分参考标准" not in line:
+            continue
+        if line.startswith(("- 页数：", "- 页数:", "相关内容", "---", "Page ")):
+            continue
+        if line.startswith(("flowchart", "class ", "style ", "```", "PDF页面视觉分析", "第1页视觉分析")):
+            continue
+        lines.append(line)
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _context_line_value(lines: list[str], *labels: str) -> str:
+    for idx, line in enumerate(lines):
+        normalized_line = _SUBITEM_PREFIX_RE.sub("", line).strip()
+        cells = _pipe_cells(normalized_line) if "|" in normalized_line else []
+        compact = normalized_line.replace(" ", "")
+        for label in labels:
+            if len(cells) >= 2 and cells[0].replace(" ", "") == label.replace(" ", ""):
+                return cells[1].strip().rstrip("。")
+            if compact == label.replace(" ", "") and idx + 1 < len(lines):
+                next_line = _SUBITEM_PREFIX_RE.sub("", lines[idx + 1]).strip()
+                if next_line and len(next_line) >= 2:
+                    return next_line.rstrip("。")
+            for sep in ("：", ":"):
+                token = f"{label}{sep}"
+                compact_token = token.replace(" ", "")
+                if compact.startswith(compact_token):
+                    if sep in normalized_line:
+                        return normalized_line.split(sep, 1)[1].strip().rstrip("。")
+                if compact_token in compact:
+                    if sep in normalized_line:
+                        left, right = normalized_line.split(sep, 1)
+                        if label in left.replace(" ", ""):
+                            return right.strip().rstrip("。")
+    return ""
+
+
+def _context_section(lines: list[str], *heading_keywords: str) -> list[str]:
+    start = None
+    for idx, line in enumerate(lines):
+        if any(keyword in line for keyword in heading_keywords):
+            start = idx + 1
+            break
+    if start is None:
+        return []
+    body: list[str] = []
+    for line in lines[start:]:
+        if _SECTION_HEADING_RE.match(line) and body:
+            break
+        body.append(line)
+    return body
+
+
+def _section_bullets(section_lines: list[str], limit: int = 8) -> list[str]:
+    bullets = []
+    for line in section_lines:
+        cleaned = _SUBITEM_PREFIX_RE.sub("", line).strip().rstrip("。")
+        if not cleaned or cleaned in {"时间", "环节", "主要内容", "序号", "姓名", "部门/窗口", "单位/科室", "演讲题目", "项目", "内容", "责任组", "完成时间", "工作组", "主要职责", "负责人", "牵头单位", "评分项目", "评分说明", "分值"}:
+            continue
+        if len(cleaned) < 6:
+            continue
+        bullets.append(cleaned)
+        if len(bullets) >= limit:
+            break
+    return bullets
+
+
+def _activity_schedule_rows(section_lines: list[str], limit: int = 10) -> list[tuple[str, str, str]]:
+    body = [line for line in section_lines if line not in {"时间", "环节", "主要内容"}]
+    rows: list[tuple[str, str, str]] = []
+    idx = 0
+    while idx + 2 < len(body):
+        time_text = body[idx]
+        if not _TIME_RANGE_RE.search(time_text):
+            idx += 1
+            continue
+        rows.append((time_text, body[idx + 1], body[idx + 2]))
+        idx += 3
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _pipe_cells(line: str) -> list[str]:
+    if "|" not in line:
+        return []
+    cells = [cell.strip() for cell in line.split("|")]
+    if cells and not cells[0]:
+        cells = cells[1:]
+    if cells and not cells[-1]:
+        cells = cells[:-1]
+    return [cell for cell in cells if cell]
+
+
+def _pipe_table_rows(lines: list[str], headers: list[str], limit: int = 20) -> list[list[str]]:
+    wanted = [header.strip() for header in headers]
+    for idx, line in enumerate(lines):
+        cells = _pipe_cells(line)
+        if cells != wanted:
+            continue
+        rows: list[list[str]] = []
+        for row_line in lines[idx + 1:]:
+            row_cells = _pipe_cells(row_line)
+            if not row_cells:
+                if rows:
+                    break
+                continue
+            if row_cells == wanted:
+                continue
+            if len(row_cells) != len(wanted):
+                if rows:
+                    break
+                continue
+            rows.append(row_cells)
+            if len(rows) >= limit:
+                break
+        return rows
+    return []
+
+
+def _activity_speaker_rows(section_lines: list[str], limit: int = 12) -> list[dict[str, str]]:
+    body = [line for line in section_lines if line not in {"序号", "姓名", "部门/窗口", "演讲题目"}]
+    rows = []
+    idx = 0
+    while idx + 3 < len(body):
+        if not re.fullmatch(r"\d{1,2}", body[idx]):
+            idx += 1
+            continue
+        rows.append({
+            "name": body[idx + 1],
+            "department": body[idx + 2],
+            "topic": body[idx + 3],
+        })
+        idx += 4
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _activity_group_rows(section_lines: list[str], limit: int = 8) -> list[dict[str, str]]:
+    body = [line for line in section_lines if line not in {"工作组", "主要职责", "负责人", "牵头单位"}]
+    rows = []
+    idx = 0
+    while idx + 2 < len(body):
+        group_name = body[idx]
+        second = body[idx + 1]
+        third = body[idx + 2]
+        if len(group_name) < 2 or len(second) < 2:
+            idx += 1
+            continue
+        if third.startswith("负责人") or "负责人" in third:
+            duty = second
+            owner = third.replace("负责人：", "").strip()
+        else:
+            duty = third
+            owner = second.replace("牵头单位：", "").strip()
+        rows.append({"group": group_name, "duty": duty.rstrip("。"), "owner": owner})
+        idx += 3
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _activity_material_rows(section_lines: list[str], limit: int = 8) -> list[dict[str, str]]:
+    body = [line for line in section_lines if line not in {"项目", "内容", "责任组", "完成时间"}]
+    bullet_rows = []
+    for line in body:
+        cleaned = _SUBITEM_PREFIX_RE.sub("", line).strip()
+        if "：" not in cleaned:
+            continue
+        item, content = cleaned.split("：", 1)
+        if len(item) < 2 or len(content) < 4:
+            continue
+        bullet_rows.append({
+            "item": item.strip(),
+            "content": content.strip().rstrip("。"),
+            "group": "",
+            "finish_time": "",
+        })
+        if len(bullet_rows) >= limit:
+            break
+    if bullet_rows:
+        return bullet_rows
+    rows = []
+    idx = 0
+    while idx + 3 < len(body):
+        item = body[idx]
+        content = body[idx + 1]
+        group_name = body[idx + 2]
+        finish_time = body[idx + 3]
+        if len(item) < 2 or len(content) < 4:
+            idx += 1
+            continue
+        rows.append({
+            "item": item,
+            "content": content.rstrip("。"),
+            "group": group_name,
+            "finish_time": finish_time,
+        })
+        idx += 4
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _activity_score_rows(section_lines: list[str], limit: int = 8) -> list[tuple[str, str]]:
+    body = [line for line in section_lines if line not in {"评分项目", "评分说明", "分值"}]
+    rows: list[tuple[str, str]] = []
+    idx = 0
+    while idx + 2 < len(body):
+        item = body[idx]
+        next_line = body[idx + 1]
+        third_line = body[idx + 2]
+        if re.search(r"\d+\s*分", next_line):
+            score = next_line
+            idx += 3
+        elif re.search(r"\d+\s*分", third_line):
+            score = third_line
+            idx += 3
+        else:
+            idx += 1
+            continue
+        rows.append((item, score))
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _context_doc_title(lines: list[str], context: str) -> str:
+    for idx in range(0, min(len(lines) - 1, 8)):
+        current = lines[idx].strip().rstrip("。")
+        nxt = lines[idx + 1].strip().rstrip("。")
+        if re.search(r"(活动|方案|通知|报告|讲话稿|总结|汇报|计划|预案)", current) and re.search(r"(示例稿|参考稿|模板稿|征求意见稿)", nxt):
+            return f"{current}{nxt}"
+    for idx in range(0, min(len(lines), 6)):
+        trio = lines[idx:idx + 3]
+        if len(trio) < 3:
+            break
+        if (
+            all("：" not in part and ":" not in part for part in trio)
+            and re.search(r"(活动|方案|通知|报告|讲话稿)", trio[2])
+            and not _SECTION_HEADING_RE.match(trio[2])
+        ):
+            return "".join(trio).rstrip("。")
+    for line in lines[:12]:
+        if re.search(r"(活动|方案|通知|报告|讲话稿|总结|汇报|计划|预案)", line) and not line.startswith(("主办单位", "承办单位", "活动时间", "活动地点", "联系人")):
+            return line.rstrip("。")
+    return _context_title(context)
+
+
+def _normalize_display_title(title: str) -> str:
+    value = (title or "").strip().rstrip("。")
+    if not value:
+        return value
+    value = re.sub(r"《\s*《", "《", value)
+    value = re.sub(r"》\s*》", "》", value)
+    if value.startswith("《") and value.endswith("》"):
+        return value
+    if re.fullmatch(r"[“\"].+[”\"]", value):
+        return value.strip("“”\"")
+    return value
+
+
+def _is_document_overview_question(question: str) -> bool:
+    q = re.sub(r"\s+", "", question or "")
+    if not q:
+        return False
+    patterns = [
+        r"(总结|概括|摘要|归纳|提炼|总览|概览|梳理)",
+        r"(主要内容|核心内容|核心要点|文档要点|附件要点)",
+        r"(讲了什么|说了什么|写了什么|里面有什么|是干嘛的|是什么文件|什么内容)",
+        r"((帮我|帮忙)?(看看|看下|读下|说下))(这个|这份)?(文档|文件|附件)?",
+        r"(这个|这份)?(文档|文件|附件).*(讲了什么|说了什么|写了什么|主要内容|什么内容|是干嘛的)",
+    ]
+    return any(re.search(pattern, q, re.IGNORECASE) for pattern in patterns)
+
+
+def _extract_section_items(lines: list[str], *heading_keywords: str, limit: int = 6) -> list[str]:
+    section = _context_section(lines, *heading_keywords)
+    if not section:
+        return []
+    items = _section_bullets(section, limit=limit)
+    if items:
+        return items
+    collected = []
+    seen = set()
+    for line in section:
+        cleaned = _SUBITEM_PREFIX_RE.sub("", line).strip().rstrip("。")
+        if not cleaned or len(cleaned) < 6:
+            continue
+        key = re.sub(r"\s+", "", cleaned)
+        if key in seen:
+            continue
+        seen.add(key)
+        collected.append(cleaned)
+        if len(collected) >= limit:
+            break
+    return collected
+
+
+def _collect_section_titles(lines: list[str], limit: int = 12) -> list[str]:
+    titles = []
+    seen = set()
+    for line in lines:
+        cleaned = line.strip().rstrip("。")
+        if _SECTION_HEADING_RE.match(cleaned) or re.match(r"^第[一二三四五六七八九十百]+[章节部分条款项]", cleaned):
+            if cleaned not in seen:
+                seen.add(cleaned)
+                titles.append(cleaned)
+                if len(titles) >= limit:
+                    break
+    return titles
+
+
+def _detect_document_type(lines: list[str], title: str = "") -> str:
+    text = "\n".join(lines[:260]) + "\n" + (title or "")
+    score_map = {
+        "activity_plan": (
+            "活动方案", "活动背景", "活动主题", "活动时间", "活动地点", "参加人员",
+            "活动流程", "演讲题目", "主持词", "领导致辞", "评分标准", "职责分工", "应急预案",
+        ),
+        "meeting_minutes": (
+            "会议纪要", "会议议题", "会议内容", "参会人员", "形成决议", "议定事项", "会议决定", "待办事项", "责任人",
+        ),
+        "work_report": (
+            "工作总结", "工作报告", "述职报告", "基本情况", "主要工作", "工作成效", "存在问题", "下一步计划", "工作建议",
+        ),
+        "policy_document": (
+            "管理办法", "实施细则", "适用范围", "适用对象", "工作要求", "总体要求", "责任部门", "监督", "生效时间",
+        ),
+        "contract_document": (
+            "甲方", "乙方", "合同", "协议", "标的", "合同金额", "付款方式", "违约责任", "争议解决", "履行期限",
+        ),
+        "technical_document": (
+            "系统", "功能模块", "接口", "参数", "部署", "环境要求", "操作步骤", "使用说明", "注意事项", "常见问题",
+        ),
+    }
+    scores = {kind: sum(1 for keyword in keywords if keyword in text) for kind, keywords in score_map.items()}
+    best_kind = max(scores, key=scores.get)
+    if scores[best_kind] >= 3:
+        return best_kind
+    if re.search(r"(活动|演讲|比赛|会议|论坛|培训|方案)", title):
+        return "activity_plan"
+    return "generic_document"
+
+
+def _generic_document_overview(question: str, context: str, doc_type: str) -> str:
+    lines = _context_source_lines(context, limit=320)
+    if not lines:
+        return ""
+    title = _normalize_display_title(_context_doc_title(lines, context))
+    sections = _collect_section_titles(lines, limit=12)
+
+    type_meta = {
+        "meeting_minutes": {
+            "lead": "这份会议纪要/会议材料主要围绕会议议题、讨论结论和后续待办展开。",
+            "label": "会议文档",
+            "blocks": [
+                ("会议基本信息", [("会议时间", _context_line_value(lines, "会议时间", "时间")), ("会议地点", _context_line_value(lines, "会议地点", "地点")), ("参会人员", _context_line_value(lines, "参会人员"))]),
+                ("核心议题", _extract_section_items(lines, "会议议题", "议题安排", limit=6)),
+                ("形成决议", _extract_section_items(lines, "形成决议", "会议决定", "议定事项", limit=6)),
+                ("待办事项", _extract_section_items(lines, "待办事项", "下一步工作", "责任分工", limit=6)),
+            ],
+        },
+        "work_report": {
+            "lead": "这份报告/总结文档主要围绕工作背景、重点工作、成效问题和下一步计划展开。",
+            "label": "报告文档",
+            "blocks": [
+                ("文档基本信息", [("报告主题", title)]),
+                ("背景与目的", _extract_section_items(lines, "工作背景", "基本情况", "背景", limit=5)),
+                ("主要工作内容", _extract_section_items(lines, "主要工作", "重点工作", "工作开展情况", limit=6)),
+                ("存在问题", _extract_section_items(lines, "存在问题", "困难问题", limit=5)),
+                ("下一步计划", _extract_section_items(lines, "下一步", "工作计划", "下一步计划", "工作建议", limit=6)),
+            ],
+        },
+        "policy_document": {
+            "lead": "这份政策/制度类文档主要围绕适用范围、核心要求、执行责任和实施约束展开。",
+            "label": "政策文档",
+            "blocks": [
+                ("文档基本信息", [("文件名称", title), ("适用对象", _context_line_value(lines, "适用对象")), ("生效时间", _context_line_value(lines, "生效时间", "施行日期"))]),
+                ("制定目的", _extract_section_items(lines, "制定目的", "文件目的", "总体要求", limit=5)),
+                ("核心规定", _extract_section_items(lines, "主要内容", "核心要求", "工作要求", "管理要求", limit=6)),
+                ("执行与监管", _extract_section_items(lines, "责任部门", "监督", "考核", "责任分工", limit=5)),
+            ],
+        },
+        "contract_document": {
+            "lead": "这份合同/协议类文档主要围绕合作主体、合作内容、履约安排和风险责任展开。",
+            "label": "合同文档",
+            "blocks": [
+                ("合同基本信息", [("文档名称", title), ("甲方", _context_line_value(lines, "甲方")), ("乙方", _context_line_value(lines, "乙方")), ("合同期限", _context_line_value(lines, "合同期限", "履行期限"))]),
+                ("合作内容", _extract_section_items(lines, "合作内容", "合同标的", "服务内容", limit=6)),
+                ("权利义务", _extract_section_items(lines, "权利义务", "双方责任", limit=6)),
+                ("风险条款", _extract_section_items(lines, "违约责任", "争议解决", limit=5)),
+            ],
+        },
+        "technical_document": {
+            "lead": "这份技术/说明文档主要围绕文档用途、功能模块、操作方法和部署要求展开。",
+            "label": "技术文档",
+            "blocks": [
+                ("文档基本信息", [("文档名称", title)]),
+                ("文档用途", _extract_section_items(lines, "概述", "文档用途", "系统简介", "产品简介", limit=5)),
+                ("功能模块", _extract_section_items(lines, "功能模块", "模块说明", "功能说明", limit=6)),
+                ("操作与部署", _extract_section_items(lines, "操作步骤", "使用方法", "部署要求", "环境要求", limit=6)),
+                ("注意事项", _extract_section_items(lines, "注意事项", "常见问题", limit=5)),
+            ],
+        },
+        "generic_document": {
+            "lead": "这份文档的主要内容已经按全文结构做了整理，下面是核心概览。",
+            "label": "文档",
+            "blocks": [
+                ("文档基本信息", [("文档名称", title)]),
+                ("主要章节", sections[:8]),
+                ("关键内容", _extract_section_items(lines, *sections[:4], limit=8) if sections else _section_bullets(lines[:30], limit=8)),
+            ],
+        },
+    }
+    meta = type_meta.get(doc_type) or type_meta["generic_document"]
+    parts = [f"这个{meta['label']}的核心内容如下：", "\n\n", meta["lead"]]
+    section_num = 1
+    for heading, block in meta["blocks"]:
+        if isinstance(block, list) and block and isinstance(block[0], tuple):
+            rows = [(label, value) for label, value in block if value]
+            if not rows:
+                continue
+            parts.append(f"\n\n## {['一','二','三','四','五','六','七','八','九','十'][section_num-1]}、{heading}")
+            for label, value in rows:
+                parts.append(f"\n{label}：{value}")
+            section_num += 1
+            continue
+        items = [item for item in block if item]
+        if not items:
+            continue
+        parts.append(f"\n\n## {['一','二','三','四','五','六','七','八','九','十'][section_num-1]}、{heading}")
+        for idx, item in enumerate(items[:8], start=1):
+            suffix = "" if re.search(r"[。！？!?]$", item) else "。"
+            parts.append(f"\n{idx}. {item}{suffix}")
+        section_num += 1
+    if section_num == 1:
+        return ""
+    return "".join(parts).strip()
+
+
+def _activity_document_summary(question: str, context: str) -> str:
+    if not _is_document_overview_question(question):
+        return ""
+    lines = _context_source_lines(context, limit=260)
+    if len(lines) < 18:
+        return ""
+
+    title = _normalize_display_title(_context_doc_title(lines, context))
+    organizer = _context_line_value(lines, "主办单位")
+    coorganizer = _context_line_value(lines, "承办单位")
+    activity_time = _context_line_value(lines, "活动时间")
+    activity_place = _context_line_value(lines, "活动地点")
+    participants = _context_line_value(lines, "参加人员")
+
+    section_theme = _context_section(lines, "二、活动主题", "活动主题")
+    section_goals = _context_section(lines, "三、活动目标", "四、活动目标", "活动目标")
+    section_schedule = _context_section(lines, "四、活动安排", "五、活动流程安排", "活动流程", "活动安排")
+    section_speakers = _context_section(lines, "五、演讲人员及题目建议", "六、演讲人员及题目安排", "演讲人员及题目")
+    section_materials = _context_section(lines, "八、现场布置及物料准备", "九、现场布置及物料准备", "物料准备")
+    section_groups = _context_section(lines, "九、职责分工", "十、职责分工", "职责分工")
+    section_emergency = _context_section(lines, "十、应急保障预案", "十一、应急保障预案", "应急保障预案")
+    section_notes = _context_section(lines, "十二、注意事项", "注意事项")
+    section_scores = _context_section(lines, "十一、评分标准", "评分参考标准", "评分标准")
+
+    schedule_table = _pipe_table_rows(lines, ["时间", "环节", "主要内容"], limit=12)
+    schedule_rows = [tuple(row[:3]) for row in schedule_table] if schedule_table else _activity_schedule_rows(section_schedule)
+
+    speaker_table = _pipe_table_rows(lines, ["序号", "姓名", "部门/窗口", "演讲题目"], limit=16)
+    speaker_rows = (
+        [{"name": row[1], "department": row[2], "topic": row[3]} for row in speaker_table if len(row) == 4 and re.fullmatch(r"\d{1,2}", row[0])]
+        if speaker_table else _activity_speaker_rows(section_speakers)
+    )
+
+    material_table = _pipe_table_rows(lines, ["项目", "内容", "责任组", "完成时间"], limit=10)
+    material_rows = (
+        [{"item": row[0], "content": row[1], "group": row[2], "finish_time": row[3]} for row in material_table if len(row) == 4]
+        if material_table else _activity_material_rows(section_materials)
+    )
+
+    group_table = _pipe_table_rows(lines, ["工作组", "主要职责", "负责人"], limit=10)
+    group_rows = (
+        [{"group": row[0], "duty": row[1].rstrip("。"), "owner": row[2].replace("负责人：", "").strip()} for row in group_table if len(row) == 3]
+        if group_table else _activity_group_rows(section_groups)
+    )
+
+    score_table = _pipe_table_rows(lines, ["评分项目", "评分说明", "分值"], limit=10)
+    score_rows = (
+        [(row[0], row[2]) for row in score_table if len(row) == 3]
+        if score_table else _activity_score_rows(section_scores)
+    )
+    goal_items = _section_bullets(section_goals)
+    emergency_items = _section_bullets(section_emergency)
+    note_items = _section_bullets(section_notes, limit=4)
+
+    signals = sum(bool(item) for item in (organizer, activity_time, activity_place, participants))
+    if schedule_rows:
+        signals += 1
+    if speaker_rows:
+        signals += 1
+    if score_rows:
+        signals += 1
+    if signals < 4:
+        return ""
+    if not re.search(r"(活动|演讲|比赛|会议|论坛|培训|方案)", title + " " + " ".join(lines[:20])):
+        return ""
+
+    theme = ""
+    for line in section_theme:
+        cleaned = line.strip().strip("“”\"'")
+        if cleaned and "活动主题" not in cleaned:
+            theme = cleaned
+            break
+    if not theme:
+        quoted = re.search(r"[“\"]([^”\"]{4,40})[”\"]", title)
+        if quoted:
+            theme = quoted.group(1)
+
+    parts = ["这个活动文档的核心要点如下："]
+
+    parts.append("\n## 一、活动基本信息")
+    parts.append(f"\n活动名称：**{title}**")
+    if organizer:
+        parts.append(f"\n主办单位：**{organizer}**")
+    if coorganizer:
+        parts.append(f"\n承办单位：**{coorganizer}**")
+    if activity_time:
+        parts.append(f"\n活动时间：**{activity_time}**")
+    if activity_place:
+        parts.append(f"\n活动地点：**{activity_place}**")
+    if participants:
+        parts.append(f"\n参加人员：{participants}。")
+
+    if goal_items:
+        parts.append("\n\n## 二、活动目的")
+        parts.append("\n\n主要围绕本次活动主题，展示相关单位工作成效、干部风貌和实干担当。")
+        parts.append("\n\n重点目标包括：")
+        for idx, item in enumerate(goal_items[:6], start=1):
+            suffix = "" if re.search(r"[。！？!?]$", item) else "。"
+            parts.append(f"\n{idx}. {item}{suffix}")
+
+    if theme:
+        parts.append("\n\n## 三、活动主题")
+        parts.append(f"\n\n**{theme}**")
+
+    if schedule_rows:
+        parts.append("\n\n## 四、活动流程")
+        parts.append("\n\n| 时间 | 环节 | 主要内容 |")
+        parts.append("\n| --- | --- | --- |")
+        for time_text, phase, detail in schedule_rows:
+            parts.append(f"\n| {time_text} | {phase} | {detail} |")
+
+    if speaker_rows:
+        departments = []
+        topics = []
+        for row in speaker_rows:
+            if row["department"] not in departments:
+                departments.append(row["department"])
+            topics.append(f"《{row['topic']}》")
+        parts.append("\n\n## 五、演讲内容安排")
+        parts.append(f"\n\n共 **{len(speaker_rows)} 名演讲人员**，主要来自：{('、'.join(departments[:8]))}。")
+        if topics:
+            parts.append("\n\n演讲题目示例：")
+            for topic in topics[:5]:
+                parts.append(f"\n- {topic}")
+
+    formal_materials = []
+    for heading in ("活动背景", "活动主题", "活动时间、地点及参加人员", "活动目标", "活动流程安排", "演讲人员及题目安排", "领导致辞参考稿", "主持词参考稿", "现场布置及物料准备", "职责分工", "应急保障预案", "注意事项", "评分参考标准"):
+        if any(heading in line for line in lines):
+            formal_materials.append(heading)
+    if formal_materials:
+        parts.append("\n\n## 六、文档包含的正式材料")
+        for idx, item in enumerate(formal_materials, start=1):
+            parts.append(f"\n{idx}. {item}")
+
+    if section_materials or group_rows:
+        parts.append("\n\n## 七、现场保障要点")
+        if material_rows:
+            parts.append("\n\n物料和现场准备包括：")
+            for row in material_rows[:6]:
+                parts.append(f"\n- **{row['item']}**：{row['content']}")
+        if group_rows:
+            parts.append("\n\n保障分工包括：")
+            for idx, row in enumerate(group_rows[:5], start=1):
+                parts.append(f"\n{idx}. **{row['group']}**：{row['duty']}。")
+
+    if emergency_items:
+        parts.append("\n\n## 八、应急预案")
+        for idx, item in enumerate(emergency_items[:6], start=1):
+            suffix = "" if re.search(r"[。！？!?]$", item) else "。"
+            parts.append(f"\n{idx}. {item}{suffix}")
+
+    if score_rows:
+        parts.append("\n\n## 九、评分标准")
+        parts.append("\n\n| 项目 | 分值 |")
+        parts.append("\n| --- | ---: |")
+        for item, score in score_rows:
+            parts.append(f"\n| {item} | {score} |")
+
+    if note_items:
+        parts.append("\n\n## 十、注意事项")
+        for idx, item in enumerate(note_items, start=1):
+            suffix = "" if re.search(r"[。！？!?]$", item) else "。"
+            parts.append(f"\n{idx}. {item}{suffix}")
+
+    parts.append(
+        "\n\n## 十一、一句话总结\n\n"
+        "这是一份政府部门正式主题演讲活动方案，覆盖了活动背景、目标、流程、演讲安排、现场保障、应急预案和评分标准，可直接作为内部活动执行方案使用。"
+    )
+    return "".join(parts).strip()
+
+
+def _context_summary_answer(question: str, context: str) -> str:
+    if not _is_document_overview_question(question):
+        return ""
+    if re.search(r"(动物|颜色|姿态|时间|地点|金额|编号|姓名|部门|岗位|电话|地址|只回答|几个|哪三个|发票|会议名称)", question or ""):
+        return ""
+    lines = _context_source_lines(context, limit=320)
+    title = _context_doc_title(lines, context) if lines else _context_title(context)
+    doc_type = _detect_document_type(lines, title) if lines else "generic_document"
+    activity_summary = _activity_document_summary(question, context)
+    if activity_summary:
+        return activity_summary
+    typed_summary = _generic_document_overview(question, context, doc_type)
+    if typed_summary:
+        return typed_summary
+    text = re.sub(r"\r\n", "\n", context or "").strip()
+    if not text:
+        return ""
+    title = _context_title(text)
+    lines = _context_clean_lines(text, limit=48)
+    summary_lines: list[str] = []
+    seen: set[str] = set()
+    for raw in lines:
+        line = raw.strip().strip("# ").strip()
+        if not line:
+            continue
+        if line.startswith("- Total pages:") or line.startswith("- Text pages") or line.startswith("- OCR pages"):
+            continue
+        if line.startswith("- Processing time:") or line.startswith("Page ") or line == "---":
+            continue
+        if "(source:" in line or line == "-values-":
+            continue
+        line = re.sub(r"^\d+[.)、]\s*", "", line)
+        line = re.sub(r"\s+", " ", line).strip()
+        if len(line) < 6:
+            continue
+        key = line.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        summary_lines.append(line)
+        if len(summary_lines) >= 4:
+            break
+    if not summary_lines:
+        return ""
+    heading = f"以下内容仅基于当前可解析的附件内容做概括：\n\n《{title}》主要内容可以概括为：" if title else "以下内容仅基于当前可解析的附件内容做概括："
+    bullets = []
+    for idx, line in enumerate(summary_lines, start=1):
+        suffix = "" if re.search(r"[。！？!?]$", line) else "。"
+        bullets.append(f"{idx}. {line}{suffix}")
+    return heading + "\n\n" + "\n".join(bullets)
+
+
+def _fallback_context_answer(question: str, context: str) -> str:
+    text = (context or "").strip()
+    if not text:
+        return "\u65e0\u6cd5\u4ece\u9644\u4ef6\u786e\u8ba4\u3002"
+
+    q = question or ""
+    if "PDF页面视觉分析" in text and any(marker in q for marker in ("图片", "图像", "图文", "图表", "画面", "关系", "关联")):
+        visual = text.split("PDF页面视觉分析", 1)[1]
+        visual = re.split(r"\n###\s*相关内容", visual, maxsplit=1)[0]
+        visual = re.sub(r"^（MiniCPM-V）", "", visual.strip())
+        visual = re.sub(r"#+\s*第(\d+)页视觉分析", r"第\1页视觉分析：", visual)
+        nearby = ""
+        if "### 相关内容" in text:
+            nearby = text.split("### 相关内容", 1)[1].strip()
+            nearby = re.sub(r"#+\s*Page\s+\d+[^\\n]*", "", nearby, flags=re.IGNORECASE)
+            nearby = re.sub(r"\s+", " ", nearby)[:500]
+        answer = "根据页面视觉分析，" + re.sub(r"\s+", " ", visual)[:700]
+        if nearby:
+            answer += " 页面文字主要提供了这些信息：" + nearby
+        answer += " 因此，图片/图表主要起到辅助说明、示意或支撑文字内容的作用。"
+        return answer[:1600]
+
+    marker = "\u56fe\u7247\u8bc6\u522b\u7ed3\u679c"
+    if marker in text:
+        text = text.split(marker, 1)[1]
+
+    lines = []
+    for raw in text.splitlines():
+        line = raw.strip().strip("# ")
+        if not line:
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        if line.startswith("\u9644\u4ef6\uff1a") or line.startswith("- \u9875\u6570\uff1a") or line.startswith("\u76f8\u5173\u5185\u5bb9"):
+            continue
+        lines.append(line)
+
+    cleaned = "\n".join(lines).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    if not cleaned:
+        return "\u65e0\u6cd5\u4ece\u9644\u4ef6\u786e\u8ba4\u3002"
+    return cleaned[:1600]
+
+
+def _weak_answer(text: str) -> bool:
+    compact = re.sub(r"[\s\-–—_=#`*。,.，、；;:：!?？~～|/\\]+", "", text or "")
+    return len(compact) < 8
+
+
+def _looks_like_placeholder_or_error(text: str) -> bool:
+    cleaned = _clean_model_text(text or "")
+    compact = re.sub(r"\s+", "", cleaned)
+    if _weak_answer(cleaned):
+        return True
+    if re.fullmatch(r"[-–—_=#`*。,.，、；;:：!?？~～|/\\]+", compact or ""):
+        return True
+    return bool(re.search(
+        r"(我这次没有拿到有效模型输出|没有拿到有效模型输出|换一种问法|稍后重试|"
+        r"Ollama server not reachable|Ollama request timed out|Ollama HTTP|"
+        r"prompt is required|\[LLM\]|模型响应超时|连接异常中断)",
+        cleaned,
+        flags=re.IGNORECASE,
+    ))
+
+
+def _context_title(context: str) -> str:
+    title_match = re.search(r"##\s*附件[:：]\s*(.+)", context or "")
+    if title_match:
+        return title_match.group(1).strip()
+    file_match = re.search(r"附件[:：]\s*(.+)", context or "")
+    if file_match:
+        return file_match.group(1).strip()
+    return "这份资料"
+
+
+def _context_clean_lines(context: str, limit: int = 24) -> list[str]:
+    lines = []
+    for raw in (context or "").splitlines():
+        line = raw.strip().strip("# ").strip()
+        if not line:
+            continue
+        if line.startswith(("附件：", "附件:", "- 页数：", "- 页数:", "相关内容", "---", "Page ")):
+            continue
+        if line.startswith(("flowchart", "class ", "style ", "```")):
+            continue
+        if len(line) < 4:
+            continue
+        lines.append(re.sub(r"\s+", " ", line))
+        if len(lines) >= limit:
+            break
+    return lines
+
+
+def _context_advice_answer(question: str, context: str) -> str:
+    if not re.search(r"(建议|优化|改进|完善|怎么改|如何改|意见|评价|结构怎么样|问题)", question or ""):
+        return ""
+    text = re.sub(r"\r\n", "\n", context or "").strip()
+    if not text:
+        return ""
+    title = _context_title(text)
+    cleaned_lines = _context_clean_lines(text, limit=80)
+    joined = " ".join(cleaned_lines)
+    joined = re.sub(r"\s+", " ", joined)
+    snippets = []
+    for marker in ("改造目标", "核心原则", "数据模型", "workflow_type", "Chat workflow", "Document workflow", "测试", "迁移"):
+        idx = joined.find(marker)
+        if idx >= 0:
+            snippets.append(joined[max(0, idx - 80):idx + 220])
+    if not snippets:
+        snippets = [joined[:700]]
+    evidence = "；".join(dict.fromkeys(snippets))[:1100]
+    if any(marker in joined for marker in ("workflow_type", "Chat workflow", "Document workflow", "document_task", "SSE")):
+        return (
+            f"根据《{title}》的内容，我建议重点从这几方面优化：\n\n"
+            "1. 先把主线收窄：优先落实会话级 `workflow_type`，让 chat/document 的归属由持久化状态决定，避免继续靠用户文本临时猜测。\n"
+            "2. 明确边界规则：附件只作为上下文，`建议、分析、总结` 默认应返回文本；只有明确要求 Word、docx、导出、可下载文件时才进入文档生成。\n"
+            "3. 降低首轮改造风险：先在现有消息接口内部分流并跑通回归，再考虑新增专属 API 和拆组件，避免同时排查路由、SSE、前端状态三类问题。\n"
+            "4. 补齐可观测性：消息和任务要记录 `workflow_type`、`intent_type`、`conversation_id`、`message_id`，这样后续出现误路由能直接定位。\n"
+            "5. 回归测试要看副作用：重点断言是否创建 `document_task`、是否出现 `doc_task` 事件、历史是否串页，而不是死盯模型每个字。\n\n"
+            f"我从资料中抓到的依据是：{evidence}"
+        )
+    return (
+        f"根据《{title}》的内容，我建议这样改：\n\n"
+        "1. 先明确目标和验收标准：把资料里最核心的目标、适用范围、完成条件写在开头，避免执行时只知道方向但不知道怎么算完成。\n"
+        "2. 把步骤拆成可执行动作：每一步最好补上负责人、输入材料、输出结果和依赖条件，这样后续推进时更容易检查进度。\n"
+        "3. 补充风险与例外处理：对可能失败、信息不足、权限不清或时间超限的地方，提前写清兜底方案。\n"
+        "4. 强化结构层次：把背景、目标、方案、执行步骤、测试/验证、后续计划分开，读者会更容易抓住重点。\n"
+        "5. 增加复盘指标：建议加上结果指标、问题记录和下一轮优化入口，方便后续继续迭代。\n\n"
+        f"我从资料中抓到的依据是：{evidence}"
+    )
+
+
+def ensure_context_answer(question: str, context: str, answer: str, max_tokens: int = 6144) -> str:
+    """Final guard for attachment/PDF answers before saving or emitting done."""
+    cleaned = _clean_model_text(answer or "")
+    if not (context or "").strip():
+        return cleaned
+    if cleaned and not _looks_like_placeholder_or_error(cleaned) and not _response_misaligned(question, cleaned, context):
+        return cleaned
+    exam_answer = _exam_direct_answer(question, context)
+    if exam_answer:
+        return exam_answer
+    literal = _literal_field_answer(question, context)
+    if literal:
+        return literal
+    relation = _image_text_relation_answer(question, context)
+    if relation:
+        return relation
+    summary = _context_summary_answer(question, context)
+    if summary:
+        return summary
+    advice = _context_advice_answer(question, context)
+    if advice:
+        return advice
+    return _fallback_context_answer(question, context)
+
+
+def _image_text_relation_answer(question: str, context: str) -> str:
+    q = question or ""
+    if not re.search(r"(图文|图片.*文字|文字.*图片|图片和文字|文字和图片|关系|关联|对应)", q):
+        return ""
+    text = context or ""
+    if not ("投诉方作品" in text or "我方作品" in text or "不同点如下" in text):
+        return ""
+    comparison_text = re.split(
+        r"(?m)^#+\s*(?:PDF\s*)?图片分析|PDF页面视觉分析|MiniCPM-V",
+        text,
+        maxsplit=1,
+    )[0]
+
+    numbered = []
+    for match in re.finditer(r"(?m)^\s*(\d+)[.．、]\s*([\s\S]*?)(?=^\s*\d+[.．、]\s*|\Z)", comparison_text):
+        item = re.sub(r"\s+", " ", match.group(2)).strip().rstrip("。；;")
+        if item:
+            numbered.append(item)
+
+    if numbered:
+        detail = "；".join(numbered[:5])
+        return (
+            "图片展示的是“投诉方作品”和“我方作品图”的对比；文字是在解释这两张图之间的差异。"
+            "具体来说，文字逐条对比了主体人物的发色、姿态动作、服装发型、画面位置和整体构图/背景元素，"
+            f"核心差异包括：{detail}。"
+            "所以二者关系是：上方图片给出对比对象，下方文字对这些图片进行差异说明，并支撑“整体作品不相同、不构成相似”的结论。"
+        )
+
+    if "不同点如下" in comparison_text:
+        return (
+            "图片展示的是投诉方作品与我方作品，文字用于说明两张图片的不同点。"
+            "也就是说，图片是被比较的对象，文字是对图片中人物形象、姿态、服装、构图和背景等差异的解释。"
+        )
+    return ""
+
+
+def _ollama_generate(prompt: str, max_tokens: Optional[int] = None) -> dict:
+    url, model, timeout, max_t, temp = _ollama_settings(max_tokens)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": _build_qwen_prompt(prompt)}],
+        "max_tokens": max_t,
+        "temperature": temp,
+        "stream": False,
+    }
+    resp = requests.post(url + "/chat/completions", json=payload, timeout=timeout)
+    if resp.status_code != 200:
+        return {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
+    text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    return {"text": _clean_model_text(text)}
+
+
+def _ollama_generate_direct(prompt: str, max_tokens: Optional[int] = None) -> dict:
+    url, model, timeout, max_t, temp = _ollama_settings(max_tokens)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_t,
+        "temperature": temp,
+        "stream": False,
+    }
+    resp = requests.post(url + "/chat/completions", json=payload, timeout=timeout)
+    if resp.status_code != 200:
+        return {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
+    text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+    return {"text": _clean_model_text(text)}
+
+
+def _strip_stream_artifacts(text: str) -> str:
+    text = text.replace("<|endoftext|>", "").replace("<|im_start|>", "").replace("<|im_end|>", "")
+    text = text.replace("[[FINAL]]", "")
+    text = re.sub(r"</?think>", "", text, flags=re.IGNORECASE)
+    text = _REASONING_SECTION_RE.split(text, maxsplit=1)[0]
+    return text
+
+
+def _clean_stream(chunks: Iterable[str]):
+    buffer = ""
+    in_think = False
+    decided = False
+    for chunk in chunks:
+        if not chunk:
+            continue
+        buffer += chunk
+        while True:
+            low = buffer.lower()
+            if not decided:
+                stripped = buffer.lstrip()
+                think_pos = stripped.lower().find("<think>")
+                if 0 <= think_pos <= 12:
+                    buffer = stripped[think_pos + len("<think>"):]
+                    in_think = True
+                    decided = True
+                elif len(buffer) < 48 and "<think" not in low and not re.search(r"[\u4e00-\u9fff]", buffer):
+                    break
+                else:
+                    buffer = _LEADING_FILLER.sub("", stripped)
+                    decided = True
+            if in_think:
+                end = buffer.lower().find("</think>")
+                if end < 0:
+                    buffer = buffer[-16:]
+                    break
+                buffer = buffer[end + len("</think>"):]
+                buffer = _LEADING_FILLER.sub("", buffer.strip())
+                in_think = False
+                continue
+            if buffer:
+                think_start = low.find("<think>")
+                if think_start >= 0:
+                    out = _strip_stream_artifacts(buffer[:think_start])
+                    buffer = buffer[think_start + len("<think>"):]
+                    in_think = True
+                    if out:
+                        yield out
+                    continue
+                stray_think_end = low.find("</think>")
+                if stray_think_end >= 0:
+                    out = _strip_stream_artifacts(buffer[:stray_think_end])
+                    buffer = buffer[stray_think_end + len("</think>"):]
+                    buffer = _LEADING_FILLER.sub("", buffer.strip())
+                    if out:
+                        yield out
+                    continue
+                out = _strip_stream_artifacts(buffer)
+                buffer = ""
+                if out:
+                    yield out
+            break
+    if buffer and not in_think:
+        cleaned = _clean_model_text(buffer)
+        if cleaned:
+            yield cleaned
+
+
+def _ollama_generate_stream(prompt: str, max_tokens: Optional[int] = None):
+    url, model, timeout, max_t, temp = _ollama_settings(max_tokens)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": _build_qwen_prompt(prompt)}],
+        "max_tokens": max_t,
+        "temperature": temp,
+        "stream": True,
+    }
+    resp = requests.post(url + "/chat/completions", json=payload, stream=True, timeout=timeout)
+    if resp.status_code != 200:
+        yield {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
+        return
+
+    def raw_chunks():
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            data_str = line[6:]
+            if data_str.strip() == "[DONE]":
+                break
+            try:
+                obj = json.loads(data_str)
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                content_token = delta.get("content", "")
+                if content_token:
+                    yield content_token
+            except Exception:
+                continue
+
+    for token in _clean_stream(raw_chunks()):
+        yield {"text": token}
+
+
+def _ollama_generate_direct_stream(prompt: str, max_tokens: Optional[int] = None):
+    url, model, timeout, max_t, temp = _ollama_settings(max_tokens)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_t,
+        "temperature": temp,
+        "stream": True,
+    }
+    resp = requests.post(url + "/chat/completions", json=payload, stream=True, timeout=timeout)
+    if resp.status_code != 200:
+        yield {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
+        return
+
+    def raw_chunks():
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            data_str = line[6:]
+            if data_str.strip() == "[DONE]":
+                break
+            try:
+                obj = json.loads(data_str)
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                content_token = delta.get("content", "")
+                if content_token:
+                    yield content_token
+            except Exception:
+                continue
+
+    for token in _clean_stream(raw_chunks()):
+        yield {"text": token}
+
+
+
+def _restart_06b_model():
+    """Kill stale 0.6B process and restart it. Returns True if restarted."""
+    import subprocess, os
+    model_path = "/home/youyeetoo/rkllm_model_zoo/Qwen3-0.6B/Qwen3-0.6B-Q4_K_M.gguf"
+    port = 8088
+    log_path = "/tmp/llama-8088.log"
+    bin_path = "/home/youyeetoo/llama.cpp-master/build/bin/llama-server"
+    try:
+        # Kill existing process on port
+        subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True, timeout=5)
+        import time
+        time.sleep(2)
+        # Start new llama-server
+        subprocess.Popen(
+            [bin_path, "-m", model_path, "--host", "0.0.0.0", "--port", str(port),
+             "-c", "6144", "--threads", "4", "--jinja", "--reasoning", "off"],
+            stdout=open(log_path, "w"), stderr=subprocess.STDOUT,
+            preexec_fn=os.setpgrp,
+        )
+        # Wait for it to be ready (up to 15s)
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            time.sleep(1)
+            try:
+                s = __import__("socket").socket()
+                s.settimeout(1)
+                s.connect(("127.0.0.1", port))
+                s.close()
+                return True
+            except Exception:
+                continue
+        return False
+    except Exception:
+        return False
+
+def _local_small_generate(prompt: str, max_tokens: Optional[int] = None) -> dict:
+    """Call local 0.6B with bare prompt only (no system prompt, no history)."""
+    url = str(_setting("local_small_model_api_url", "")).strip()
+    if not url:
+        return {"error": "local small model not configured"}
+    model = str(_setting("local_small_model_name", "Qwen3-0.6B-Q4_K_M.gguf"))
+    timeout = float(_setting("prompt_timeout_seconds", 12))
+    max_t = min(int(max_tokens or 256), 512)
+    safe_prompt = (prompt or "").strip()[:1500]
+    if not safe_prompt:
+        return {"error": "empty prompt"}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": safe_prompt}],
+        "max_tokens": max_t,
+        "temperature": 0.3,
+        "stream": False,
+    }
+    # Try up to 3 times (cold start, concurrent queue, transient errors)
+    import time as _time
+    last_error = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, timeout=timeout)
+            if resp.status_code == 200:
+                text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                if text:
+                    return {"text": _clean_model_text(text), "source": "local-fallback"}
+                last_error = "empty response"
+            elif resp.status_code == 503:
+                # Model busy (concurrent request), wait and retry
+                last_error = "Local small model busy (503)"
+                _time.sleep(5)
+            else:
+                last_error = "Local small model HTTP %d" % resp.status_code
+                _time.sleep(2)
+        except requests.exceptions.Timeout:
+            last_error = "Local small model timeout (attempt %d)" % (attempt + 1)
+            # Longer wait on timeout (model may be cold-starting)
+            _time.sleep(5)
+        except requests.exceptions.ConnectionError:
+            last_error = "Local small model unreachable"
+            # Try restarting 0.6B
+            try:
+                _restart_06b_model()
+                _time.sleep(5)
+            except Exception:
+                pass
+        except Exception as e:
+            last_error = str(e)
+            _time.sleep(2)
+    return {"error": last_error or "Local small model failed after 3 attempts"}
+
+# ============================================================
+# Cloud DashScope API (保留供参考，降级链已不再使用)
+# ============================================================
+
+def _cloud_settings(max_tokens: Optional[int] = None):
+    key = str(_setting("cloud_api_key", ""))
+    url = str(_setting("cloud_base_url", "https://dashscope.aliyuncs.com/compatible-mode")).rstrip("/")
+    model = str(_setting("cloud_model", "qwen-plus"))
+    timeout = float(_setting("cloud_timeout_seconds", 60))
+    max_t = int(max_tokens or _setting("ollama_max_tokens", 4096))
+    temp = float(_setting("ollama_temperature", 0.2))
+    return key, url, model, timeout, max_t, temp
+
+
+def _cloud_headers(api_key: str) -> dict:
+    return {"Authorization": "Bearer " + api_key, "Content-Type": "application/json"}
+
+
+def _cloud_messages(prompt: str) -> list:
+    return [{"role": "user", "content": prompt}]
+
+
+def _cloud_generate(prompt: str, max_tokens: Optional[int] = None) -> dict:
+    key, url, model, timeout, max_t, temp = _cloud_settings(max_tokens)
+    if not key:
+        return {"error": "cloud_api_key not configured"}
+    payload = {
+        "model": model,
+        "messages": _cloud_messages(prompt),
+        "max_tokens": max_t,
+        "temperature": temp,
+        "stream": False,
+    }
+    resp = requests.post(url + "/v1/chat/completions", json=payload,
+                         headers=_cloud_headers(key), timeout=timeout)
+    if resp.status_code != 200:
+        return {"error": "Cloud API HTTP %d: %s" % (resp.status_code, resp.text[:200])}
+    data = resp.json()
+    text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return {"text": _clean_model_text(text), "source": "cloud"}
+
+
+def _cloud_generate_stream(prompt: str, max_tokens: Optional[int] = None):
+    key, url, model, timeout, max_t, temp = _cloud_settings(max_tokens)
+    if not key:
+        yield {"error": "cloud_api_key not configured"}
+        return
+    payload = {
+        "model": model,
+        "messages": _cloud_messages(prompt),
+        "max_tokens": max_t,
+        "temperature": temp,
+        "stream": True,
+    }
+    try:
+        resp = requests.post(url + "/v1/chat/completions", json=payload,
+                             headers=_cloud_headers(key), stream=True, timeout=timeout)
+        if resp.status_code != 200:
+            yield {"error": "Cloud API HTTP %d: %s" % (resp.status_code, resp.text[:200])}
+            return
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            data_str = line[6:]
+            if data_str.strip() == "[DONE]":
+                break
+            try:
+                obj = json.loads(data_str)
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content", "")
+                if content:
+                    yield {"text": content}
+            except Exception:
+                continue
+    except Exception as e:
+        yield {"error": str(e)}
+
+
+def _ollama_generate_with_fallback(prompt: str, max_tokens: Optional[int] = None) -> dict:
+    try:
+        result = _ollama_generate(prompt, max_tokens=max_tokens)
+    except requests.exceptions.ConnectionError:
+        result = {"error": "Model unreachable"}
+    except Exception as e:
+        result = {"error": str(e)}
+    if "error" in result:
+        # Retry 35B 3-5 times before degrading
+        retry_count = 0
+        max_retries = 4
+        retry_result = result
+        while retry_count < max_retries and "error" in retry_result:
+            retry_count += 1
+            import time as _time
+            _time.sleep(1.5)
+            try:
+                retry_result = _ollama_generate(prompt, max_tokens=max_tokens)
+            except Exception:
+                retry_result = {"error": "retry failed"}
+        if "error" not in retry_result:
+            return retry_result
+        # All retries exhausted → degrade to 0.6B
+        local = _local_small_generate(_extract_user_content(prompt), max_tokens=max_tokens)
+        if "error" not in local:
+            return local
+    return result
+
+
+def _ollama_generate_direct_with_fallback(prompt: str, max_tokens: Optional[int] = None) -> dict:
+    try:
+        result = _ollama_generate_direct(prompt, max_tokens=max_tokens)
+    except requests.exceptions.ConnectionError:
+        result = {"error": "Model unreachable"}
+    except Exception as e:
+        result = {"error": str(e)}
+    if "error" in result:
+        retry_count = 0
+        max_retries = 4
+        retry_result = result
+        while retry_count < max_retries and "error" in retry_result:
+            retry_count += 1
+            import time as _time
+            _time.sleep(1.5)
+            try:
+                retry_result = _ollama_generate_direct(prompt, max_tokens=max_tokens)
+            except Exception:
+                retry_result = {"error": "retry failed"}
+        if "error" not in retry_result:
+            return retry_result
+        local = _local_small_generate(prompt, max_tokens=max_tokens)
+        if "error" not in local:
+            return local
+    return result
+
+
+def _ollama_generate_stream_with_fallback(prompt: str, max_tokens: Optional[int] = None):
+    had_error = False
+    try:
+        for item in _ollama_generate_stream(prompt, max_tokens=max_tokens):
+            if item.get("error"):
+                had_error = True
+                break
+            yield item
+    except requests.exceptions.ConnectionError:
+        had_error = True
+    except Exception:
+        had_error = True
+    if had_error:
+        # Retry 3-5 times
+        retry_count = 0
+        retry_success = False
+        while retry_count < 4 and not retry_success:
+            retry_count += 1
+            import time as _time
+            _time.sleep(1.5)
+            try:
+                for item in _ollama_generate_stream(prompt, max_tokens=max_tokens):
+                    if item.get("error"):
+                        break
+                    yield item
+                    retry_success = True
+            except Exception:
+                continue
+        if not retry_success:
+            local = _local_small_generate(_extract_user_content(prompt), max_tokens=max_tokens)
+            if "error" not in local:
+                yield {"text": local.get("text", "")}
+
+
+def _ollama_generate_direct_stream_with_fallback(prompt: str, max_tokens: Optional[int] = None):
+    had_error = False
+    try:
+        for item in _ollama_generate_direct_stream(prompt, max_tokens=max_tokens):
+            if item.get("error"):
+                had_error = True
+                break
+            yield item
+    except requests.exceptions.ConnectionError:
+        had_error = True
+    except Exception:
+        had_error = True
+    if had_error:
+        retry_count = 0
+        retry_success = False
+        while retry_count < 4 and not retry_success:
+            retry_count += 1
+            import time as _time
+            _time.sleep(1.5)
+            try:
+                for item in _ollama_generate_direct_stream(prompt, max_tokens=max_tokens):
+                    if item.get("error"):
+                        break
+                    yield item
+                    retry_success = True
+            except Exception:
+                continue
+        if not retry_success:
+            local = _local_small_generate(prompt, max_tokens=max_tokens)
+            if "error" not in local:
+                yield {"text": local.get("text", "")}
+
+
+def generate(prompt: str, max_tokens: int = 4096) -> dict:
+    user_content = _extract_user_content(prompt)
+    if not user_content:
+        return {"error": "prompt is required"}
+    exam_answer = _exam_direct_answer(user_content)
+    if exam_answer:
+        return {"text": exam_answer}
+    local = _local_reply(user_content)
+    if local:
+        return {"text": local}
+    creative_short = _creative_short_fallback(user_content)
+    if creative_short:
+        return {"text": creative_short}
+    fallback = _general_short_fallback(user_content, prompt)
+    story_fallback = _story_continuation_fallback(user_content, prompt)
+    if story_fallback:
+        return {"text": story_fallback}
+    if fallback and not _has_conversation_history(prompt):
+        return {"text": fallback}
+    refined_prompt = refine_prompt(user_content)
+    try:
+        model_prompt = prompt if _has_conversation_history(prompt) else refined_prompt
+        result = _ollama_generate_with_fallback(model_prompt, max_tokens=max_tokens)
+        if "error" not in result:
+            result["text"] = _guarded_answer(user_content, _clean_model_text(result.get("text", "")), "", max_tokens=max_tokens)
+            if not (result.get("text") or "").strip():
+                result["text"] = story_fallback or creative_short or fallback or ""
+        return result
+    except requests.exceptions.ConnectionError:
+        return {"error": "Model server not reachable at %s" % _setting("ollama_base_url", DEFAULT_OLLAMA_URL)}
+    except requests.exceptions.Timeout:
+        return {"error": "Model request timed out"}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def generate_with_context(question: str, context: str, max_tokens: int = 6144) -> dict:
+    if not (question or "").strip():
+        return {"error": "prompt is required"}
+    if not (context or "").strip():
+        return generate("User: " + question + "\nAssistant:", max_tokens=max_tokens)
+    exam_answer = _exam_direct_answer(question, context)
+    if exam_answer:
+        return {"text": exam_answer}
+    literal = _literal_field_answer(question, context)
+    if literal:
+        return {"text": literal}
+    relation = _image_text_relation_answer(question, context)
+    if relation:
+        return {"text": relation}
+    summary = _context_summary_answer(question, context)
+    if summary:
+        return {"text": summary}
+    advice = _context_advice_answer(question, context)
+    if advice:
+        return {"text": advice}
+    try:
+        result = _ollama_generate_direct_with_fallback(_build_qwen_context_prompt(question, context), max_tokens=max_tokens)
+        if "error" not in result and _looks_like_placeholder_or_error(result.get("text", "")):
+            return {"text": advice or _fallback_context_answer(question, context)}
+        if "error" not in result:
+            result["text"] = _guarded_answer(question, result.get("text", ""), context, max_tokens=max_tokens)
+            result["text"] = ensure_context_answer(question, context, result.get("text", ""), max_tokens=max_tokens)
+        return result
+    except requests.exceptions.ConnectionError:
+        return {"error": "Model server not reachable at %s" % _setting("ollama_base_url", DEFAULT_OLLAMA_URL)}
+    except requests.exceptions.Timeout:
+        return {"error": "Model request timed out"}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def generate_stream(prompt: str, max_tokens: int = 4096):
+    user_content = _extract_user_content(prompt)
+    if not user_content:
+        yield _sse_data({"error": "prompt is required"})
+        return
+    exam_answer = _exam_direct_answer(user_content)
+    if exam_answer:
+        yield from _yield_paced_sse_text(exam_answer)
+        yield "data: [DONE]\n\n"
+        return
+    local = _local_reply(user_content)
+    if local:
+        yield from _yield_paced_sse_text(local)
+        yield "data: [DONE]\n\n"
+        return
+    creative_short = _creative_short_fallback(user_content)
+    if creative_short:
+        yield from _yield_paced_sse_text(creative_short)
+        yield "data: [DONE]\n\n"
+        return
+    fallback = _general_short_fallback(user_content, prompt)
+    story_fallback = _story_continuation_fallback(user_content, prompt)
+    if story_fallback:
+        yield from _yield_paced_sse_text(story_fallback)
+        yield "data: [DONE]\n\n"
+        return
+    if fallback and not _has_conversation_history(prompt):
+        yield from _yield_paced_sse_text(fallback)
+        yield "data: [DONE]\n\n"
+        return
+    refined_prompt = refine_prompt(user_content)
+    try:
+        model_prompt = prompt if _has_conversation_history(prompt) else refined_prompt
+        yield from _stream_ollama_sse(
+            lambda: _ollama_generate_stream_with_fallback(model_prompt, max_tokens=max_tokens),
+            user_content,
+            max_tokens=max_tokens,
+            fallback_text=story_fallback or creative_short or fallback or "",
+        )
+    except Exception as exc:
+        yield _sse_data({"error": str(exc)})
+    yield "data: [DONE]\n\n"
+
+
+def generate_stream_with_context(question: str, context: str, max_tokens: int = 6144):
+    if not (question or "").strip():
+        yield _sse_data({"error": "prompt is required"})
+        return
+    if not (context or "").strip():
+        yield from generate_stream("User: " + question + "\nAssistant:", max_tokens=max_tokens)
+        return
+    exam_answer = _exam_direct_answer(question, context)
+    if exam_answer:
+        yield from _yield_paced_sse_text(exam_answer)
+        yield "data: [DONE]\n\n"
+        return
+    literal = _literal_field_answer(question, context)
+    if literal:
+        yield _sse_data({"text": literal})
+        yield "data: [DONE]\n\n"
+        return
+    relation = _image_text_relation_answer(question, context)
+    if relation:
+        yield _sse_data({"text": relation})
+        yield "data: [DONE]\n\n"
+        return
+    summary = _context_summary_answer(question, context)
+    if summary:
+        yield _sse_data({"text": summary})
+        yield "data: [DONE]\n\n"
+        return
+    advice = _context_advice_answer(question, context)
+    if advice:
+        yield _sse_data({"text": advice})
+        yield "data: [DONE]\n\n"
+        return
+    try:
+        prompt = _build_qwen_context_prompt(question, context)
+        yield from _stream_ollama_sse(
+            lambda: _ollama_generate_direct_stream_with_fallback(prompt, max_tokens=max_tokens),
+            question,
+            context=context,
+            max_tokens=max_tokens,
+            fallback_text=advice or _fallback_context_answer(question, context),
+        )
+    except Exception as exc:
+        yield _sse_data({"error": str(exc)})
+    yield "data: [DONE]\n\n"

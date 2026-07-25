@@ -1,0 +1,671 @@
+<template>
+  <form @submit.prevent="send" class="composer-shell">
+    <div v-if="$slots['suggestion-prefix'] || suggestions.length" class="suggestion-list">
+      <slot name="suggestion-prefix" />
+      <button
+        v-for="item in suggestions"
+        :key="item.key || item.label"
+        type="button"
+        class="suggestion-chip"
+        @click="emit('suggestion-click', item)"
+      >
+        {{ item.label }}
+      </button>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer-main">
+        <textarea
+          v-model="input"
+          :placeholder="placeholder"
+          @keydown.enter.exact.prevent="send"
+          :class="['composer-textarea', { 'composer-textarea-recording': recording }]"
+        />
+
+        <transition name="rec-fade">
+          <div v-if="recording" class="rec-indicator">
+            <span class="rec-dot"></span>
+            <span class="rec-time">{{ recTimeDisplay }}</span>
+          </div>
+        </transition>
+      </div>
+
+      <div class="composer-actions">
+        <transition name="btn-swap" mode="out-in">
+          <div v-if="recording" key="rec-controls" class="rec-controls">
+            <button
+              type="button"
+              @click="cancelRecord"
+              class="action-btn action-cancel"
+              title="取消录音"
+            >
+              <X class="size-5" :stroke-width="2.4" />
+            </button>
+            <button
+              type="button"
+              @click="confirmRecord"
+              class="action-btn action-confirm"
+              title="确认发送"
+            >
+              <Check class="size-5" :stroke-width="2.4" />
+            </button>
+          </div>
+
+          <button
+            v-else
+            key="mic-btn"
+            type="button"
+            @click="startRecord"
+            class="action-btn action-mic"
+            title="点击录音"
+          >
+            <Mic class="size-5" :stroke-width="2.1" />
+          </button>
+        </transition>
+
+        <transition name="btn-swap" mode="out-in">
+          <button
+            v-if="!recording"
+            type="submit"
+            :disabled="loading"
+            class="send-btn"
+          >
+            <Send class="size-5" :stroke-width="2.1" />
+          </button>
+        </transition>
+      </div>
+    </div>
+  </form>
+</template>
+
+<script setup>
+import { ref, onUnmounted } from 'vue'
+import { Mic, Send, X, Check } from 'lucide-vue-next'
+import api from '../api.js'
+
+defineProps({
+  placeholder: String,
+  loading: Boolean,
+  suggestions: { type: Array, default: () => [] },
+})
+const emit = defineEmits(['send', 'suggestion-click'])
+const input = ref('')
+const recording = ref(false)
+const recSeconds = ref(0)
+const recTimeDisplay = ref('0:00')
+const finalizingRecord = ref(false)
+let recTimer = null
+let recordingStream = null
+let recAudioCtx = null
+let recProcessor = null
+let recRawSamples = []
+let recChunkCounter = 0
+let baseInputText = ''
+let confirmedText = ''
+let interimText = ''
+let discardRecording = false
+let voiceSessionId = ''
+let rawSegments = []
+let refineSource = null
+let refineGen = 0
+let audioContext = null
+let analyserNode = null
+let sourceNode = null
+let monitorTimer = null
+let silenceMs = 0
+let hasSpoken = false
+let sentencePauseReported = false
+let autoFinalizeTriggered = false
+
+const CHUNK_INTERVAL_MS = 2000
+const SILENCE_SAMPLE_MS = 120
+const SENTENCE_PAUSE_MS = 600
+const FINAL_PAUSE_MS = 2200
+const SPEECH_THRESHOLD = 0.018
+
+onUnmounted(() => {
+  stopTimer()
+  stopSilenceMonitor()
+  recording.value = false
+  finalizingRecord.value = false
+  if (recProcessor) { try { recProcessor.disconnect() } catch {} }
+  if (recAudioCtx) { recAudioCtx.close().catch(() => {}); }
+  if (recordingStream) {
+    recordingStream.getTracks().forEach((track) => track.stop())
+    recordingStream = null
+  }
+})
+
+function startTimer() {
+  recSeconds.value = 0
+  recTimeDisplay.value = '0:00'
+  recTimer = window.setInterval(() => {
+    recSeconds.value++
+    const m = Math.floor(recSeconds.value / 60)
+    const s = recSeconds.value % 60
+    recTimeDisplay.value = m + ':' + (s < 10 ? '0' : '') + s
+  }, 1000)
+}
+
+function stopTimer() {
+  if (recTimer) {
+    window.clearInterval(recTimer)
+    recTimer = null
+  }
+}
+
+function stopSilenceMonitor() {
+  if (monitorTimer) {
+    window.clearInterval(monitorTimer)
+    monitorTimer = null
+  }
+  silenceMs = 0
+  hasSpoken = false
+  sentencePauseReported = false
+  autoFinalizeTriggered = false
+  if (sourceNode) {
+    try { sourceNode.disconnect() } catch {}
+    sourceNode = null
+  }
+  if (analyserNode) {
+    try { analyserNode.disconnect() } catch {}
+    analyserNode = null
+  }
+  if (audioContext) {
+    const current = audioContext
+    audioContext = null
+    current.close().catch(() => {})
+  }
+}
+
+function float32ToInt16(float32Array) {
+  const int16 = new Int16Array(float32Array.length)
+  for (let i = 0; i < float32Array.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32Array[i]))
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+  }
+  return int16
+}
+
+function pcmToWav(samples, sampleRate) {
+  const pcm = float32ToInt16(samples)
+  const buffer = new ArrayBuffer(44 + pcm.length * 2)
+  const view = new DataView(buffer)
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)) }
+  w(0, 'RIFF'); view.setUint32(4, 36 + pcm.length * 2, true)
+  w(8, 'WAVE'); w(12, 'fmt '); view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true); view.setUint16(22, 1, true)
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true)
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true)
+  w(36, 'data'); view.setUint32(40, pcm.length * 2, true)
+  new Int16Array(buffer, 44).set(pcm)
+  return new Blob([buffer], { type: 'audio/wav' })
+}
+
+function syncInputWithTranscript() {
+  input.value = composeInputText(baseInputText, confirmedText, interimText)
+}
+
+function promoteInterimToConfirmed() {
+  if (!interimText) return
+  confirmedText += interimText
+  interimText = ''
+  syncInputWithTranscript()
+}
+
+function resetRecordingTranscript(restoreBase = false) {
+  confirmedText = ''
+  interimText = ''
+  rawSegments = []
+  closeRefineStream()
+  if (restoreBase) {
+    input.value = baseInputText
+  }
+}
+
+// blobToWav removed - using pcmToWav instead
+
+async function postAudio(endpoint, wavBlob, filename) {
+  const form = new FormData()
+  form.append('file', wavBlob, filename)
+  if (voiceSessionId) {
+    form.append('session_id', voiceSessionId)
+  }
+  const res = await api.post(endpoint, form)
+  if (res.data?.code === 0 && res.data?.data) {
+    return res.data.data
+  }
+  return null
+}
+
+async function postPauseSignal(pauseMs) {
+  // No-op with decoupled ASR+LLM architecture
+}
+
+function closeRefineStream() {
+  if (refineSource) {
+    refineSource.close()
+    refineSource = null
+  }
+}
+
+function rebuildInputFromSegments() {
+  const voiceText = rawSegments.map((s) => s.refined || s.raw).join('')
+  input.value = baseInputText ? baseInputText + '\n' + voiceText : voiceText
+}
+
+function startRefinementStream() {
+  closeRefineStream()
+  const gen = ++refineGen
+  const rawText = rawSegments.map((s) => s.raw).join('')
+  if (!rawText) return
+  const url = '/api/v1/asr/refine_stream?text=' + encodeURIComponent(rawText)
+  const es = new EventSource(url)
+  refineSource = es
+  es.onmessage = (e) => {
+    if (gen !== refineGen) { es.close(); return }
+    try {
+      const d = JSON.parse(e.data)
+      if (d.done) { es.close(); refineSource = null; return }
+      if (d.index >= 0 && d.index < rawSegments.length) {
+        rawSegments[d.index].refined = d.refined
+        rebuildInputFromSegments()
+      }
+    } catch {}
+  }
+  es.onerror = () => { es.close(); if (refineSource === es) refineSource = null }
+}
+
+function startSilenceMonitor(stream) {
+  stopSilenceMonitor()
+  audioContext = new AudioContext()
+  sourceNode = audioContext.createMediaStreamSource(stream)
+  analyserNode = audioContext.createAnalyser()
+  analyserNode.fftSize = 2048
+  analyserNode.smoothingTimeConstant = 0.2
+  sourceNode.connect(analyserNode)
+  const samples = new Float32Array(analyserNode.fftSize)
+  monitorTimer = window.setInterval(() => {
+    if (!recording.value || finalizingRecord.value || !analyserNode) return
+    analyserNode.getFloatTimeDomainData(samples)
+    let sum = 0
+    for (let i = 0; i < samples.length; i++) {
+      const value = samples[i]
+      sum += value * value
+    }
+    const rms = Math.sqrt(sum / samples.length)
+    if (rms >= SPEECH_THRESHOLD) {
+      hasSpoken = true
+      silenceMs = 0
+      sentencePauseReported = false
+      return
+    }
+    if (!hasSpoken) return
+    silenceMs += SILENCE_SAMPLE_MS
+    if (!sentencePauseReported && silenceMs >= SENTENCE_PAUSE_MS) {
+      sentencePauseReported = true
+      void postPauseSignal(silenceMs)
+    }
+    if (!autoFinalizeTriggered && silenceMs >= FINAL_PAUSE_MS) {
+      autoFinalizeTriggered = true
+      confirmRecord()
+    }
+  }, SILENCE_SAMPLE_MS)
+}
+
+async function enqueuePcmChunk(wavBlob, chunkId) {
+  if (!wavBlob || !wavBlob.size) return
+  try {
+    const t0 = Date.now()
+    const data = await postAudio('/asr/recognize_chunk', wavBlob, 'voice_chunk.wav')
+    console.log('[ASR] chunk#' + chunkId + ' result:', Date.now() - t0, 'ms, text:', (data?.text || '').slice(0, 30))
+    if (data?.text) {
+      rawSegments.push({ raw: data.text, refined: null })
+      rebuildInputFromSegments()
+      startRefinementStream()
+    }
+  } catch (err) {
+    console.error('ASR chunk#' + chunkId + ' failed:', err)
+  }
+}
+
+async function startRecord() {
+  if (!navigator.mediaDevices) {
+    alert('浏览器不支持录音')
+    return
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    recordingStream = stream
+    baseInputText = input.value.trim()
+    resetRecordingTranscript()
+    voiceSessionId = `voice_session_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`
+    recRawSamples = []
+    recChunkCounter = 0
+    discardRecording = false
+    finalizingRecord.value = false
+    recAudioCtx = new AudioContext()
+    const source = recAudioCtx.createMediaStreamSource(stream)
+    recProcessor = recAudioCtx.createScriptProcessor(4096, 1, 1)
+    recProcessor.onaudioprocess = (e) => {
+      if (discardRecording) return
+      const inputBuf = e.inputBuffer.getChannelData(0)
+      recRawSamples.push(new Float32Array(inputBuf))
+      let totalSamples = 0
+      for (const buf of recRawSamples) totalSamples += buf.length
+      const chunkSamples = recAudioCtx.sampleRate * (CHUNK_INTERVAL_MS / 1000)
+      if (totalSamples >= chunkSamples) {
+        const merged = new Float32Array(totalSamples)
+        let offset = 0
+        for (const buf of recRawSamples) { merged.set(buf, offset); offset += buf.length }
+        const chunkId = recChunkCounter++
+        const sr = recAudioCtx.sampleRate
+        recRawSamples = []
+        console.log('[ASR] chunk#' + chunkId + ' pcm:', totalSamples, 'sr:', sr)
+        enqueuePcmChunk(pcmToWav(merged, sr), chunkId)
+      }
+    }
+    source.connect(recProcessor)
+    recProcessor.connect(recAudioCtx.destination)
+    recording.value = true
+    startTimer()
+    startSilenceMonitor(stream)
+  } catch (err) {
+    console.error('录音失败:', err)
+    if (err.name === 'NotAllowedError') {
+      alert('请在浏览器中允许使用麦克风')
+    }
+  }
+}
+
+function cancelRecord() {
+  stopTimer()
+  stopSilenceMonitor()
+  recording.value = false
+  discardRecording = true
+  voiceSessionId = ''
+  closeRefineStream()
+  if (recProcessor) { try { recProcessor.disconnect() } catch {} recProcessor = null }
+  if (recAudioCtx) { recAudioCtx.close().catch(() => {}); recAudioCtx = null }
+  if (recordingStream) { recordingStream.getTracks().forEach((t) => t.stop()); recordingStream = null }
+  resetRecordingTranscript(true)
+}
+
+function confirmRecord() {
+  stopTimer()
+  stopSilenceMonitor()
+  recording.value = false
+  if (recProcessor) { try { recProcessor.disconnect() } catch {} recProcessor = null }
+  if (recAudioCtx) { recAudioCtx.close().catch(() => {}); recAudioCtx = null }
+  if (recordingStream) { recordingStream.getTracks().forEach((t) => t.stop()); recordingStream = null }
+  if (!discardRecording && recRawSamples.length) {
+    let totalSamples = 0
+    for (const buf of recRawSamples) totalSamples += buf.length
+    if (totalSamples > 0) {
+      const merged = new Float32Array(totalSamples)
+      let offset = 0
+      for (const buf of recRawSamples) { merged.set(buf, offset); offset += buf.length }
+      recRawSamples = []
+      finalizingRecord.value = true
+      const wavBlob = pcmToWav(merged, 48000)
+      postAudio('/asr/recognize_final', wavBlob, 'voice_final.wav').then((data) => {
+        if (data?.text) {
+          rawSegments.push({ raw: data.text, refined: null })
+          rebuildInputFromSegments()
+          startRefinementStream()
+        }
+      }).catch((err) => console.error('ASR final failed:', err)).finally(() => {
+        finalizingRecord.value = false
+      })
+    }
+  }
+}
+
+function send() {
+  if (recording.value || finalizingRecord.value) return
+  if (!input.value.trim()) return
+  emit('send', input.value)
+  input.value = ''
+}
+</script>
+
+<style scoped>
+.composer-shell {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 14px 18px 18px;
+  background: linear-gradient(180deg, rgba(252, 252, 254, 0.98) 0%, rgba(247, 248, 251, 1) 100%);
+}
+
+.composer-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-radius: 28px;
+  border: 1px solid #e8e5df;
+  background: #fff;
+  padding: 16px 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.composer-wrap:focus-within {
+  border-color: #d7d0c7;
+  box-shadow: 0 0 0 4px rgba(80, 110, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.04);
+}
+
+.composer-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 176px;
+  resize: none;
+  background: transparent;
+  padding: 0;
+  font-size: 18px;
+  line-height: 28px;
+  outline: none;
+  border: none;
+  color: #181818;
+  transition: opacity 0.2s ease;
+}
+
+.composer-textarea::placeholder {
+  color: #8f8f8f;
+}
+
+.composer-textarea-recording {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.rec-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.action-btn,
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-mic {
+  background: #ffffff;
+  border-color: #e8e5df;
+  color: rgba(24, 24, 24, 0.72);
+}
+
+.action-mic:hover {
+  background: #f4f2ed;
+  color: #111111;
+}
+
+.action-cancel {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.action-cancel:hover {
+  background: #fecaca;
+  transform: scale(1.05);
+}
+
+.action-confirm {
+  background: #22c55e;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.24);
+}
+
+.action-confirm:hover {
+  background: #16a34a;
+  transform: scale(1.05);
+}
+
+.send-btn {
+  background: #111111;
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(17, 17, 17, 0.14);
+}
+
+.send-btn:hover {
+  background: #222222;
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.rec-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+
+.rec-time {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #ef4444;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.btn-swap-enter-active {
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-swap-leave-active {
+  transition: all 0.14s ease-in;
+}
+
+.btn-swap-enter-from,
+.btn-swap-leave-to {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.rec-fade-enter-active {
+  transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.rec-fade-leave-active {
+  transition: all 0.18s ease-in;
+}
+
+.rec-fade-enter-from,
+.rec-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-10px) scale(0.9);
+}
+
+.suggestion-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid #e8e5df;
+  background: #ffffff;
+  color: #4a4a4a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.suggestion-chip:hover {
+  background: #f4f2ed;
+  border-color: #ddd6ce;
+  color: #181818;
+}
+
+@media (max-width: 640px) {
+  .composer-shell {
+    padding: 12px 12px 16px;
+  }
+
+  .composer-wrap {
+    gap: 12px;
+    border-radius: 24px;
+    padding: 14px 14px 14px 16px;
+  }
+
+  .composer-textarea {
+    min-height: 60px;
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .action-btn,
+  .send-btn {
+    width: 46px;
+    height: 46px;
+  }
+}
+</style>

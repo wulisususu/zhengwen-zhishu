@@ -1,0 +1,68 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import api, { syncAuthCookie } from '../api.js'
+import { resetWorkspaceState } from './workspaceState.js'
+
+export const useAuthStore = defineStore('auth', () => {
+  const session = ref(null)
+
+  function activateSession(nextSession) {
+    resetWorkspaceState()
+    localStorage.setItem('mqw-session', JSON.stringify(nextSession))
+    syncAuthCookie(nextSession.token || '')
+    session.value = nextSession
+  }
+
+  function loadSession() {
+    try {
+      const s = JSON.parse(localStorage.getItem('mqw-session') || 'null')
+      if (s?.token) {
+        session.value = s
+        syncAuthCookie(s.token)
+      } else {
+        session.value = null
+        syncAuthCookie('')
+        resetWorkspaceState()
+      }
+    } catch {
+      session.value = null
+      syncAuthCookie('')
+      resetWorkspaceState()
+    }
+  }
+
+  async function login(username, password) {
+    try {
+      const { data } = await api.post('/auth/login', { username, password })
+      if (data.code === 0 && data.data?.access_token) {
+        activateSession({ name: username, nickname: username, token: data.data.access_token, isTemporary: false })
+        return true
+      }
+      return data.message || '????'
+    } catch (e) { return '????: ' + e.message }
+  }
+
+  async function register(username, password) {
+    try {
+      const { data } = await api.post('/auth/register', { username, password, nickname: username })
+      if (data.code === 0 && data.data?.access_token) {
+        activateSession({ name: username, nickname: username, token: data.data.access_token, isTemporary: false })
+        return true
+      }
+      return data.message || '????'
+    } catch (e) { return '????: ' + e.message }
+  }
+
+  function loginAsTemp(username) {
+    activateSession({ name: username || '????', nickname: '', token: '', isTemporary: true })
+  }
+
+  function logout() {
+    session.value = null
+    localStorage.removeItem('mqw-session')
+    syncAuthCookie('')
+    resetWorkspaceState()
+  }
+
+  return { session, loadSession, login, register, loginAsTemp, logout }
+})

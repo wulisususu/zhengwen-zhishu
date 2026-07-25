@@ -1,22 +1,113 @@
-# Frontend build artifacts and dependencies
-frontend/node_modules/
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+config.yaml
+config.local.yaml
+**/config.yaml
+**/config.local.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+*.crt
+id_rsa
+id_ed25519
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+**/.venv*/
+**/venv/
+**/*.egg-info/
+
+# Node.js / frontend
+**/node_modules/
 frontend/dist/
+frontend/.vite/
+frontend/.next/
+frontend/coverage/
+.npm/
+.pnpm-store/
 
-# Backend runtime state and dependencies
-backend/.venv/
+# Runtime data and state
 backend/data/
+backend/output/
 backend/backups/
+backend/evidence/
+backend/projects/
+backend/app/PPT_master/projects/
 backend/.pi-agent/
-
-# Local staging files and logs
+backend/.openclaw/
 .import/
+logs/
+tmp/
+temp/
+.cache/
 *.log
+*.pid
+*.sqlite-shm
+*.sqlite-wal
+*.db-journal
 
-# Local model artifacts
+# Generated documents and presentations
+*.pptx
+*.pdf
+*.docx
+*.xlsx
+!backend/app/templates/**/*.docx
+!backend/app/PPT_master/skill/ppt-master/templates/**/*
+!tests/fixtures/**/*
+
+# Local models and inference artifacts
 *.rkllm
+*.rknn
 *.onnx
+*.gguf
 *.bin
 *.pt
 *.pth
 *.safetensors
 *.ckpt
+model/
+models/
+
+# Backups, probes and temporary patch copies
+*.bak
+*.bak.*
+*.backup
+*.backup.*
+*backup_*
+*_backup_*
+*.original
+*before-prototype*
+*probe*.txt
+
+# Deployment and test evidence
+**/deployment-evidence/
+**/playwright-report/
+**/test-results/
+*-verification.png
+*_ACCEPTANCE.md
+*_DEPLOYMENT_REPORT.md
+*_INTEGRATION_REPORT.md
+
+# Local tool state
+.pi-agent/
+.openclaw/

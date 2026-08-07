@@ -64,3 +64,4 @@ Thumbs.db
 
 # Automatically omitted large files
 /backups/ppt-agent-backup-20260717_104109/PPT-master.bak/ppt-master-main.zip
+.venv

@@ -1,6 +1,13 @@
 """Run the server."""
-import os
+import sys
 from pathlib import Path
+
+# 确保 backend 根目录在 sys.path 中，才能 import app.*
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
+
+import os
 
 # Load .env file before any other imports
 try:

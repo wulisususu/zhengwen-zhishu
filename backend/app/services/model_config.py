@@ -16,11 +16,11 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-PROJECT_BACKEND = Path("/home/youyeetoo/INnet_agent/backend")
+PROJECT_BACKEND = Path("/home/youyeetoo/InNet_box/backend")
 ENV_FILE = PROJECT_BACKEND / ".env"
 CONFIG_FILE = Path("/home/youyeetoo/.config/ai-box/backend/config.yaml")
 OPENCLAW_DIR = PROJECT_BACKEND / ".pi-agent"
-RESTART_SCRIPT = Path("/home/youyeetoo/INnet_agent/restart_backend.sh")
+RESTART_SCRIPT = Path("/home/youyeetoo/InNet_box/restart_backend.sh")
 CHAT_AGENT_PORT = 18790
 DOC_AGENT_PORT = 18791
 

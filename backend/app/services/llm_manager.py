@@ -9,7 +9,7 @@ _proc = None
 _lock = threading.Lock()
 _ready = False
 
-SCRIPT_PATH = "/home/youyeetoo/backend/app/services/llm_runner.py"
+SCRIPT_PATH = "/home/youyeetoo/InNet_box/backend/app/services/llm_runner.py"
 PYTHON_PATH = "/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/.venv/bin/python3"
 RESPONSE_FILE = "/tmp/llm_response.json"
 

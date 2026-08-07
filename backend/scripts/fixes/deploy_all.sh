@@ -3,13 +3,13 @@
 # Transfer this entire 'fixes/' directory to the remote server and run this script.
 #
 # Usage on remote server:
-#   cd /home/youyeetoo/backend
+#   cd /home/youyeetoo/InNet_box/backend
 #   bash fixes/deploy_all.sh
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BACKEND_DIR="/home/youyeetoo/backend"
+BACKEND_DIR="/home/youyeetoo/InNet_box/backend"
 
 echo "=========================================="
 echo "PI Agent P0 Fixes — Full Deploy"

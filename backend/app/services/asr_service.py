@@ -19,11 +19,11 @@ from app.config import get_config
 logger = logging.getLogger(__name__)
 
 # --------------- paths ---------------
-_FLOAT_DIR = "/home/youyeetoo/INnet_agent/backend/app/Fun_ASR_float"
+_FLOAT_DIR = "/home/youyeetoo/InNet_box/backend/app/Fun_ASR_float"
 _RKNN_ENCODER = os.path.join(_FLOAT_DIR, "encoder_v6.rknn")
 _FULL_ONNX = os.path.join(_FLOAT_DIR, "model.onnx")
 _DECODER_ONNX = os.path.join(_FLOAT_DIR, "decoder_fixed.onnx")
-_ORIG_MODEL_DIR = "/home/youyeetoo/INnet_agent/backend/app/Fun_ASR"
+_ORIG_MODEL_DIR = "/home/youyeetoo/InNet_box/backend/app/Fun_ASR"
 _CMVN_FILE = os.path.join(_ORIG_MODEL_DIR, "am.mvn")
 _TOKEN_FILE = os.path.join(_ORIG_MODEL_DIR, "tokens.json")
 

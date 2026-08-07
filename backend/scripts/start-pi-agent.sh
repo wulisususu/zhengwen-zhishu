@@ -52,7 +52,7 @@ echo "$MED_PID" > "$LOG_DIR/pi-agent-children-medical.pid"
 echo "Starting PCW on :8099 ..."
 cd "$BACKEND_DIR"
 source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate
-nohup python python_chat_workflow.py > "$LOG_DIR/pcw.log" 2>&1 &
+nohup python scripts/python_chat_workflow.py > "$LOG_DIR/pcw.log" 2>&1 &
 PCW_PID=$!
 echo "pcw PID: $PCW_PID"
 echo "$PCW_PID" > "$LOG_DIR/pi-agent-pcw.pid"

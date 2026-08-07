@@ -87,5 +87,5 @@ SUMMARY_ALIASES = ["summary", "requirements"]
 # 输出目录
 # ══════════════════════════════════════════════════════════════════════
 
-OUTPUT_DIR = "/home/youyeetoo/backend/data/generated_docs"
-TEMPLATE_DIR = "/home/youyeetoo/backend/app/templates/docx"
+OUTPUT_DIR = "/home/youyeetoo/InNet_box/backend/data/generated_docs"
+TEMPLATE_DIR = "/home/youyeetoo/InNet_box/backend/app/templates/docx"

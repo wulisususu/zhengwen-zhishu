@@ -5,7 +5,7 @@ from pathlib import Path
 # Load .env file before any other imports
 try:
     from dotenv import load_dotenv
-    env_path = Path(__file__).parent / '.env'
+    env_path = Path(__file__).resolve().parent.parent / '.env'
     if env_path.exists():
         load_dotenv(env_path)
         print("Runtime environment loaded")

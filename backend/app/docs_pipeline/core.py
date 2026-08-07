@@ -40,7 +40,7 @@ GEN_BASE_URL = os.getenv("DOC_PIPELINE_3B_BASE_URL", "http://127.0.0.1:8004").rs
 GEN_URL = GEN_BASE_URL + "/v1/chat/completions"
 GEN_HEALTH_URL = GEN_BASE_URL + "/health"
 GEN_MODEL = "Qwen2.5-3B-Instruct"
-RESTART_SCRIPT = "/home/youyeetoo/INnet_agent/restart_backend.sh"
+RESTART_SCRIPT = "/home/youyeetoo/InNet_box/restart_backend.sh"
 # Compatibility exports for legacy helpers. The active nodes do not call
 # generate_outline/_fallback_section_06b, so docs_pipeline remains 3B-only.
 ROUTER_URL = os.getenv("LEGACY_ROUTER_URL", "http://127.0.0.1:8002/v1/chat/completions")

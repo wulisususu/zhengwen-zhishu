@@ -20,11 +20,11 @@ from app.models import File, FileParseTask, ParsedFile, ParsedFileChunk
 
 logger = logging.getLogger(__name__)
 
-PARSE_OUTPUT_DIR = Path("/home/youyeetoo/backend/data/parsed_files")
+PARSE_OUTPUT_DIR = Path("/home/youyeetoo/InNet_box/backend/data/parsed_files")
 PIPELINE_RUNNER = Path("/home/youyeetoo/rkllm_model_zoo/mqw-tools/pipeline/run.py")
 MINICPM_PYTHON = Path("/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/.venv/bin/python3")
 MINICPM_LIB_DIR = Path("/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/lib")
-MINICPM_OCR_RUNNER = Path("/home/youyeetoo/backend/app/services/minicpm_ocr_runner.py")
+MINICPM_OCR_RUNNER = Path("/home/youyeetoo/InNet_box/backend/app/services/minicpm_ocr_runner.py")
 LLM_06B_SERVICE_URL = os.environ.get("LLM_06B_SERVICE_URL", "http://127.0.0.1:8003").rstrip("/")
 MINICPM_ENABLED = os.environ.get("MINICPM_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
 

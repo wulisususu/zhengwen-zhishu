@@ -17,7 +17,7 @@ from app.services.artifact_service import (
     ArtifactService,
 )
 
-UPLOAD_DIR = "/home/youyeetoo/backend/data/uploads"
+UPLOAD_DIR = "/home/youyeetoo/InNet_box/backend/data/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 logger = logging.getLogger(__name__)
 

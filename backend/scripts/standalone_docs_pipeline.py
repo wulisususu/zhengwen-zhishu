@@ -2,12 +2,12 @@
 Standalone docs_pipeline service — 独立于主后端 8000 端口运行.
 
 Usage:
-    cd /home/youyeetoo/backend
+    cd /home/youyeetoo/InNet_box/backend
     source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate
     python standalone_docs_pipeline.py --port 8001
 
 Or:
-    nohup python standalone_docs_pipeline.py --port 8001 > /home/youyeetoo/backend/data/standalone_docs.log 2>&1 &
+    nohup python standalone_docs_pipeline.py --port 8001 > /home/youyeetoo/InNet_box/backend/data/standalone_docs.log 2>&1 &
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 # 确保 backend 根目录在 sys.path 中，才能 import app.*
-_BACKEND_ROOT = Path(__file__).resolve().parent if __name__ != "__main__" else Path("/home/youyeetoo/backend")
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 

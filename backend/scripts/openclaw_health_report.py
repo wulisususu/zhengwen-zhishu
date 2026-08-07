@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 
-BACKEND = Path("/home/youyeetoo/INnet_agent/backend")
+BACKEND = Path("/home/youyeetoo/InNet_box/backend")
 sys.path.insert(0, str(BACKEND / "app" / "services"))
 from model_config import get_35b_config, test_connectivity, test_tool_call  # noqa: E402
 

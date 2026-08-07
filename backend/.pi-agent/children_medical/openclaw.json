@@ -1,7 +1,7 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "/home/youyeetoo/backend/.pi-agent/children_medical",
+      "workspace": "/home/youyeetoo/InNet_box/backend/.pi-agent/children_medical",
       "model": {
         "primary": "qwen35-35b-direct-8081/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
         "fallbacks": [
@@ -14,8 +14,8 @@
       {
         "id": "children-medical",
         "name": "children-medical",
-        "workspace": "/home/youyeetoo/backend/.pi-agent/children_medical",
-        "agentDir": "/home/youyeetoo/backend/.pi-agent/children_medical",
+        "workspace": "/home/youyeetoo/InNet_box/backend/.pi-agent/children_medical",
+        "agentDir": "/home/youyeetoo/InNet_box/backend/.pi-agent/children_medical",
         "model": {
           "primary": "qwen35-35b-direct-8081/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
           "fallbacks": [

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-INnet_agent PI Agent 健康排查脚本
+InNet_box PI Agent 健康排查脚本
 运行时机：系统重启后 / 异常排查时
 用法：python3 health_check.py
 """
@@ -8,7 +8,7 @@ import json, os, re, requests, sqlite3, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
-BASE = Path("/home/youyeetoo/INnet_agent/backend")
+BASE = Path("/home/youyeetoo/InNet_box/backend")
 DATA = BASE / "data"
 DB = DATA / "app.db"
 TRACE_LOG = DATA / "document_stream_trace.log"

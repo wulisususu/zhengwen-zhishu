@@ -4,7 +4,7 @@
 
 set -e
 
-PI_AGENT_DIR="/home/youyeetoo/backend/.pi-agent"
+PI_AGENT_DIR="/home/youyeetoo/InNet_box/backend/.pi-agent"
 
 echo "=== Cleaning PI Agent Sessions ==="
 

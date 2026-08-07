@@ -1,7 +1,7 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "/home/youyeetoo/backend/.pi-agent/chat",
+      "workspace": "/home/youyeetoo/InNet_box/backend/.pi-agent/chat",
       "model": {
         "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
         "fallbacks": [
@@ -14,8 +14,8 @@
       {
         "id": "chat",
         "name": "chat",
-        "workspace": "/home/youyeetoo/backend/.pi-agent/chat",
-        "agentDir": "/home/youyeetoo/backend/.pi-agent/chat",
+        "workspace": "/home/youyeetoo/InNet_box/backend/.pi-agent/chat",
+        "agentDir": "/home/youyeetoo/InNet_box/backend/.pi-agent/chat",
         "model": {
           "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
           "fallbacks": [
@@ -37,7 +37,7 @@
       {
         "id": "chat-fallback",
         "name": "chat-fallback",
-        "workspace": "/home/youyeetoo/backend/.pi-agent/chat",
+        "workspace": "/home/youyeetoo/InNet_box/backend/.pi-agent/chat",
         "model": "qwen06b-local-8002/Qwen3-0.6B-Q4_K_M.gguf",
         "skills": [],
         "skillsLimits": {
@@ -169,13 +169,13 @@
         "config": {
           "baseUrl": "http://127.0.0.1:8000",
           "serviceToken": "change-me-internal-service-token",
-          "traceDir": "/home/youyeetoo/backend/.pi-agent/chat/state"
+          "traceDir": "/home/youyeetoo/InNet_box/backend/.pi-agent/chat/state"
         }
       }
     },
     "load": {
       "paths": [
-        "/home/youyeetoo/backend/.openclaw/plugins/backend-bridge"
+        "/home/youyeetoo/InNet_box/backend/.openclaw/plugins/backend-bridge"
       ]
     },
     "allow": [
@@ -200,7 +200,7 @@
     },
     "load": {
       "extraDirs": [
-        "/home/youyeetoo/backend/.openclaw/skills"
+        "/home/youyeetoo/InNet_box/backend/.openclaw/skills"
       ]
     }
   },

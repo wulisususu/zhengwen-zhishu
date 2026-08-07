@@ -29,7 +29,7 @@ from app.services.markdown_to_docx import (
 from app.services.intent_policy import classify_request_intent
 
 PROTOCOL_VERSION = "document_agent_final_v1"
-DOC_OUTPUT_DIR = Path("/home/youyeetoo/backend/data/generated_docs")
+DOC_OUTPUT_DIR = Path("/home/youyeetoo/InNet_box/backend/data/generated_docs")
 DOC_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 

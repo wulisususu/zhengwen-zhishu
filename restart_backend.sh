@@ -133,7 +133,7 @@ start_backend() {
 
     # 启动
     cd "${BACKEND_DIR}"
-    nohup python run.py > "${LOG_DIR}/server.log" 2>&1 &
+    nohup python scripts/run.py > "${LOG_DIR}/server.log" 2>&1 &
     BACKEND_PID=$!
     log "后端 PID: ${BACKEND_PID}"
 
@@ -250,7 +250,7 @@ Environment="LD_LIBRARY_PATH=${RKLLM_LIB}"
 Environment="LLM_06B_SERVICE_URL=http://127.0.0.1:8003"
 Environment="BACKEND_INTERNAL_SERVICE_TOKEN=change-me-internal-service-token"
 Environment="HF_ENDPOINT=https://hf-mirror.com"
-ExecStart=${VENV_DIR}/bin/python ${BACKEND_DIR}/run.py
+ExecStart=${VENV_DIR}/bin/python ${BACKEND_DIR}/scripts/run.py
 Restart=always
 RestartSec=5
 StandardOutput=journal+console

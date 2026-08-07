@@ -5,7 +5,7 @@
 # ============================================================
 set -e
 
-BACKEND_DIR="/home/youyeetoo/backend"
+BACKEND_DIR="/home/youyeetoo/InNet_box/backend"
 VENV_PYTHON="/home/youyeetoo/rkllm_model_zoo/funasr_env/bin/python"
 
 echo "[start_clean] 1/5 杀孤儿进程..."
@@ -30,7 +30,7 @@ cd "$BACKEND_DIR"
 source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate
 export LD_LIBRARY_PATH=/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/lib:$LD_LIBRARY_PATH
 export HF_ENDPOINT=https://hf-mirror.com
-nohup "$VENV_PYTHON" run.py > "$BACKEND_DIR/data/server.log" 2>&1 &
+nohup "$VENV_PYTHON" scripts/run.py > "$BACKEND_DIR/data/server.log" 2>&1 &
 BACKEND_PID=$!
 echo "[start_clean] Backend PID: $BACKEND_PID"
 

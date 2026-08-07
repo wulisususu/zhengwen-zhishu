@@ -13,8 +13,8 @@ from docxtpl import DocxTemplate
 
 from app.config import get_config
 
-DOC_OUTPUT_DIR = Path("/home/youyeetoo/backend/data/generated_docs")
-TEMPLATE_DIR = Path("/home/youyeetoo/backend/app/templates/docx")
+DOC_OUTPUT_DIR = Path("/home/youyeetoo/InNet_box/backend/data/generated_docs")
+TEMPLATE_DIR = Path("/home/youyeetoo/InNet_box/backend/app/templates/docx")
 DOC_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -5,15 +5,15 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/youyeetoo/INnet_agent/web
-ExecStart=/usr/local/bin/node /home/youyeetoo/INnet_agent/web/node_modules/vite/bin/vite.js --host 0.0.0.0 --port 3000
+WorkingDirectory=/home/youyeetoo/InNet_box/web
+ExecStart=/usr/local/bin/node /home/youyeetoo/InNet_box/web/node_modules/vite/bin/vite.js --host 0.0.0.0 --port 3000
 Restart=on-failure
 RestartSec=3s
 KillSignal=SIGTERM
 TimeoutStopSec=15s
 UMask=0027
-StandardOutput=append:/home/youyeetoo/INnet_agent/service_logs/frontend_3000.log
-StandardError=append:/home/youyeetoo/INnet_agent/service_logs/frontend_3000.log
+StandardOutput=append:/home/youyeetoo/InNet_box/service_logs/frontend_3000.log
+StandardError=append:/home/youyeetoo/InNet_box/service_logs/frontend_3000.log
 
 [Install]
 WantedBy=default.target

@@ -51,8 +51,8 @@ class ArtifactService:
                 backend_root / "data" / "generated_docs",
                 backend_root / "data" / "output",
                 Path(os.environ.get("PPT_HISTORY_ASSETS_ROOT", backend_root / "data" / "ppt_history_assets")),
-                Path("/home/youyeetoo/backend/data/uploads"),
-                Path("/home/youyeetoo/backend/data/generated_docs"),
+                Path("/home/youyeetoo/InNet_box/backend/data/uploads"),
+                Path("/home/youyeetoo/InNet_box/backend/data/generated_docs"),
             ]
         self.allowed_roots = [self.projects_root, *(Path(root) for root in legacy_roots)]
 

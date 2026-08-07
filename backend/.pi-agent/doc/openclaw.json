@@ -1,7 +1,7 @@
 {
   "agents": {
     "defaults": {
-      "workspace": "/home/youyeetoo/backend/.pi-agent/doc",
+      "workspace": "/home/youyeetoo/InNet_box/backend/.pi-agent/doc",
       "model": {
         "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
         "fallbacks": []
@@ -12,8 +12,8 @@
       {
         "id": "doc",
         "name": "doc",
-        "workspace": "/home/youyeetoo/backend/.pi-agent/doc",
-        "agentDir": "/home/youyeetoo/backend/.pi-agent/doc",
+        "workspace": "/home/youyeetoo/InNet_box/backend/.pi-agent/doc",
+        "agentDir": "/home/youyeetoo/InNet_box/backend/.pi-agent/doc",
         "model": {
           "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
           "fallbacks": []
@@ -146,13 +146,13 @@
         "config": {
           "baseUrl": "http://127.0.0.1:8000",
           "serviceToken": "change-me-internal-service-token",
-          "traceDir": "/home/youyeetoo/backend/.pi-agent/doc/state"
+          "traceDir": "/home/youyeetoo/InNet_box/backend/.pi-agent/doc/state"
         }
       }
     },
     "load": {
       "paths": [
-        "/home/youyeetoo/backend/.openclaw/plugins/backend-bridge"
+        "/home/youyeetoo/InNet_box/backend/.openclaw/plugins/backend-bridge"
       ]
     },
     "allow": [
@@ -183,7 +183,7 @@
     },
     "load": {
       "extraDirs": [
-        "/home/youyeetoo/backend/.openclaw/skills"
+        "/home/youyeetoo/InNet_box/backend/.openclaw/skills"
       ]
     }
   },

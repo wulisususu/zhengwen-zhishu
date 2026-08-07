@@ -7,7 +7,7 @@ set -euo pipefail
 echo "Starting LLM server on port 8001..."
 cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm
 export LD_LIBRARY_PATH=/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/lib:$LD_LIBRARY_PATH
-nohup .venv/bin/python3 /home/youyeetoo/backend/app/services/llm_server.py > /home/youyeetoo/backend/data/llm_server.log 2>&1 &
+nohup .venv/bin/python3 /home/youyeetoo/InNet_box/backend/app/services/llm_server.py > /home/youyeetoo/InNet_box/backend/data/llm_server.log 2>&1 &
 echo "LLM server PID: $!"
 
 echo "Waiting for LLM model to load..."
@@ -16,26 +16,26 @@ sleep 20
 echo "Starting MiniCPM persistent visual service on port 8003..."
 cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm
 export MINICPM_SERVICE_PORT=8003
-nohup .venv/bin/python3 /home/youyeetoo/backend/app/services/minicpm_vision_service.py 8003 > /home/youyeetoo/backend/data/minicpm_vision_service.log 2>&1 &
+nohup .venv/bin/python3 /home/youyeetoo/InNet_box/backend/app/services/minicpm_vision_service.py 8003 > /home/youyeetoo/InNet_box/backend/data/minicpm_vision_service.log 2>&1 &
 echo "MiniCPM visual service PID: $!"
 
 echo "Piper TTS is loaded on demand by backend."
 
 echo "Preloading embedding model..."
-cd /home/youyeetoo/backend
+cd /home/youyeetoo/InNet_box/backend
 source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate
 export HF_ENDPOINT=https://hf-mirror.com
 export LD_LIBRARY_PATH=/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/lib:$LD_LIBRARY_PATH
-nohup python -c "from app.kb.embedding import get_embedding_model; get_embedding_model(); print('Embedding model loaded')" > /home/youyeetoo/backend/data/kb_init.log 2>&1 &
+nohup python -c "from app.kb.embedding import get_embedding_model; get_embedding_model(); print('Embedding model loaded')" > /home/youyeetoo/InNet_box/backend/data/kb_init.log 2>&1 &
 echo "Embedding model preloading started"
 
 echo "Starting backend on port 8000..."
-cd /home/youyeetoo/backend
+cd /home/youyeetoo/InNet_box/backend
 source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate
 export LD_LIBRARY_PATH=/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm/lib:$LD_LIBRARY_PATH
 export LLM_06B_SERVICE_URL=http://127.0.0.1:8003
 export BACKEND_INTERNAL_SERVICE_TOKEN="${BACKEND_INTERNAL_SERVICE_TOKEN:-change-me-internal-service-token}"
-nohup python run.py > /home/youyeetoo/backend/data/server.log 2>&1 &
+nohup python scripts/run.py > /home/youyeetoo/InNet_box/backend/data/server.log 2>&1 &
 BACKEND_PID=$!
 echo "Backend PID: $BACKEND_PID"
 
@@ -56,17 +56,17 @@ export PATH="$HOME/.npm-global/bin:$PATH"
 export PI_AGENT_TOKEN="${PI_AGENT_TOKEN:-pi-agent-local-token}"
 export PI_AGENT_CHAT=1
 export PI_AGENT_DOC=1
-BACKEND_DIR="/home/youyeetoo/backend"
+BACKEND_DIR="/home/youyeetoo/InNet_box/backend"
 OPENCLAW_CONFIG_PATH="$BACKEND_DIR/.pi-agent/chat/openclaw.json" OPENCLAW_STATE_DIR="$BACKEND_DIR/.pi-agent/chat/state" nohup openclaw gateway --port 18790 --bind loopback \
-  > /home/youyeetoo/backend/data/pi-agent-chat.log 2>&1 &
+  > /home/youyeetoo/InNet_box/backend/data/pi-agent-chat.log 2>&1 &
 CHAT_AGENT_PID=$!
 echo "  chat-agent PID: $CHAT_AGENT_PID"
-echo "$CHAT_AGENT_PID" > /home/youyeetoo/backend/data/pi-agent-chat.pid
+echo "$CHAT_AGENT_PID" > /home/youyeetoo/InNet_box/backend/data/pi-agent-chat.pid
 OPENCLAW_CONFIG_PATH="$BACKEND_DIR/.pi-agent/doc/openclaw.json" OPENCLAW_STATE_DIR="$BACKEND_DIR/.pi-agent/doc/state" nohup openclaw gateway --port 18791 --bind loopback \
-  > /home/youyeetoo/backend/data/pi-agent-doc.log 2>&1 &
+  > /home/youyeetoo/InNet_box/backend/data/pi-agent-doc.log 2>&1 &
 DOC_AGENT_PID=$!
 echo "  doc-agent PID: $DOC_AGENT_PID"
-echo "$DOC_AGENT_PID" > /home/youyeetoo/backend/data/pi-agent-doc.pid
+echo "$DOC_AGENT_PID" > /home/youyeetoo/InNet_box/backend/data/pi-agent-doc.pid
 
 echo "All services started!"
 echo "  LLM Server:    http://0.0.0.0:8001"
@@ -79,4 +79,4 @@ echo "  Piper TTS:     /home/youyeetoo/models/piper/zh_CN-huayan-medium.onnx"
 echo "  Frontend:      http://0.0.0.0:3000"
 
 echo 
-bash /home/youyeetoo/INnet_agent/backend/scripts/startup_health_check.sh
+bash /home/youyeetoo/InNet_box/backend/scripts/startup_health_check.sh

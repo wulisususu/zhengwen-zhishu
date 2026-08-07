@@ -1,7 +1,0 @@
-Files omitted from regular GitHub commits
-==========================================
-
-MODEL_FILE: larger than 500 MiB
-GITHUB_LIMIT: larger than 100 MiB but not larger than 500 MiB
-
-MODEL_FILE	603.40 MiB	backups/ppt-agent-backup-20260717_104109/PPT-master.bak/ppt-master-main.zip

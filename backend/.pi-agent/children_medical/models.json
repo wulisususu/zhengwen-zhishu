@@ -1,0 +1,66 @@
+{
+  "providers": {
+    "qwen35-35b-direct-8081": {
+      "baseUrl": "http://192.168.10.212:8081/v1",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+          "name": "Qwen3.5 35B remote 8081",
+          "contextWindow": 32768,
+          "maxTokens": 7000,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "reasoning": false,
+          "compat": {
+            "supportsTools": true,
+            "supportsStore": false,
+            "supportsStrictMode": false,
+            "supportsUsageInStreaming": false,
+            "supportsDeveloperRole": false
+          }
+        }
+      ],
+      "apiKey": "ollama",
+      "timeoutSeconds": 900
+    },
+    "qwen06b-local-8088": {
+      "baseUrl": "http://127.0.0.1:8088/v1",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "Qwen3-0.6B-Q4_K_M.gguf",
+          "name": "Qwen3 0.6B local 8088",
+          "contextWindow": 4096,
+          "maxTokens": 512,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "reasoning": false,
+          "compat": {
+            "supportsTools": false,
+            "supportsStore": false,
+            "supportsStrictMode": false,
+            "supportsUsageInStreaming": false,
+            "supportsDeveloperRole": false
+          }
+        }
+      ],
+      "apiKey": "not-needed",
+      "timeoutSeconds": 30
+    }
+  }
+}

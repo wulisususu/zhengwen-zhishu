@@ -1,0 +1,452 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/youyeetoo/backend/.openclaw",
+      "model": {
+        "primary": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest"
+      },
+      "models": {
+        "qwen25-15b-rkllm-8088/Qwen2.5-1.5B-Instruct": {},
+        "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest": {}
+      }
+    },
+    "list": [
+      {
+        "id": "docgen",
+        "skills": [
+          "doc-gen-legacy-rules",
+          "doc-gen",
+          "tech-doc-style-chinese",
+          "official-document-writing",
+          "document-illustrator",
+          "document-skills-docx",
+          "document-skills-pdf",
+          "document-skills-pptx",
+          "document-skills-xlsx",
+          "claude-office-docx",
+          "claude-office-pdf",
+          "claude-office-pptx",
+          "claude-office-xlsx",
+          "phase1-reference-pack"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 12000
+        },
+        "description": "???? agent?????? Office/PDF ???",
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "generate_document",
+            "local_small_model",
+            "attachment_parse",
+            "document_render_docx",
+            "document_task_status",
+            "download_url"
+          ]
+        }
+      },
+      {
+        "id": "writer",
+        "name": "writer",
+        "workspace": "/home/youyeetoo/backend/.openclaw",
+        "agentDir": "/home/youyeetoo/.openclaw/agents/writer/agent",
+        "model": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest",
+        "skills": [
+          "tech-doc-style-chinese",
+          "official-document-writing"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 12000
+        },
+        "description": "???? agent????????????????"
+      },
+      {
+        "id": "office",
+        "name": "office",
+        "workspace": "/home/youyeetoo/backend/.openclaw",
+        "agentDir": "/home/youyeetoo/.openclaw/agents/office/agent",
+        "model": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest",
+        "skills": [
+          "document-skills-docx",
+          "document-skills-pdf",
+          "document-skills-pptx",
+          "document-skills-xlsx",
+          "claude-office-docx",
+          "claude-office-pdf",
+          "claude-office-pptx",
+          "claude-office-xlsx"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 12000
+        },
+        "description": "Office/PDF agent??????????PDF ???"
+      },
+      {
+        "id": "visualdoc",
+        "name": "visualdoc",
+        "workspace": "/home/youyeetoo/backend/.openclaw",
+        "agentDir": "/home/youyeetoo/.openclaw/agents/visualdoc/agent",
+        "model": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest",
+        "skills": [
+          "document-illustrator",
+          "fireworks-tech-graph",
+          "diagram-maker",
+          "canvas"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 12000
+        },
+        "description": "???? agent??????????????"
+      },
+      {
+        "id": "knowledge",
+        "name": "knowledge",
+        "workspace": "/home/youyeetoo/backend/.openclaw",
+        "model": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest",
+        "skills": [
+          "kb-search",
+          "phase1-reference-pack"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 12000
+        },
+        "description": "Knowledge-grounded agent for backend kb_search / grounding flows.",
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "kb_search",
+            "parse_file",
+            "synthesize_speech",
+            "transcribe_audio"
+          ]
+        }
+      },
+      {
+        "id": "main",
+        "name": "main",
+        "workspace": "/home/youyeetoo/backend/.openclaw",
+        "model": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest",
+        "skills": [
+          "phase1-reference-pack"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 12000
+        },
+        "description": "Main chat orchestration agent for backend conversation flows, including parse/TTS/ASR tools.",
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "parse_file",
+            "synthesize_speech",
+            "transcribe_audio"
+          ]
+        }
+      },
+      {
+        "id": "voice-input",
+        "name": "voice-input",
+        "workspace": "/home/youyeetoo/backend/.openclaw",
+        "model": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest",
+        "description": "Voice input refinement agent. STRICT RULES: 1) Call local_small_model with mode=voice_refine using the user text as prompt. 2) Output ONLY the refined text from local_small_model response. 3) NO prefixes, NO explanations, NO markdown, NO extra words. Output must be usable directly as a chat message.",
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "transcribe_audio",
+            "local_small_model"
+          ]
+        },
+        "skills": [],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 0
+        },
+        "agentDir": "/home/youyeetoo/.openclaw/agents/voice-input/agent"
+      },
+      {
+        "id": "children-qa",
+        "name": "children-qa",
+        "workspace": "/home/youyeetoo/.openclaw/agents/children-qa/agent",
+        "model": "qwen35-35b-direct-8081/qwen3.5-35b-a3b-ud-q4-xl:latest",
+        "skills": [],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 0
+        },
+        "description": "KB search + 1.5B answer pipeline. kb_search -> generate.",
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "kb_search"
+          ]
+        },
+        "agentDir": "/home/youyeetoo/.openclaw/agents/children-qa/agent",
+        "contextInjection": "never",
+        "bootstrapMaxChars": 1,
+        "bootstrapTotalMaxChars": 1,
+        "experimental": {
+          "localModelLean": true
+        },
+        "heartbeat": {
+          "includeSystemPromptSection": false
+        }
+      }
+    ]
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": {
+        "source": "env",
+        "provider": "default",
+        "id": "OPENCLAW_GATEWAY_TOKEN"
+      }
+    },
+    "port": 18789,
+    "bind": "lan",
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        },
+        "responses": {
+          "enabled": true
+        }
+      }
+    },
+    "controlUi": {
+      "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": true
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "tools": {
+    "profile": "minimal"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "qwen35-35b-direct-8081": {
+        "baseUrl": "http://192.168.0.212:21434/v1",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "qwen3.5-35b-a3b-ud-q4-xl:latest",
+            "name": "Qwen3.5 35B remote 21434 long context",
+            "contextWindow": 32768,
+            "maxTokens": 7000,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "reasoning": false
+          }
+        ],
+        "apiKey": "ollama"
+      },
+      "qwen25-15b-rkllm-8088": {
+        "baseUrl": "http://127.0.0.1:8088/v1",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "Qwen2.5-1.5B-Instruct",
+            "name": "Qwen2.5 1.5B RKLLM 8088",
+            "contextWindow": 4096,
+            "maxTokens": 256,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "reasoning": false
+          }
+        ],
+        "apiKey": "local"
+      }
+    }
+  },
+  "wizard": {
+    "lastRunAt": "2026-06-10T10:33:14.518Z",
+    "lastRunVersion": "2026.6.1",
+    "lastRunCommand": "doctor",
+    "lastRunMode": "local"
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.6.1",
+    "lastTouchedAt": "2026-06-11T01:44:29.308Z"
+  },
+  "plugins": {
+    "entries": {
+      "backend-bridge": {
+        "enabled": true,
+        "config": {
+          "baseUrl": "http://127.0.0.1:8000",
+          "serviceToken": "change-me-internal-service-token",
+          "traceDir": "/home/youyeetoo/backend/.openclaw/state/runtime"
+        }
+      }
+    },
+    "load": {
+      "paths": [
+        "/home/youyeetoo/backend/.openclaw/plugins/backend-bridge"
+      ]
+    },
+    "allow": [
+      "backend-bridge",
+      "memory-core"
+    ],
+    "bundledDiscovery": "compat"
+  },
+  "skills": {
+    "entries": {
+      "1password": {
+        "enabled": false
+      },
+      "apple-notes": {
+        "enabled": false
+      },
+      "apple-reminders": {
+        "enabled": false
+      },
+      "bear-notes": {
+        "enabled": false
+      },
+      "blogwatcher": {
+        "enabled": false
+      },
+      "blucli": {
+        "enabled": false
+      },
+      "camsnap": {
+        "enabled": false
+      },
+      "clawhub": {
+        "enabled": false
+      },
+      "coding-agent": {
+        "enabled": false
+      },
+      "discord": {
+        "enabled": false
+      },
+      "doc-gen": {
+        "enabled": true
+      },
+      "eightctl": {
+        "enabled": false
+      },
+      "gemini": {
+        "enabled": false
+      },
+      "gh-issues": {
+        "enabled": false
+      },
+      "gifgrep": {
+        "enabled": false
+      },
+      "github": {
+        "enabled": false
+      },
+      "goplaces": {
+        "enabled": false
+      },
+      "himalaya": {
+        "enabled": false
+      },
+      "imsg": {
+        "enabled": false
+      },
+      "mcporter": {
+        "enabled": false
+      },
+      "model-usage": {
+        "enabled": false
+      },
+      "nano-pdf": {
+        "enabled": false
+      },
+      "obsidian": {
+        "enabled": false
+      },
+      "openai-whisper": {
+        "enabled": false
+      },
+      "openai-whisper-api": {
+        "enabled": false
+      },
+      "openhue": {
+        "enabled": false
+      },
+      "oracle": {
+        "enabled": false
+      },
+      "ordercli": {
+        "enabled": false
+      },
+      "peekaboo": {
+        "enabled": false
+      },
+      "sag": {
+        "enabled": false
+      },
+      "session-logs": {
+        "enabled": false
+      },
+      "sherpa-onnx-tts": {
+        "enabled": false
+      },
+      "slack": {
+        "enabled": false
+      },
+      "songsee": {
+        "enabled": false
+      },
+      "sonoscli": {
+        "enabled": false
+      },
+      "spotify-player": {
+        "enabled": false
+      },
+      "things-mac": {
+        "enabled": false
+      },
+      "tmux": {
+        "enabled": false
+      },
+      "trello": {
+        "enabled": false
+      },
+      "voice-call": {
+        "enabled": false
+      },
+      "wacli": {
+        "enabled": false
+      },
+      "xurl": {
+        "enabled": false
+      },
+      "kb-search": {
+        "enabled": true
+      },
+      "phase1-reference-pack": {
+        "enabled": true
+      },
+      "pediatric-medical-qa": {
+        "enabled": true
+      }
+    }
+  }
+}

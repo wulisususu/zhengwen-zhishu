@@ -1,0 +1,12 @@
+import "./visual/visual-tokens.css";
+export { default as PptWorkbenchPage } from "./pages/PptWorkbenchPage.vue";
+export { MockPptWorkflowAdapter } from "./adapters/MockPptWorkflowAdapter";
+export { LegacyPptMasterAdapter, mapLegacyPptMasterEvent } from "./adapters/LegacyPptMasterAdapter";
+export { HttpPptWorkflowAdapter } from "./adapters/HttpPptWorkflowAdapter";
+export type { PptWorkflowAdapter, StartPptWorkflowInput } from "./adapters/PptWorkflowAdapter";
+export type { PptWorkflowEvent, PptWorkflowEventType } from "./protocol/events";
+export type { WorkflowCapabilities } from "./protocol/capabilities";
+export type { PresentationProject } from "./types/project";
+export type { Presentation, Slide, SlideElement, OutlineItem, ValidationResult } from "./types/presentation";
+export type { PptGenerationTask } from "./types/task";
+export type { PptChangeProposal } from "./types/proposal";

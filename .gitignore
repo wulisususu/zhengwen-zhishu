@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.npm/
+.pnpm-store/
+
+# Env secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+id_rsa
+id_ed25519
+
+# Logs & runtime
+*.log
+*.pid
+service_logs/
+logs/
+tmp/
+temp/
+.cache/
+data/
+output/
+backups/
+projects/
+state/
+sessions/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Large models & binaries
+*.onnx
+*.rkllm
+*.gguf
+*.safetensors
+*.zip
+*.pptx
+!tests/fixtures/*.pptx
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

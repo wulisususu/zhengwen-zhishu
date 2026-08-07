@@ -1,0 +1,194 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/youyeetoo/backend/.pi-agent/doc",
+      "model": {
+        "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+        "fallbacks": []
+      },
+      "timeoutSeconds": 900
+    },
+    "list": [
+      {
+        "id": "doc",
+        "name": "doc",
+        "workspace": "/home/youyeetoo/backend/.pi-agent/doc",
+        "agentDir": "/home/youyeetoo/backend/.pi-agent/doc",
+        "model": {
+          "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+          "fallbacks": []
+        },
+        "skills": [
+          "doc-gen",
+          "long-document-chunking",
+          "word-formatting",
+          "document-skills-docx",
+          "claude-office-docx",
+          "official-document-writing"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 12000
+        },
+        "description": "PI Doc Agent — document generation, formatting, and DOCX rendering",
+        "tools": {
+          "profile": "minimal"
+        }
+      }
+    ]
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": {
+        "source": "env",
+        "provider": "default",
+        "id": "OPENCLAW_GATEWAY_TOKEN"
+      }
+    },
+    "port": 18791,
+    "bind": "loopback",
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        },
+        "responses": {
+          "enabled": true
+        }
+      }
+    },
+    "controlUi": {
+      "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": true
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "tools": {},
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "qwen06b-local-8002": {
+        "baseUrl": "http://127.0.0.1:8002/v1",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "Qwen3-0.6B-Q4_K_M.gguf",
+            "name": "Qwen3 0.6B local 8002",
+            "contextWindow": 4096,
+            "maxTokens": 512,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "reasoning": false,
+            "compat": {
+              "supportsTools": false,
+              "supportsStore": false,
+              "supportsStrictMode": false,
+              "supportsUsageInStreaming": false,
+              "supportsDeveloperRole": false
+            }
+          }
+        ],
+        "apiKey": "ollama",
+        "timeoutSeconds": 30
+      },
+      "qwen35-35b-external": {
+        "baseUrl": "http://115.190.225.138:8808",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+            "name": "External OpenAI-compatible (http://115.190.225.138:8808)",
+            "contextWindow": 32768,
+            "maxTokens": 8192,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "reasoning": true,
+            "compat": {
+              "thinkingFormat": "qwen-chat-template",
+              "supportsTools": true,
+              "supportsStore": false,
+              "supportsStrictMode": false,
+              "supportsUsageInStreaming": false,
+              "supportsDeveloperRole": false
+            }
+          }
+        ],
+        "timeoutSeconds": 600,
+        "apiKey": "${EXTERNAL_MODEL_API_KEY}"
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "backend-bridge": {
+        "enabled": true,
+        "config": {
+          "baseUrl": "http://127.0.0.1:8000",
+          "serviceToken": "change-me-internal-service-token",
+          "traceDir": "/home/youyeetoo/backend/.pi-agent/doc/state"
+        }
+      }
+    },
+    "load": {
+      "paths": [
+        "/home/youyeetoo/backend/.openclaw/plugins/backend-bridge"
+      ]
+    },
+    "allow": [
+      "backend-bridge"
+    ],
+    "bundledDiscovery": "compat"
+  },
+  "skills": {
+    "entries": {
+      "doc-gen": {
+        "enabled": true
+      },
+      "long-document-chunking": {
+        "enabled": true
+      },
+      "word-formatting": {
+        "enabled": true
+      },
+      "document-skills-docx": {
+        "enabled": true
+      },
+      "claude-office-docx": {
+        "enabled": true
+      },
+      "official-document-writing": {
+        "enabled": true
+      }
+    },
+    "load": {
+      "extraDirs": [
+        "/home/youyeetoo/backend/.openclaw/skills"
+      ]
+    }
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.6.1",
+    "lastTouchedAt": "2026-07-07T00:00:00.000Z"
+  }
+}

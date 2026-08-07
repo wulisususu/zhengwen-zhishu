@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档生成 — Docs Pipeline v3</title>
+<link rel="stylesheet" href="style.css?v=20260702-quality1">
+</head>
+<body>
+<div id="app">
+  <div id="stage-input" class="stage">
+    <h1>📄 智能文档生成</h1>
+    <p class="subtitle">输入主题，AI 自动撰写完整报告</p>
+    <div class="input-row">
+      <input id="topic-input" type="text" placeholder="请输入文档主题..." autofocus>
+      <button id="btn-generate" onclick="startGenerate()">生成</button>
+    </div>
+  </div>
+
+  <div id="stage-generating" class="stage hidden">
+    <div id="progress-banner" class="progress-banner">已提交，正在分析你的写作要求...</div>
+    <div id="outline-card" class="card hidden"></div>
+    <div id="content-stream" class="content-stream"></div>
+    <div id="progress-footer" class="progress-footer">准备生成文档结构</div>
+  </div>
+
+  <div id="stage-done" class="stage hidden">
+    <div id="download-card" class="download-card hidden"></div>
+  </div>
+</div>
+<script src="app.js?v=20260702-quality1"></script>
+</body>
+</html>

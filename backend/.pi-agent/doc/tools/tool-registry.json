@@ -1,0 +1,30 @@
+{
+  "version": "0.1.0",
+  "updated_at": "2026-07-07",
+  "tools": [
+    {
+      "name": "classify_document",
+      "status": "phase2-tool",
+      "implemented_via": "backend-bridge-plugin",
+      "backend_endpoint": "/api/v1/internal/classify-document"
+    },
+    {
+      "name": "generate_document",
+      "status": "legacy-fallback",
+      "implemented_via": "backend-bridge-plugin",
+      "backend_endpoint": "/api/v1/internal/doc-tasks"
+    },
+    {
+      "name": "document_render_docx",
+      "status": "document-mainpath",
+      "implemented_via": "backend-bridge-plugin",
+      "backend_endpoint": "/api/v1/internal/document-render-docx"
+    },
+    {
+      "name": "document_task_status",
+      "status": "document-mainpath",
+      "implemented_via": "backend-bridge-plugin",
+      "backend_endpoint": "/api/v1/internal/doc-task-status"
+    }
+  ]
+}

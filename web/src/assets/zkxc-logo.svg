@@ -1,0 +1,56 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="cloud" x1="78" y1="54" x2="374" y2="356" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#18E0C8"/>
+      <stop offset="1" stop-color="#1175F4"/>
+    </linearGradient>
+  </defs>
+  <path d="M128 324C78.2944 324 38 283.706 38 234C38 190.817 68.4543 154.749 109.075 146.097C125.145 92.7456 174.617 54 233.143 54C282.009 54 324.525 81.0238 345.98 120.955C353.442 118.426 361.441 117 369.773 117C410.756 117 444 150.244 444 191.227C444 193.171 443.925 195.098 443.778 197.006C474.734 209.379 496 239.652 496 274.909C496 321.914 457.914 360 410.909 360H128V324Z" fill="url(#cloud)"/>
+  <g stroke="white" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M74 248L121 216L168 249L216 204L262 238L308 187L356 216L404 176L455 207"/>
+    <path d="M109 146L153 108L211 126L248 80L304 118L347 96L391 140"/>
+    <path d="M146 298L186 258L237 278L280 245L327 266L370 242L413 272L450 242"/>
+  </g>
+  <g fill="white">
+    <circle cx="74" cy="248" r="13"/>
+    <circle cx="121" cy="216" r="14"/>
+    <circle cx="168" cy="249" r="21"/>
+    <circle cx="216" cy="204" r="15"/>
+    <circle cx="262" cy="238" r="14"/>
+    <circle cx="308" cy="187" r="22"/>
+    <circle cx="356" cy="216" r="15"/>
+    <circle cx="404" cy="176" r="19"/>
+    <circle cx="455" cy="207" r="13"/>
+    <circle cx="109" cy="146" r="16"/>
+    <circle cx="153" cy="108" r="15"/>
+    <circle cx="211" cy="126" r="20"/>
+    <circle cx="248" cy="80" r="17"/>
+    <circle cx="304" cy="118" r="15"/>
+    <circle cx="347" cy="96" r="24"/>
+    <circle cx="391" cy="140" r="15"/>
+    <circle cx="146" cy="298" r="13"/>
+    <circle cx="186" cy="258" r="14"/>
+    <circle cx="237" cy="278" r="15"/>
+    <circle cx="280" cy="245" r="14"/>
+    <circle cx="327" cy="266" r="14"/>
+    <circle cx="370" cy="242" r="14"/>
+    <circle cx="413" cy="272" r="13"/>
+    <circle cx="450" cy="242" r="12"/>
+  </g>
+  <g fill="white">
+    <path d="M197 246C202 246 206 250 206 255V302L240 336L256 320V258H267V320L282 336L317 302V255C317 250 321 246 326 246H341C346 246 350 250 350 255V316L268 398C261 405 251 405 244 398L163 316V255C163 250 167 246 172 246H197Z"/>
+    <rect x="214" y="224" width="91" height="18" rx="9"/>
+    <path d="M181 228C176 222 174 214 175 206C183 206 190 208 195 214C200 220 202 228 201 236C193 236 186 234 181 228Z"/>
+    <path d="M331 228C326 222 324 214 325 206C333 206 340 208 345 214C350 220 352 228 351 236C343 236 336 234 331 228Z"/>
+  </g>
+  <g fill="#0F0F10">
+    <path d="M111 428H140L151 486H132L130 472H120L118 486H100L111 428ZM122 458H128L125 442L122 458Z"/>
+    <path d="M159 428H178V486H159V428Z"/>
+    <path d="M189 428H209L221 453L233 428H252L232 460L252 486H232L221 468L209 486H190L210 460L189 428Z"/>
+    <path d="M262 428H281V486H262V428Z"/>
+    <path d="M291 428H311L323 453L335 428H354L334 460L354 486H334L323 468L311 486H292L312 460L291 428Z"/>
+    <path d="M365 428H384V458L402 428H423L402 456L424 486H402L384 460V486H365V428Z"/>
+  </g>
+  <text x="256" y="408" text-anchor="middle" font-family="Microsoft YaHei, PingFang SC, Arial, sans-serif" font-size="66" font-weight="800" fill="#0F0F10">中科信创</text>
+  <text x="256" y="510" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" letter-spacing="4" fill="#0F0F10">ZHONGKEXINCHUANG</text>
+</svg>

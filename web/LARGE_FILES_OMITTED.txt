@@ -1,0 +1,7 @@
+Files omitted from regular GitHub commits
+==========================================
+
+MODEL_FILE: larger than 500 MiB
+GITHUB_LIMIT: larger than 100 MiB but not larger than 500 MiB
+
+No oversized files found.

@@ -1,0 +1,211 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/youyeetoo/backend/.pi-agent/chat",
+      "model": {
+        "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+        "fallbacks": [
+          "qwen06b-local-8002/Qwen3-0.6B-Q4_K_M.gguf"
+        ]
+      },
+      "timeoutSeconds": 300
+    },
+    "list": [
+      {
+        "id": "chat",
+        "name": "chat",
+        "workspace": "/home/youyeetoo/backend/.pi-agent/chat",
+        "agentDir": "/home/youyeetoo/backend/.pi-agent/chat",
+        "model": {
+          "primary": "qwen35-35b-external/Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+          "fallbacks": [
+            "qwen06b-local-8002/Qwen3-0.6B-Q4_K_M.gguf"
+          ]
+        },
+        "skills": [
+          "conversation-title",
+          "summarize"
+        ],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 6000
+        },
+        "description": "PI Chat Agent — conversation orchestration with KB search and summarization",
+        "tools": {
+          "profile": "minimal"
+        }
+      },
+      {
+        "id": "chat-fallback",
+        "name": "chat-fallback",
+        "workspace": "/home/youyeetoo/backend/.pi-agent/chat",
+        "model": "qwen06b-local-8002/Qwen3-0.6B-Q4_K_M.gguf",
+        "skills": [],
+        "skillsLimits": {
+          "maxSkillsPromptChars": 0
+        },
+        "description": "Lean fallback — 0.6B with zero system prompt, bare user message only.",
+        "contextInjection": "never",
+        "bootstrapMaxChars": 1,
+        "bootstrapTotalMaxChars": 1,
+        "experimental": {
+          "localModelLean": true
+        },
+        "heartbeat": {
+          "includeSystemPromptSection": false
+        },
+        "tools": {
+          "profile": "minimal"
+        }
+      }
+    ]
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": {
+        "source": "env",
+        "provider": "default",
+        "id": "OPENCLAW_GATEWAY_TOKEN"
+      }
+    },
+    "port": 18790,
+    "bind": "loopback",
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        },
+        "responses": {
+          "enabled": true
+        }
+      }
+    },
+    "controlUi": {
+      "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": true
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "tools": {},
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "qwen06b-local-8002": {
+        "baseUrl": "http://127.0.0.1:8002/v1",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "Qwen3-0.6B-Q4_K_M.gguf",
+            "name": "Qwen3 0.6B local 8002",
+            "contextWindow": 4096,
+            "maxTokens": 512,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "reasoning": false,
+            "compat": {
+              "supportsTools": false,
+              "supportsStore": false,
+              "supportsStrictMode": false,
+              "supportsUsageInStreaming": false,
+              "supportsDeveloperRole": false
+            }
+          }
+        ],
+        "apiKey": "ollama",
+        "timeoutSeconds": 30
+      },
+      "qwen35-35b-external": {
+        "baseUrl": "http://115.190.225.138:8808",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+            "name": "External OpenAI-compatible (http://115.190.225.138:8808)",
+            "contextWindow": 32768,
+            "maxTokens": 32768,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "reasoning": true,
+            "compat": {
+              "thinkingFormat": "qwen-chat-template",
+              "supportsTools": true,
+              "supportsStore": false,
+              "supportsStrictMode": false,
+              "supportsUsageInStreaming": false,
+              "supportsDeveloperRole": false
+            }
+          }
+        ],
+        "timeoutSeconds": 600,
+        "apiKey": "${EXTERNAL_MODEL_API_KEY}"
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "backend-bridge": {
+        "enabled": true,
+        "config": {
+          "baseUrl": "http://127.0.0.1:8000",
+          "serviceToken": "change-me-internal-service-token",
+          "traceDir": "/home/youyeetoo/backend/.pi-agent/chat/state"
+        }
+      }
+    },
+    "load": {
+      "paths": [
+        "/home/youyeetoo/backend/.openclaw/plugins/backend-bridge"
+      ]
+    },
+    "allow": [
+      "backend-bridge"
+    ],
+    "bundledDiscovery": "compat"
+  },
+  "skills": {
+    "entries": {
+      "conversation-title": {
+        "enabled": true
+      },
+      "kb-search": {
+        "enabled": false
+      },
+      "summarize": {
+        "enabled": true
+      },
+      "find-skills": {
+        "enabled": false
+      }
+    },
+    "load": {
+      "extraDirs": [
+        "/home/youyeetoo/backend/.openclaw/skills"
+      ]
+    }
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.6.1",
+    "lastTouchedAt": "2026-07-07T00:00:00.000Z"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "version": "0.1.0",
+  "updated_at": "2026-07-07",
+  "tools": [
+    {
+      "name": "kb_search",
+      "status": "phase1-priority",
+      "implemented_via": "backend-bridge-plugin",
+      "backend_endpoint": "/api/v1/internal/kb/search",
+      "requires_conversation_scope": false,
+      "requires_user_scope": false
+    },
+    {
+      "name": "local_small_model",
+      "status": "phase2-light-router",
+      "implemented_via": "backend-bridge-plugin",
+      "backend_endpoint": "/api/v1/internal/local-small/generate"
+    }
+  ]
+}

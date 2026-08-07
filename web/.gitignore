@@ -1,0 +1,40 @@
+node_modules/
+dist/
+.next/
+*.log
+.vite/
+*.pid
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# Node.js
+build/
+coverage/
+.npm/
+.pnpm-store/
+# Logs and temporary files
+logs/
+tmp/
+temp/
+.cache/
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

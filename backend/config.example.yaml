@@ -1,0 +1,19 @@
+server:
+  host: 0.0.0.0
+  port: 8000
+  debug: false
+database:
+  url: sqlite:///data/app.db
+jwt:
+  secret: ""
+  algorithm: HS256
+  expire_minutes: 1440
+logging:
+  level: INFO
+  file: data/app.log
+llm:
+  cloud_api_key: ""
+internal:
+  service_token: ""
+openclaw:
+  gateway_token: ""

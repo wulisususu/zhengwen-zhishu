@@ -1,0 +1,66 @@
+__pycache__/
+*.pyc
+*.pyo
+data/*.db
+data/*.log
+data/uploads/
+.venv/
+.venv*/
+**/.venv*/
+*.egg-info/
+.openclaw/
+.env
+.env.*
+!.env.example
+config.yaml
+config.local.yaml
+**/.env
+**/.env*
+!.env.example
+**/config.yaml
+**/state/identity/device.json
+config.yaml.*
+**/config.yaml.*
+**/*config*backup*.yaml
+app/PPT_master/projects/
+app/PPT_master/demo_output.pptx
+*.sqlite-shm
+*.sqlite-wal
+*.pptx
+!tests/fixtures/*.pptx
+# Environment and secrets
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+# Python
+*.py[cod]
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# Node.js
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.npm/
+.pnpm-store/
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+.cache/
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Automatically omitted large files
+/backups/ppt-agent-backup-20260717_104109/PPT-master.bak/ppt-master-main.zip

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720"
+     data-pptx-master="master-default" data-pptx-master-name="Default Master"
+     data-pptx-layout="layout-two-column" data-pptx-layout-name="Two Column"
+     data-pptx-page-role="content">
+  <g data-pptx-role="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="slot-title" data-pptx-placeholder="title" data-pptx-placeholder-idx="0"
+     data-pptx-placeholder-bounds="80,80,1120,80">
+    <text data-pptx-placeholder-carrier="true" x="100" y="130" font-size="42">Title</text>
+  </g>
+  <g id="slot-left" data-pptx-placeholder="body" data-pptx-placeholder-idx="1"
+     data-pptx-placeholder-bounds="80,200,520,460">
+    <text data-pptx-placeholder-carrier="true" x="100" y="260" font-size="24">Left column</text>
+  </g>
+  <g id="slot-right" data-pptx-placeholder="body" data-pptx-placeholder-idx="2"
+     data-pptx-placeholder-bounds="680,200,520,460">
+    <text data-pptx-placeholder-carrier="true" x="700" y="260" font-size="24">Right column</text>
+  </g>
+</svg>

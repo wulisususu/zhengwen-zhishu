@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Outline Output",
+  "type": "object",
+  "required": ["title", "sections"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 3
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["heading", "key_points"],
+        "properties": {
+          "heading": { "type": "string", "minLength": 3 },
+          "key_points": { "type": "string", "minLength": 5 }
+        }
+      }
+    },
+    "summary": { "type": "string" }
+  }
+}

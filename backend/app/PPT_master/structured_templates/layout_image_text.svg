@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720"
+     data-pptx-master="master-default" data-pptx-master-name="Default Master"
+     data-pptx-layout="layout-image-text" data-pptx-layout-name="Image with Text"
+     data-pptx-page-role="content">
+  <g data-pptx-role="background"><rect width="1280" height="720" fill="#FFFFFF"/></g>
+  <g id="slot-title" data-pptx-placeholder="title" data-pptx-placeholder-idx="0"
+     data-pptx-placeholder-bounds="80,80,1120,80">
+    <text data-pptx-placeholder-carrier="true" x="100" y="130" font-size="42">Title</text>
+  </g>
+  <g id="slot-image" data-pptx-placeholder="picture" data-pptx-placeholder-idx="1"
+     data-pptx-placeholder-bounds="80,200,560,460">
+    <rect data-pptx-placeholder-carrier="true" x="80" y="200" width="560" height="460" fill="#E5E7EB"/>
+  </g>
+  <g id="slot-body" data-pptx-placeholder="body" data-pptx-placeholder-idx="2"
+     data-pptx-placeholder-bounds="680,200,520,460">
+    <text data-pptx-placeholder-carrier="true" x="700" y="260" font-size="24">Description</text>
+  </g>
+</svg>

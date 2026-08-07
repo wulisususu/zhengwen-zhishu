@@ -1,0 +1,18 @@
+login 200 {"code":0,"message":"ok","data":{"access_token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMSIsImV4cCI6MTc4MjkxODc1M30.nqZVTl2-yM47NpCCxnGon0XVupVPKk-b9VySDayWGlA","token_type":"bearer"},"trace_id":"d1dbea15c9f34ab2"}
+token_present True
+conv 200 {"code":0,"message":"ok","data":{"id":894,"title":"openclaw35-probe","workflow_type":"document","created_at":"2026-06-30T15:12:33.030977","updated_at":"2026-06-30T15:12:33.030981"},"trace_id":"da62c13524ae4f9e"}
+conv_id 894
+msg_status 200
+data: {"workflow": "document", "intent_type": "document_generation", "type": "user", "id": 2146, "role": "user", "content": "写一份约800字的测试报告，主题：OpenClaw 35B 文档链路联通性验证。必须生成可下载 Word。", "msg_type": "text", "workflow_type": "document", "metadata_json": "", "created_at": "2026-06-30T15:12:33.152173", "attachments": [], "conversation": {"id": 894, "title": "openclaw35-probe", "workflow_type": "document", "created_at": "2026-06-30T15:12:33.030977", "updated_at": "2026-06-30T15:12:33.148402"}}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "message_start", "role": "assistant"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "我会为你生成"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "《写一份约8"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "00字的测试"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "报告主题Op"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "e》，并在完"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "成正文后生成"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "可下载文档。"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "status", "stage": "analyzing", "message": "正在分析你的文档需求…"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "token", "content": "\n\n大模型服务当前不可用，请检查 192.168.1.212:21434"}
+data: {"workflow": "document", "intent_type": "document_generation", "type": "done", "id": 2147, "content": "我会为你生成《写一份约800字的测试报告主题Ope》，并在完成正文后生成可下载文档。\n\n大模型服务当前不可用，请检查 192.168.1.212:21434", "conversation": {"id": 894, "title": "openclaw35-probe", "workflow_type": "document", "created_at": "2026-06-30T15:12:33.030977", "updated_at": "2026-06-30T15:12:33.358844"}}
+data: [DONE]

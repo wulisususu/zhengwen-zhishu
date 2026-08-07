@@ -1,6 +1,6 @@
-# INnet_agent — 端侧 AI 智能体平台
+# InNet_box — 端侧 AI 智能体平台
 
-> 部署硬件：RK3588 开发板 | 操作系统：Linux (Ubuntu/Debian) | 目标 IP：192.168.0.11
+> 部署硬件：RK3588 开发板 | 操作系统：Linux (Ubuntu/Debian) | 目标 IP：192.168.0.117
 
 ---
 
@@ -46,7 +46,7 @@
 
 ## 1. 系统概述
 
-INnet_agent 是一个部署在 RK3588 端侧设备上的 AI 智能体平台，提供 **对话 (Chat)**、**文档生成 (Document Generation)**、**PPT 生成**、**知识库检索**、**语音输入/润色** 等能力。前后端分离，后端集成多路本地模型推理和云端大模型兜底。
+InNet_box 是一个部署在 RK3588 端侧设备上的 AI 智能体平台，提供 **对话 (Chat)**、**文档生成 (Document Generation)**、**PPT 生成**、**知识库检索**、**语音输入/润色** 等能力。前后端分离，后端集成多路本地模型推理和云端大模型兜底。
 
 ---
 
@@ -124,49 +124,56 @@ MeloTTS        Qwen3-0.6B      MiniCPM         Qwen2.5-1.5B       OpenClaw Agent
 ## 3. 目录结构
 
 ```
-/home/youyeetoo/INnet_agent/
-├── backend/               # 后端 (FastAPI + Uvicorn)
-│   ├── app/               #   - 主应用代码
-│   │   ├── PPT_master/    #     * PPT 生成技能
-│   │   ├── docs_pipeline/ #     * 文档生成管线
-│   │   ├── kb/            #     * 知识库 (Embedding / 向量检索)
-│   │   ├── services/      #     * 服务 (LLM / MiniCPM 视觉 / 文档)
+/home/youyeetoo/InNet_box/
+├── README.md               # 项目说明（本文件）
+├── .gitignore              # Git 忽略规则
+├── restart_backend.sh      # 后端 + OpenClaw Agent 统一管理脚本
+│
+├── backend/                # 后端 (FastAPI + Uvicorn)
+│   ├── app/                #   - 主应用代码
+│   │   ├── PPT_master/     #     * PPT 生成技能
+│   │   ├── docs_pipeline/  #     * 文档生成管线
+│   │   ├── kb/             #     * 知识库 (Embedding / 向量检索)
+│   │   ├── services/       #     * 服务 (LLM / MiniCPM 视觉 / 文档)
 │   │   │   └── pi_agent_client/
 │   │   │       └── degradation.py  ← 聊天降级核心逻辑
 │   │   └── ...其他模块
-│   ├── config.yaml        #   - 主配置 (符号链接 → ~/.config/ai-box/backend/config.yaml)
-│   ├── .env               #   - 环境变量 (符号链接 → ~/.config/ai-box/backend/.env)
-│   ├── run.py             #   - 入口文件
-│   ├── start_all.sh       #   - 一键启动脚本
-│   ├── start_clean.sh     #   - 干净启动脚本
-│   ├── start_llm.sh       #   - 单独启动 LLM
-│   ├── data/              #   - 运行时数据 (db / logs)
-│   ├── scripts/           #   - 辅助脚本 (PI Agent 启停 / 健康检查)
-│   ├── backup*/           #   - 代码备份 (历史版本, 不参与运行)
-│   └── .pi-agent/         #   - PI Agent 配置 (chat / doc)
+│   ├── scripts/            #   - 运维脚本 (启停 / 健康检查 / 修复补丁)
+│   │   ├── run.py          #     * 后端入口 (systemd ExecStart 指向)
+│   │   ├── start_all.sh    #     * 一键启动
+│   │   ├── start_clean.sh  #     * 干净启动
+│   │   ├── start_llm.sh    #     * 单独启动 LLM
+│   │   ├── run_pipeline.py #     * 独立文档管线服务 (:8003)
+│   │   ├── standalone_docs_pipeline.py  # * 独立管道服务
+│   │   ├── python_chat_workflow.py      # * PCW 工作流 (:8099)
+│   │   └── fixes/          #     * 历史修复补丁
+│   ├── docs/               #   - 设计文档 / 报告 / 验收证据
+│   ├── tests/              #   - 后端测试
+│   ├── config.example.yaml #   - 配置示例 (部署时复制为 config.yaml)
+│   ├── .env.example        #   - 环境变量示例 (部署时复制为 .env)
+│   ├── requirements.txt    #   - Python 依赖
+│   └── .pi-agent/          #   - PI Agent 配置 (chat / doc / children_medical)
 │       └── chat/
 │           └── openclaw.json  ← OpenClaw 模型路由配置
 │
-├── web/                   # 前端 (Vue 3 + Vite)
-│   ├── src/               #   - 源码
-│   │   ├── components/    #     * 组件 (ChatMode / DocumentMode / ComposerBar …)
-│   │   ├── views/         #     * 页面 (LoginPage / PptHostPage …)
-│   │   ├── stores/        #     * Pinia 状态管理
-│   │   ├── features/      #     * 功能模块 (PPT workbench)
-│   │   └── api.js         #     * axios 客户端 (baseURL: /api/v1)
-│   ├── vite.config.js     #   - Vite 配置 (host/port/proxy)
-│   ├── index.html         #   - HTML 入口
-│   └── dist/              #   - 构建产物 (生产部署用)
-│
-├── service_logs/          # 各服务运行时日志
-├── release_staging/       # 发布暂存 (如 ppt-workbench 生产包)
-├── release_backups/       # 发布备份
-├── service-start-record-20260716.md  # 服务启动记录 (故障排查参考)
-└── README.md              # 本文件
+└── web/                    # 前端 (Vue 3 + Vite)
+    ├── src/                #   - 源码
+    │   ├── components/     #     * 组件 (ChatMode / DocumentMode / ComposerBar …)
+    │   ├── views/          #     * 页面 (LoginPage / PptHostPage …)
+    │   ├── stores/         #     * Pinia 状态管理
+    │   ├── features/       #     * 功能模块 (PPT workbench)
+    │   └── api.js          #     * axios 客户端 (baseURL: /api/v1)
+    ├── public/             #   - 静态资源
+    ├── docs/               #   - 文档 / 报告
+    ├── tests/              #   - 前端测试
+    ├── deployment/         #   - systemd 服务文件
+    ├── vite.config.js      #   - Vite 配置 (host/port/proxy)
+    ├── package.json        #   - npm 依赖与脚本
+    ├── index.html          #   - HTML 入口
+    └── start.sh            #   - 前端启动脚本
 ```
 
-> `/home/youyeetoo/backend` 是 **符号链接** → `INnet_agent/backend`，用于兼容历史启动脚本。
-
+> 说明：`data/`、`service_logs/`、`release/` 等运行时/发布产物目录已从仓库中移除，部署时由启动脚本自动创建或按需生成。
 ---
 
 ## 4. 后端 (backend)
@@ -291,12 +298,12 @@ PI_AGENT_DOC=1
 |------|------|
 | `vite.config.js` | Vite 配置 (开发服务器 host/port/proxy) |
 | `src/api.js` | axios 实例 (`baseURL: '/api/v1'`) |
-| `src/views/ChatMode.vue` | 对话界面 (含 SSE 流解析) |
-| `src/views/DocumentMode.vue` | 文档生成界面 |
+| `src/components/ChatMode.vue` | 对话界面 (含 SSE 流解析) |
+| `src/components/DocumentMode.vue` | 文档生成界面 |
 | `src/views/PptHostPage.vue` | PPT 工作台宿主页 |
 | `src/views/KnowledgeFileSearchView.vue` | 知识库文件搜索 |
 | `src/views/LoginPage.vue` | 登录页 |
-| `src/views/ComposerBar.vue` | 底部输入栏 |
+| `src/components/ComposerBar.vue` | 底部输入栏 |
 | `src/stores/chat.js` | 对话状态 (Pinia) |
 | `src/features/ppt-workbench/` | PPT 工作台适配器 (支持 Legacy / Mock 模式) |
 
@@ -358,14 +365,14 @@ server: {
 一键启动 (后端全家桶 + 模型 + PI Agent):
 
 ```bash
-cd /home/youyeetoo/INnet_agent/backend
-bash start_all.sh
+cd /home/youyeetoo/InNet_box/backend
+bash scripts/start_all.sh
 ```
 
 启动前端 (开发模式):
 
 ```bash
-cd /home/youyeetoo/INnet_agent/web
+cd /home/youyeetoo/InNet_box/web
 npm run dev
 ```
 
@@ -377,12 +384,12 @@ npm run dev
 
 | 步骤 | 命令 | 服务 |
 |------|------|------|
-| 1 | `cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm` <br> `export LD_LIBRARY_PATH=./lib:$LD_LIBRARY_PATH` <br> `nohup .venv/bin/python3 /home/youyeetoo/backend/app/services/llm_server.py > /home/youyeetoo/backend/data/llm_server.log 2>&1 &` | RKLLM 8001 (可选, 当前用 8088) |
-| 2 | `cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm` <br> `export MINICPM_SERVICE_PORT=8003` <br> `nohup .venv/bin/python3 /home/youyeetoo/backend/app/services/minicpm_vision_service.py 8003 > ... &` | MiniCPM 8003 |
-| 3 | `cd /home/youyeetoo/backend` <br> `source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate` <br> `export LD_LIBRARY_PATH=...` <br> `export BACKEND_INTERNAL_SERVICE_TOKEN=change-me-internal-service-token` <br> `nohup python run.py > ... &` | 后端 FastAPI 8000 |
+| 1 | `cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm` <br> `export LD_LIBRARY_PATH=./lib:$LD_LIBRARY_PATH` <br> `nohup .venv/bin/python3 /home/youyeetoo/InNet_box/backend/app/services/llm_server.py > /home/youyeetoo/InNet_box/backend/data/llm_server.log 2>&1 &` | RKLLM 8001 (可选, 当前用 8088) |
+| 2 | `cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm` <br> `export MINICPM_SERVICE_PORT=8003` <br> `nohup .venv/bin/python3 /home/youyeetoo/InNet_box/backend/app/services/minicpm_vision_service.py 8003 > ... &` | MiniCPM 8003 |
+| 3 | `cd /home/youyeetoo/InNet_box/backend` <br> `source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate` <br> `export LD_LIBRARY_PATH=...` <br> `export BACKEND_INTERNAL_SERVICE_TOKEN=change-me-internal-service-token` <br> `nohup python scripts/run.py > ... &` | 后端 FastAPI 8000 |
 | 4 | `systemctl --user restart openclaw-chat.service` | Chat Agent 18790 |
 | 5 | `systemctl --user restart openclaw-doc.service` | Doc Agent 18791 |
-| 6 | `cd /home/youyeetoo/INnet_agent/web && npm run dev` | 前端 3000 |
+| 6 | `cd /home/youyeetoo/InNet_box/web && npm run dev` | 前端 3000 |
 
 ### 7.3 验证服务状态
 
@@ -406,7 +413,7 @@ curl -s http://127.0.0.1:18791/health              # Doc Agent
 
 ### 8.1 日志
 
-所有服务日志统一存放于 `service_logs/`:
+所有服务日志统一存放于部署机的 `service_logs/`（运行时生成，不在仓库内）:
 
 | 日志文件 | 对应服务 |
 |----------|----------|
@@ -420,8 +427,8 @@ curl -s http://127.0.0.1:18791/health              # Doc Agent
 实时查看:
 
 ```bash
-tail -f /home/youyeetoo/INnet_agent/service_logs/backend_8000.log
-tail -f /home/youyeetoo/INnet_agent/service_logs/frontend_3000.log
+tail -f /home/youyeetoo/InNet_box/service_logs/backend_8000.log
+tail -f /home/youyeetoo/InNet_box/service_logs/frontend_3000.log
 ```
 
 ### 8.2 常用命令
@@ -435,7 +442,7 @@ systemctl --user status openclaw-chat.service openclaw-doc.service --no-pager -l
 
 # 重启后端
 lsof -ti tcp:8000 | xargs kill
-cd /home/youyeetoo/backend && source funasr_env/bin/activate && python run.py &
+cd /home/youyeetoo/InNet_box/backend && source funasr_env/bin/activate && python scripts/run.py &
 
 # 重启 OpenClaw Agent
 systemctl --user restart openclaw-chat.service
@@ -498,7 +505,7 @@ TTS 使用独立的 **MeloTTS 服务**（:5101），替代旧版 Piper TTS：
 | 调用方式 | 后端 tts_service.py -> POST /tts 获取 audio_url -> GET /audio/{id} 拿 WAV |
 | 后端接入 | POST /api/v1/tts/synthesize（JWT 鉴权） |
 | 模型 | MeloTTS-Chinese（中文+英文混合，约 1.9GB） |
-| 统一 venv | /home/youyeetoo/INnet_agent/backend/.venv -> symlink -> funasr_env |
+| 统一 venv | funasr_env（`/home/youyeetoo/rkllm_model_zoo/funasr_env`，由启动脚本引用） |
 | 启动 | bash /home/youyeetoo/rkllm_model_zoo/melo_tts/start_melo_tts.sh |
 | 验证 | curl -s http://127.0.0.1:5101/health -> {"state":"ready"} |
 
@@ -592,7 +599,7 @@ providers: {
 ```
 
 > 注: 原配置含 35B primary (192.168.10.212:8081) 和 8088 fallback，
-> 已于 2026-07-20 全部迁移到 8002 端口。备份见 release/ 目录。
+> 已于 2026-07-20 全部迁移到 8002 端口。历史备份由 git 历史承载。
 
 ### 9.6 模型端口清理 (2026-07-20)
 
@@ -619,7 +626,7 @@ DeepSeek 1.5B RKLLM 本地 NPU 模型已注释 (llm_server.py / llm_service.py /
 ### 10.2 端口 8088 完全移除
 
 - 原 qwen_api_server.py (8088) 已禁用 (.disabled)，全部 8088 引用已迁移到 8002。
-- 涉及 12 个文件的修改，详见 `release/` 下备份。
+- 涉及 12 个文件的修改，历史版本见 git 历史。
 
 ### 10.3 MiniCPM 依赖修复历史
 
@@ -630,10 +637,10 @@ DeepSeek 1.5B RKLLM 本地 NPU 模型已注释 (llm_server.py / llm_service.py /
 - 前端 `npm run dev` 模式依赖 Vite 代理 (`/api` → `localhost:8000`)。
 - 若需生产部署，应在 nginx 中配置反向代理。
 
-### 10.5 符号链接兼容
+### 10.5 路径说明
 
-- `/home/youyeetoo/backend` → `INnet_agent/backend`
-- 旧脚本硬编码老路径，移动项目后需更新符号链接。
+- 本仓库所有脚本/配置中的路径已统一为 `/home/youyeetoo/InNet_box`，不再依赖符号链接。
+- 部署到新机器时，如需更换部署目录，请同步替换代码与配置中的 `/home/youyeetoo/InNet_box` 前缀（约 5 处核心路径，见审计报告）。
 
 ### 10.7 MeloTTS 首次启动加载慢
 
@@ -668,15 +675,12 @@ sudo systemctl status innet_backend    # 查看状态
 sudo journalctl -u innet_backend -f    # 实时日志
 ```
 
-### 11.3 备份目录
+### 11.3 历史备份
 
-所有修改前备份存放于 `release/` 下，按时间戳命名:
-- `backup-before-simplify-degradation-*` — 降级链简化前
-- `backup-openclaw-chat-config-*` — OpenClaw 配置修改前
-- `backup-attachment-fix-*` — 图片附件等待修复前
+仓库已不再保留独立备份目录，所有历史版本通过 git 提交历史回溯。
 
 ---
 
-> **首次启动参考**: `release/logs/service-start-record-20260716.md` 详细记录了 2026-07-16 该平台从零部署到全链路启动的全过程。
+> **首次启动参考**: 2026-07-16 的部署全记录曾存放于 `release/logs/service-start-record-20260716.md`，现该目录已随仓库整理移除；部署要点见本文档第 7 节。
 
-详细记录了 2026-07-16 该平台从零部署到全链路启动的全过程,包含每个踩坑点与修复方式。
+部署要点详见第 7 节「启动指南」与第 8 节「运维与调试」。

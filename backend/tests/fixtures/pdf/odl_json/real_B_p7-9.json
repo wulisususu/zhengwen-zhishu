@@ -1,0 +1,915 @@
+{
+ "file name": "B_pages_7-9_trimmed.pdf",
+ "number of pages": 14,
+ "author": "刘林永",
+ "title": "现将《轻工纺织产业发展“十五五”规划》印发给你们，请结合实际，认真贯彻实施。",
+ "creation date": "D:20260922085938+00'59'",
+ "modification date": "D:20260922085938+00'59'",
+ "kids": [
+  {
+   "type": "paragraph",
+   "pdfua_tag": "P",
+   "id": 223,
+   "page number": 7,
+   "bounding box": [
+    79.32,
+    730.527,
+    303.35,
+    746.477
+   ],
+   "font": "FangSong_GB2312",
+   "font size": 15.95,
+   "text color": "[0.0, 0.0, 0.0]",
+   "content": "评价，提升企业质量管理能力。"
+  },
+  {
+   "type": "list",
+   "pdfua_tag": "L",
+   "id": 224,
+   "level": "3",
+   "page number": 7,
+   "bounding box": [
+    111.359,
+    399.32,
+    524.03,
+    716.983
+   ],
+   "numbering style": "arabic numbers",
+   "number of list items": 2,
+   "previous list id": 218,
+   "next list id": 270,
+   "list items": [
+    {
+     "type": "list item",
+     "pdfua_tag": "LI",
+     "id": 225,
+     "page number": 7,
+     "bounding box": [
+      111.359,
+      699.32,
+      516.108,
+      716.983
+     ],
+     "font": "TimesNewRomanPS-BoldMT",
+     "font size": 15.95,
+     "text color": "[0.0, 0.0, 0.0]",
+     "content": "6.强化品牌培育提升。系统培育中国消费名品，持续遴选发",
+     "kids": [
+      {
+       "type": "paragraph",
+       "pdfua_tag": "P",
+       "id": 226,
+       "page number": 7,
+       "bounding box": [
+        79.32,
+        460.527,
+        523.909,
+        686.477
+       ],
+       "font": "FangSong_GB2312",
+       "font size": 15.95,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "布优质企业品牌和区域品牌。支持国内纺织服装、家电、箱包、 化妆品、酿酒等企业引领国际主流市场，加强国际传播能力建 设，开展本地化品牌运营。推进纺织服装创意设计领航集聚区、 特色产业集聚区建设，支持举办科技面料创新设计应用大赛等 专业赛事。分类培育纺织服装卓越品牌，建立完善具有中国特 色的纺织服装卓越品牌评价体系。培育传统优势食品产区和地 方特色食品产业，打造区域品牌和企业品牌。培育专业化品牌 服务商，提升轻工纺织品牌的价值创造能力与国际化运营水平。"
+      },
+      {
+       "type": "paragraph",
+       "pdfua_tag": "P",
+       "id": 227,
+       "page number": 7,
+       "bounding box": [
+        111.359,
+        430.527,
+        320.028,
+        446.477
+       ],
+       "font": "KaiTi_GB2312",
+       "font size": 15.95,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "（三）加快智能化绿色化转型"
+      }
+     ]
+    },
+    {
+     "type": "list item",
+     "pdfua_tag": "LI",
+     "id": 228,
+     "page number": 7,
+     "bounding box": [
+      111.359,
+      399.32,
+      524.03,
+      416.983
+     ],
+     "font": "TimesNewRomanPS-BoldMT",
+     "font size": 15.95,
+     "text color": "[0.0, 0.0, 0.0]",
+     "content": "7.推动人工智能赋能。加快研发重点行业垂直领域大模型，",
+     "kids": []
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "pdfua_tag": "P",
+   "id": 229,
+   "page number": 7,
+   "bounding box": [
+    79.32,
+    129.32,
+    523.909,
+    386.477
+   ],
+   "font": "FangSong_GB2312",
+   "font size": 15.95,
+   "text color": "[0.0, 0.0, 0.0]",
+   "content": "开发应用面向轻工纺织全产业链的专用智能体。在家电、家具、 食品、陶瓷、造纸、纺织等行业，部署表面缺陷在线检测系统、 工艺参数自优化系统、设备预测性维护系统等，提升质量一致 性与生产效率。在鞋包、服装、家用纺织品、珠宝首饰等行业， 推广生成式 AI 辅助创意设计、用户体验仿真等，鼓励“一人一 版”高端定制。分行业梳理 AI 应用场景和实施路径，培育一批 场景导向数智工具和解决方案。推进重点企业产线工业控制系 统更新换代，引导企业利用 5G、工业互联网等改造升级工厂网 络，推动企业开展工业 5G 专网建设，为行业 AI 应用夯实基础。"
+  },
+  {
+   "type": "paragraph",
+   "pdfua_tag": "P",
+   "id": 230,
+   "page number": 7,
+   "bounding box": [
+    201.359,
+    107.292,
+    393.968,
+    122.851
+   ],
+   "font": "SimHei",
+   "font size": 14.05,
+   "text color": "[0.0, 0.0, 0.0]",
+   "content": "专栏 4 人工智能赋能主要方向"
+  },
+  {
+   "type": "text block",
+   "id": 234,
+   "page number": 8,
+   "bounding box": [
+    84.36,
+    95.47,
+    510.94,
+    756.85
+   ],
+   "kids": [
+    {
+     "type": "list",
+     "pdfua_tag": "L",
+     "id": 237,
+     "level": "1",
+     "page number": 8,
+     "bounding box": [
+      114.0,
+      97.698,
+      507.0,
+      751.023
+     ],
+     "numbering style": "arabic numbers",
+     "number of list items": 13,
+     "list items": [
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 238,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        737.658,
+        505.32,
+        751.023
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "1.家电。研发数字孪生技术，推动家电向理解式自然人机交互、个性化服务",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 239,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          697.698,
+          505.32,
+          731.098
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "与自适应主动智能跃迁，加快人工智能深度融入研发设计、生产制造、供应链管 理和产品服务。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 240,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        677.658,
+        505.31,
+        691.023
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "2.塑料制品。推广 AI 配方研发、数字孪生工厂、智慧供应链溯源、再生塑",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 241,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          657.738,
+          498.0,
+          671.098
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "料应用溯源等。开发智慧管网系统，实现管道可视化、网络化、智能化管理。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 242,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        637.698,
+        507.0,
+        651.063
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "3.皮革。建立节能减排智能监测控制系统，加大鞋类自动打粗、自动刷胶、",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 243,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          597.738,
+          505.319,
+          631.023
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "刷处理剂等智能工作站应用推广力度。应用基于 AI 驱动的鞋靴智能设计开发流 程，实现鞋靴款式快速精准设计。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 244,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        577.698,
+        505.317,
+        591.063
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "4.家具。发展智能家具以及成套解决方案，推广家居 AI 智能设计、智能排",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 245,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          557.659,
+          510.0,
+          571.018
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "产、生产管控、智能检测等核心应用。构建产品参数数据库、模块化产品体系。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 246,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        537.738,
+        505.44,
+        551.103
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "5.照明电器。攻关 AI 设计与 3D 打印制造应用技术，实施基于人工智能模型",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 247,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          517.698,
+          234.0,
+          531.058
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "的产品设计、制造与服务。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 248,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        497.659,
+        505.31,
+        511.024
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "6.五金制品。推进 AI 研发设计与多场景智能联动，构建供应链智能调度与",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 249,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          477.738,
+          210.0,
+          491.097
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "全生命周期服务体系。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 250,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        457.698,
+        505.32,
+        471.063
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "7.电池。在铅蓄电池等领域应用机器视觉、传感器网络技术，开展产品缺陷",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 251,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          437.659,
+          511.319,
+          451.018
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "实时识别追溯，搭建产品数字身份信息公共服务平台，建设全生命周期溯源体系。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 252,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        417.738,
+        505.318,
+        431.103
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "8.日用化学品。建立洗涤原料—配方—功效数据库，开发基于 AI 的配方智",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 253,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          377.659,
+          505.319,
+          411.058
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "能比对优化技术、洗衣机个性化洗涤方案。提升洗涤用品智能生产与配料、智能 质控与检测、智能包装与物流、数字孪生与管理能力。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 254,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        357.738,
+        505.313,
+        371.103
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "9.香料香精及化妆品。发展 AI 测肤和美妆效果呈现分析技术，提升化妆品",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 255,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          317.659,
+          505.439,
+          351.063
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "个性化服务应用。发展化妆品安全性、功效性 AI 预测及配方分析技术，优化化 妆品开发过程。开发 AI 调香技术，建设数字调香数据库。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 256,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        297.738,
+        505.319,
+        311.103
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "10.食品加工。开发基于我国居民营养多模态数据融合的食品“营养需求—",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 257,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          237.738,
+          505.32,
+          291.063
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "配方设计—风味感官”研发平台，基于数字孪生、“5G+工业互联网”、传感技术 的全链条智能追溯平台，基于人工智能的白酒品质风味调控、智能酿造保藏、配 方优化技术。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 258,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        217.698,
+        505.315,
+        231.063
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "11.化纤。研发基于“分子—结构—性能”关联的化纤新材料设计大模型。",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 259,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          177.738,
+          505.318,
+          211.024
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "基于 AI 技术进行单体聚合反应动力学仿真，优化高性能、生物基及循环再利用 纤维的配方研发。构建化纤长丝生产线数字孪生系统。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 260,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        157.698,
+        505.32,
+        171.063
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "12.纺纱织造。推广 AI 驱动的数字配棉技术。研发基于视觉智能的纺纱巡检",
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 261,
+         "page number": 8,
+         "bounding box": [
+          90.0,
+          117.738,
+          505.32,
+          151.019
+         ],
+         "font": "FZSSK--GBK1-0",
+         "font size": 12.0,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "机器人与断头自动接头系统。攻关织物瑕疵在线深度学习识别技术，实现复杂组 织与花式织物的边织边检及毫秒级预警。"
+        }
+       ]
+      },
+      {
+       "type": "list item",
+       "pdfua_tag": "LI",
+       "id": 262,
+       "page number": 8,
+       "bounding box": [
+        114.0,
+        97.698,
+        505.32,
+        111.063
+       ],
+       "font": "TimesNewRomanPSMT",
+       "font size": 12.0,
+       "text color": "[0.0, 0.0, 0.0]",
+       "content": "13.印染。突破基于 AI 大模型的智能测配色技术，构建面向复杂组分面料印",
+       "kids": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "text block",
+   "id": 265,
+   "page number": 9,
+   "bounding box": [
+    84.36,
+    674.02,
+    510.94,
+    756.85
+   ],
+   "kids": [
+    {
+     "type": "paragraph",
+     "pdfua_tag": "P",
+     "id": 268,
+     "page number": 9,
+     "bounding box": [
+      90.0,
+      717.738,
+      505.32,
+      751.017
+     ],
+     "font": "FZSSK--GBK1-0",
+     "font size": 12.0,
+     "text color": "[0.0, 0.0, 0.0]",
+     "content": "染的高质量数据集，开发面向前处理、染色、后整理等环节的工艺参数智能整定 垂类模型。"
+    },
+    {
+     "type": "paragraph",
+     "pdfua_tag": "P",
+     "id": 269,
+     "page number": 9,
+     "bounding box": [
+      90.0,
+      677.658,
+      505.32,
+      711.063
+     ],
+     "font": "FZSSK--GBK1-0",
+     "font size": 12.0,
+     "text color": "[0.0, 0.0, 0.0]",
+     "content": "14.服装。研发服装时尚趋势生成式大模型，开发 AI 驱动的柔性化生产排料 与 3D 虚拟试衣技术，大幅缩短从设计到成衣的周期。"
+    }
+   ]
+  },
+  {
+   "type": "list",
+   "pdfua_tag": "L",
+   "id": 270,
+   "level": "3",
+   "page number": 9,
+   "bounding box": [
+    111.359,
+    646.52,
+    515.989,
+    664.183
+   ],
+   "numbering style": "arabic numbers",
+   "number of list items": 1,
+   "previous list id": 224,
+   "list items": [
+    {
+     "type": "list item",
+     "pdfua_tag": "LI",
+     "id": 271,
+     "page number": 9,
+     "bounding box": [
+      111.359,
+      646.52,
+      515.989,
+      664.183
+     ],
+     "font": "TimesNewRomanPS-BoldMT",
+     "font size": 15.95,
+     "text color": "[0.0, 0.0, 0.0]",
+     "content": "8.加快绿色低碳转型。引导企业开展产品绿色设计，采用简",
+     "kids": []
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "pdfua_tag": "P",
+   "id": 272,
+   "page number": 9,
+   "bounding box": [
+    79.32,
+    287.727,
+    523.909,
+    633.677
+   ],
+   "font": "FangSong_GB2312",
+   "font size": 15.95,
+   "text color": "[0.0, 0.0, 0.0]",
+   "content": "约绿色可回收包装，优先选择无毒无害、易降解易回收材料， 开发生物基材料制品、绿色纺织品、环保家具等。推广“智能+ 储能”照明系统、“家电+楼宇”节能系统等。鼓励竹资源丰富 地区发展“以竹代塑”产业，丰富应用场景，加快竹基可降解 复合材料推广应用。强化环保、能耗、水耗、污染物排放等强 制性国家标准执行。推进陶瓷、日用玻璃、化纤等行业清洁能 源替代，推动轻工纺织企业环保绩效 A 级占比提高。制定重点 行业绿色低碳技术路线图，推广废水分质分流深度处理回用、 再生纤维素纤维清洁制浆、有机废弃物综合治理等技术和装备。 推动食品、纺织（含印染）、造纸等行业全面淘汰 35 蒸吨/小时 及以下燃煤锅炉。严格新上项目节能降碳源头把关，推动存量 项目节能降碳改造升级，持续提升企业能效碳效水平。"
+  },
+  {
+   "type": "table",
+   "pdfua_tag": "Table",
+   "id": 273,
+   "level": "4",
+   "page number": 9,
+   "bounding box": [
+    84.36,
+    82.12,
+    510.94,
+    284.0
+   ],
+   "number of rows": 2,
+   "number of columns": 1,
+   "rows": [
+    {
+     "type": "table row",
+     "row number": 1,
+     "id": 274,
+     "cells": [
+      {
+       "type": "table cell",
+       "pdfua_tag": "TH",
+       "id": 275,
+       "page number": 9,
+       "bounding box": [
+        84.6,
+        263.26,
+        510.7,
+        283.76
+       ],
+       "row number": 1,
+       "column number": 1,
+       "row span": 1,
+       "column span": 1,
+       "is_header": true,
+       "kids": [
+        {
+         "type": "paragraph",
+         "pdfua_tag": "P",
+         "id": 276,
+         "page number": 9,
+         "bounding box": [
+          201.359,
+          264.491,
+          393.968,
+          280.05
+         ],
+         "font": "SimHei",
+         "font size": 14.05,
+         "text color": "[0.0, 0.0, 0.0]",
+         "content": "专栏 5 绿色低碳改造升级方向"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "type": "table row",
+     "row number": 2,
+     "id": 277,
+     "cells": [
+      {
+       "type": "table cell",
+       "pdfua_tag": "TD",
+       "id": 278,
+       "page number": 9,
+       "bounding box": [
+        84.6,
+        82.6,
+        510.7,
+        263.26
+       ],
+       "row number": 2,
+       "column number": 1,
+       "row span": 1,
+       "column span": 1,
+       "kids": [
+        {
+         "type": "list",
+         "pdfua_tag": "L",
+         "id": 279,
+         "level": "1",
+         "page number": 9,
+         "bounding box": [
+          114.0,
+          84.378,
+          505.32,
+          257.703
+         ],
+         "numbering style": "arabic numbers",
+         "number of list items": 4,
+         "list items": [
+          {
+           "type": "list item",
+           "pdfua_tag": "LI",
+           "id": 280,
+           "page number": 9,
+           "bounding box": [
+            114.0,
+            244.338,
+            505.32,
+            257.703
+           ],
+           "font": "TimesNewRomanPSMT",
+           "font size": 12.0,
+           "text color": "[0.0, 0.0, 0.0]",
+           "content": "1.家电。开展制造过程可再生能源使用、绿色低碳制冷剂和发泡剂应用生产",
+           "kids": [
+            {
+             "type": "paragraph",
+             "pdfua_tag": "P",
+             "id": 281,
+             "page number": 9,
+             "bounding box": [
+              90.0,
+              204.378,
+              505.32,
+              237.658
+             ],
+             "font": "FZSSK--GBK1-0",
+             "font size": 12.0,
+             "text color": "[0.0, 0.0, 0.0]",
+             "content": "线改造。研发高速电机、高效热交换器、变频技术等。开发柔性响应冰蓄冷多联 机产品，实现空调类、蓄能类机电设备协同节能。"
+            }
+           ]
+          },
+          {
+           "type": "list item",
+           "pdfua_tag": "LI",
+           "id": 282,
+           "page number": 9,
+           "bounding box": [
+            114.0,
+            184.338,
+            505.32,
+            197.703
+           ],
+           "font": "TimesNewRomanPSMT",
+           "font size": 12.0,
+           "text color": "[0.0, 0.0, 0.0]",
+           "content": "2.塑料制品。开发高密度高强度发泡塑料芯材的清洁制备技术，加快发展低",
+           "kids": [
+            {
+             "type": "paragraph",
+             "pdfua_tag": "P",
+             "id": 283,
+             "page number": 9,
+             "bounding box": [
+              90.0,
+              144.378,
+              505.312,
+              177.663
+             ],
+             "font": "FZSSK--GBK1-0",
+             "font size": 12.0,
+             "text color": "[0.0, 0.0, 0.0]",
+             "content": "全球变暖潜能值（GWP）发泡材料。研发完全生物降解塑料薄膜（含复合膜） 制造及应用关键技术。"
+            }
+           ]
+          },
+          {
+           "type": "list item",
+           "pdfua_tag": "LI",
+           "id": 284,
+           "page number": 9,
+           "bounding box": [
+            114.0,
+            124.338,
+            505.319,
+            137.703
+           ],
+           "font": "TimesNewRomanPSMT",
+           "font size": 12.0,
+           "text color": "[0.0, 0.0, 0.0]",
+           "content": "3.皮革。研发和推广无铬鞣、生物制革、无盐少盐制革、废水脱盐工艺，升",
+           "kids": [
+            {
+             "type": "paragraph",
+             "pdfua_tag": "P",
+             "id": 285,
+             "page number": 9,
+             "bounding box": [
+              90.0,
+              104.298,
+              378.0,
+              117.658
+             ],
+             "font": "FZSSK--GBK1-0",
+             "font size": 12.0,
+             "text color": "[0.0, 0.0, 0.0]",
+             "content": "级废液循环技术，推广毛皮重金属媒染工艺替代技术。"
+            }
+           ]
+          },
+          {
+           "type": "list item",
+           "pdfua_tag": "LI",
+           "id": 286,
+           "page number": 9,
+           "bounding box": [
+            114.0,
+            84.378,
+            505.32,
+            97.743
+           ],
+           "font": "TimesNewRomanPSMT",
+           "font size": 12.0,
+           "text color": "[0.0, 0.0, 0.0]",
+           "content": "4.造纸。推广应用高效热泵、节能磁悬浮真空泵等节能技术装备，化机浆废",
+           "kids": []
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

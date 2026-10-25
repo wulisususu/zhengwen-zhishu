@@ -13,6 +13,7 @@ import AgentDirectoryPage from './views/AgentDirectoryPage.vue'
 import PediatricQAPage from './views/PediatricQAPage.vue'
 import SettingsPage from './views/SettingsPage.vue'
 import { hasSessionToken } from './stores/auth.js'
+import { govOfficeRoutes } from './features/gov-office/routes'
 import './style.css'
 
 function createPptProjectId() {
@@ -35,6 +36,7 @@ const routes = [
   { path: '/agents/pediatric-medical-qa/:id', component: PediatricQAPage },
   { path: '/settings', component: SettingsPage },
   { path: '/login', component: LoginPage },
+  ...govOfficeRoutes,
   { path: '/:pathMatch(.*)*', redirect: '/chat' },
 ]
 

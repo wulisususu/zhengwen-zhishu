@@ -7,7 +7,7 @@ import { createMockGovOfficeAdapter } from "../../src/features/gov-office/adapte
 import { useGovDocumentsStore } from "../../src/features/gov-office/stores/govDocuments";
 import type { Actor } from "../../src/features/gov-office/types";
 
-const drafter: Actor = { origin: "demo", name: "演示用户", department: "综合处", roles: ["drafter"], canFormalIssue: false };
+const drafter: Actor = { origin: "demo", account: "demo_drafter", name: "演示起草人", department: "综合处", roles: ["drafter"], canFormalIssue: false };
 
 async function mountPanel() {
   const store = useGovDocumentsStore();

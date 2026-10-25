@@ -35,6 +35,7 @@ function doc(issues: ReviewIssue[], resolutions: Record<string, IssueResolution>
     blocks: [],
     signDate: "2025年10月25日",
     author: "a",
+    authorAccount: "demo_drafter",
     department: "d",
     createdAt: at,
     version: 1,
@@ -48,8 +49,10 @@ function doc(issues: ReviewIssue[], resolutions: Record<string, IssueResolution>
   };
 }
 
-const drafter: Actor = { origin: "demo", name: "起草人", department: "d", roles: ["drafter"], canFormalIssue: false };
-const reviewer: Actor = { origin: "demo", name: "审核人", department: "d", roles: ["reviewer"], canFormalIssue: true };
+const drafter: Actor = { origin: "demo", account: "demo_drafter", name: "起草人", department: "d", roles: ["drafter"], canFormalIssue: false };
+const reviewer: Actor = { origin: "demo", account: "demo_reviewer", name: "审核人", department: "d", roles: ["reviewer"], canFormalIssue: true };
+/** An account holding both roles, reviewing its own draft. */
+const selfReviewer: Actor = { ...reviewer, account: "demo_drafter", roles: ["drafter", "reviewer"] };
 
 describe("evaluateIssue", () => {
   it("keeps a deterministic critical issue open until fixed", () => {
@@ -166,6 +169,29 @@ describe("documentGates", () => {
     expect(documentGates(approved, drafter).canFormalExport).toBe(false);
     expect(documentGates(approved, drafter).formalExportBlockedReason).toContain("权限");
     expect(documentGates(doc([], {}, { status: "pending" }), reviewer).canFormalExport).toBe(false);
+  });
+
+  it("forbids reviewing your own document", () => {
+    const pending = doc([], {}, { status: "pending" });
+    const gates = documentGates(pending, selfReviewer);
+    expect(gates.canApprove).toBe(false);
+    expect(gates.canReturn).toBe(false);
+    expect(gates.approveBlockedReason).toContain("不能审核自己起草的文稿");
+  });
+
+  it("does not let a self-reviewer approve exceptions on their own document", () => {
+    const r = issue({ id: "r1" });
+    const pending = doc([r], { r1: { kind: "exception_requested", by: "x", reason: "r", at } }, { status: "pending" });
+    expect(issueActions(r, pending, selfReviewer)).not.toContain("approve_exception");
+    expect(issueActions(r, pending, reviewer)).toContain("approve_exception");
+  });
+
+  it("keeps editing and submitting with the drafter role", () => {
+    const draft = doc([]);
+    expect(documentGates(draft, reviewer).canEdit).toBe(false);
+    expect(documentGates(draft, reviewer).canSubmit).toBe(false);
+    expect(documentGates(draft, reviewer).canSaveDraft).toBe(false);
+    expect(documentGates(draft, drafter).canSubmit).toBe(true);
   });
 
   it("locks editing while the document is pending or approved", () => {

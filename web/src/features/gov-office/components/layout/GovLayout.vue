@@ -14,7 +14,12 @@ const documents = useGovDocumentsStore();
 const { width } = useViewport();
 
 const collapsed = computed(() => session.navCollapsedPref ?? width.value < props.autoCollapseBelow);
-const pendingCount = computed(() => documents.list.filter((d) => d.status === "pending").length);
+// Badge = tasks waiting for the current reviewer (never their own documents).
+const pendingCount = computed(() => {
+  const actor = session.actor;
+  if (!actor?.roles.includes("reviewer")) return 0;
+  return documents.list.filter((d) => d.status === "pending" && d.authorAccount !== actor.account).length;
+});
 
 onMounted(() => {
   session.load();
@@ -29,7 +34,10 @@ onMounted(() => {
         :collapsed="collapsed"
         :runtime="session.runtime"
         :pending-count="pendingCount"
+        :actor="session.actor"
+        :demo-actors="session.isDemo ? session.demoActors : []"
         @toggle="session.setNavCollapsed(!collapsed)"
+        @switch-actor="session.switchDemoActor"
       />
     </aside>
     <main class="gov-shell__main">

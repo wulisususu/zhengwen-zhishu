@@ -9,7 +9,8 @@
 //   fixed) or dismisses them with a recorded reason.
 // - Warnings and hints never block and may be ignored.
 // - Saving, submitting for review and exporting an internal draft marked
-//   "未审核" are always allowed.
+//   "未审核" are always allowed to the drafter.
+// - Nobody may review a document they drafted themselves.
 //
 // The backend must enforce the same rules; these functions only drive the UI.
 
@@ -34,6 +35,10 @@ export type IssueAction =
   | "request_exception"
   | "approve_exception"
   | "undo";
+
+export function isOwnDocument(doc: OfficialDocument, actor: Actor): boolean {
+  return !!doc.authorAccount && doc.authorAccount === actor.account;
+}
 
 function isFieldFilled(issue: ReviewIssue, doc: OfficialDocument): boolean {
   return !!issue.requiredField && doc.fields[issue.requiredField].trim().length > 0;
@@ -84,7 +89,7 @@ export function evaluateIssue(issue: ReviewIssue, doc: OfficialDocument): IssueE
 export function issueActions(issue: ReviewIssue, doc: OfficialDocument, actor: Actor): IssueAction[] {
   const { state, resolution } = evaluateIssue(issue, doc);
   const actions: IssueAction[] = ["locate"];
-  const isReviewer = actor.roles.includes("reviewer");
+  const isReviewer = actor.roles.includes("reviewer") && !isOwnDocument(doc, actor);
   const isDrafter = actor.roles.includes("drafter");
 
   if (state === "resolved") {
@@ -153,11 +158,14 @@ export interface DocumentGates {
 export function documentGates(doc: OfficialDocument, actor: Actor): DocumentGates {
   const { blockers } = summarizeIssues(doc);
   const isReviewer = actor.roles.includes("reviewer");
-  const editable = doc.status === "draft" || doc.status === "returned";
+  const isDrafter = actor.roles.includes("drafter");
+  const ownDocument = isOwnDocument(doc, actor);
+  const editable = isDrafter && (doc.status === "draft" || doc.status === "returned");
 
   let approveBlockedReason = "";
   if (doc.status !== "pending") approveBlockedReason = "仅待审核文稿可以审核。";
   else if (!isReviewer) approveBlockedReason = "当前用户没有审核权限。";
+  else if (ownDocument) approveBlockedReason = "不能审核自己起草的文稿。";
   else if (blockers.length) approveBlockedReason = `仍有 ${blockers.length} 项严重问题未处理，须修复、完成人工复核或经审核人批准例外后才能通过。`;
 
   let formalExportBlockedReason = "";
@@ -167,11 +175,11 @@ export function documentGates(doc: OfficialDocument, actor: Actor): DocumentGate
 
   return {
     canEdit: editable,
-    canSaveDraft: true,
+    canSaveDraft: editable,
     canSubmit: editable,
     canExportInternalDraft: true,
     canApprove: !approveBlockedReason,
-    canReturn: doc.status === "pending" && isReviewer,
+    canReturn: doc.status === "pending" && isReviewer && !ownDocument,
     canFormalExport: !formalExportBlockedReason,
     approveBlockedReason,
     formalExportBlockedReason,

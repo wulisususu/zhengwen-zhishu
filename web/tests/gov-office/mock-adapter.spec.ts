@@ -79,12 +79,38 @@ describe("MockGovOfficeAdapter", () => {
     await expect(adapter.updateFields(NOTICE, { recipient: "x" })).rejects.toMatchObject({ code: "locked" });
   });
 
+  it("starts as demo_drafter and can switch to demo_reviewer", async () => {
+    expect((await adapter.getCurrentActor()).account).toBe("demo_drafter");
+    expect((await adapter.listDemoActors!()).map((a) => a.account)).toEqual(["demo_drafter", "demo_reviewer"]);
+    const reviewer = await adapter.switchDemoActor!("demo_reviewer");
+    expect(reviewer.roles).toEqual(["reviewer"]);
+    expect((await adapter.getCurrentActor()).account).toBe("demo_reviewer");
+  });
+
+  it("keeps drafter and reviewer powers apart", async () => {
+    await expect(adapter.approve("demo-d2", "")).rejects.toThrow("没有审核权限");
+    await adapter.switchDemoActor!("demo_reviewer");
+    await expect(adapter.updateFields(NOTICE, { recipient: "x" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(adapter.submitForReview(NOTICE)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(adapter.resolveIssue(NOTICE, "d1-i1", { kind: "exception_requested", by: "x", reason: "r", at: "t" })).rejects.toMatchObject({ code: "forbidden" });
+  });
+
+  it("records actions under the acting identity", async () => {
+    await adapter.submitForReview(NOTICE);
+    await adapter.switchDemoActor!("demo_reviewer");
+    const doc = await adapter.returnForRevision(NOTICE, "请补充主送机关");
+    expect(doc.history.at(-2)?.actor).toBe("演示起草人");
+    expect(doc.history.at(-1)?.actor).toBe("演示审核人");
+  });
+
   it("blocks approval while critical issues remain", async () => {
     await adapter.submitForReview(NOTICE);
+    await adapter.switchDemoActor!("demo_reviewer");
     await expect(adapter.approve(NOTICE, "")).rejects.toMatchObject({ code: "blocked" });
   });
 
   it("requires an opinion to return a document", async () => {
+    await adapter.switchDemoActor!("demo_reviewer");
     await expect(adapter.returnForRevision("demo-d2", "  ")).rejects.toMatchObject({ code: "opinion_required" });
     const doc = await adapter.returnForRevision("demo-d2", "请补充下一步工作安排");
     expect(doc.status).toBe("returned");
@@ -92,6 +118,7 @@ describe("MockGovOfficeAdapter", () => {
   });
 
   it("approves a document without blockers", async () => {
+    await adapter.switchDemoActor!("demo_reviewer");
     const doc = await adapter.approve("demo-d2", "同意");
     expect(doc.status).toBe("approved");
   });

@@ -29,7 +29,7 @@ const docs = computed(() => store.list);
 const { filter, filtered, counts, reset } = useDocumentFilter(docs, { status: "pending" });
 const selectedId = ref("");
 const doc = computed(() => store.byId[selectedId.value]);
-const actor = computed(() => session.actorAs("reviewer"));
+const actor = computed(() => session.actor);
 const { summary, marks } = useIssueMarks(doc);
 const gates = computed(() => (doc.value && actor.value ? documentGates(doc.value, actor.value) : null));
 
@@ -145,6 +145,9 @@ const lockedText = computed(() => {
       </template>
     </GovPageHeader>
     <DocumentFilterBar v-model="filter" :counts="counts" :statuses="['pending', 'returned', 'approved', 'all']" :result-count="filtered.length" />
+    <div v-if="session.loaded && !session.isReviewer" class="gov-banner gov-banner--warning gov-rc__role" role="status">
+      当前身份（{{ session.actor?.account }}）没有审核权限，只能查看。<template v-if="session.isDemo">演示审批流程请在左下角切换为审核人 demo_reviewer。</template>
+    </div>
     <StoreMessages />
 
     <div class="gov-rc">
@@ -257,6 +260,7 @@ const lockedText = computed(() => {
 </template>
 
 <style scoped>
+.gov-rc__role { margin: 8px 24px 0; flex: 0 0 auto; }
 .gov-rc { flex: 1 1 auto; min-height: 0; display: flex; gap: 16px; padding: 12px 24px 16px; }
 .gov-rc__list { flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; }
 .gov-rc__detail { flex: 0 0 460px; width: 460px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }

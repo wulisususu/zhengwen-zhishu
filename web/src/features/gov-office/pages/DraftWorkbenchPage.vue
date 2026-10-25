@@ -32,7 +32,7 @@ const { width } = useViewport();
 
 const docId = computed(() => (route.params.id as string) || DEFAULT_DOC_ID);
 const doc = computed(() => store.byId[docId.value]);
-const actor = computed(() => session.actorAs("drafter"));
+const actor = computed(() => session.actor);
 const typeConfig = computed(() => (doc.value ? docTypeConfig(doc.value.docType) : DOC_TYPES[0]));
 
 const view = ref<"body" | "outline">("body");
@@ -52,9 +52,17 @@ const compact = computed(() => width.value < COMPACT_BELOW);
 const lockText = computed(() => {
   if (!doc.value) return "";
   if (!typeConfig.value.supported) return `「${typeConfig.value.label}」起草模板待支持，当前仅可预览。`;
+  if (!session.isDrafter) return "当前身份没有起草权限，仅可查看。";
   if (doc.value.status === "pending") return "文稿审核中，编辑已锁定；审核人退回后可继续修改。";
   if (doc.value.status === "approved") return "文稿已审核通过，编辑已锁定。";
   return "";
+});
+/** Latest review decision, so the drafter sees the outcome and the reviewer's opinion. */
+const reviewResult = computed(() => {
+  if (!doc.value || (doc.value.status !== "returned" && doc.value.status !== "approved")) return null;
+  const record = [...doc.value.history].reverse().find((r) => r.action === "退回修改" || r.action === "审核通过");
+  if (!record) return null;
+  return { tone: record.action === "退回修改" ? "danger" : "success", text: `${record.action} · ${record.actor} · ${record.at}${record.note ? `：${record.note}` : ""}` };
 });
 const watermark = computed(() => (doc.value && doc.value.status !== "approved" ? "未审核" : ""));
 
@@ -161,6 +169,7 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
         </button>
       </div>
 
+      <div v-if="reviewResult" class="gov-draft__lockbar gov-banner" :class="`gov-banner--${reviewResult.tone}`" role="status">审核结果：{{ reviewResult.text }}</div>
       <div v-if="lockText" class="gov-draft__lockbar gov-banner gov-banner--info">{{ lockText }}</div>
       <StoreMessages />
 

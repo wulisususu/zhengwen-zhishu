@@ -20,6 +20,8 @@ export type ActorRole = "drafter" | "reviewer";
 
 export interface Actor {
   origin: DataOrigin;
+  /** Login account, e.g. "demo_drafter". Used for the self-review check. */
+  account: string;
   name: string;
   department: string;
   roles: ActorRole[];
@@ -181,6 +183,8 @@ export interface OfficialDocument {
   blocks: DocBlock[];
   signDate: string;
   author: string;
+  /** Account that drafted and submits the document; it may not review it. */
+  authorAccount: string;
   department: string;
   createdAt: string;
   version: number;

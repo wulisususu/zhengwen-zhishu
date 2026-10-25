@@ -11,6 +11,8 @@ import OfficialDocumentView from "../components/document/OfficialDocumentView.vu
 import DocumentFilterBar from "../components/review/DocumentFilterBar.vue";
 import DocumentTable from "../components/review/DocumentTable.vue";
 import IssuePanel from "../components/review/IssuePanel.vue";
+import ReviewTimeline from "../components/review/ReviewTimeline.vue";
+import BaseDialog from "../components/common/BaseDialog.vue";
 import { docTypeConfig, STATUS_LABELS, STATUS_TONES } from "../domain/docTypes";
 import { documentGates } from "../domain/issueRules";
 import { COMPACT_BELOW, useViewport } from "../composables/useViewport";
@@ -28,12 +30,13 @@ const docs = computed(() => store.list);
 const { filter, filtered, counts, reset } = useDocumentFilter(docs);
 const selectedId = ref("");
 const doc = computed(() => store.byId[selectedId.value]);
-const actor = computed(() => session.actorAs("drafter"));
+const actor = computed(() => session.actor);
 const { marks } = useIssueMarks(doc);
 const focusAnchor = ref("");
 const listOpen = ref(true);
 const issuesOpen = ref(true);
 const preview = ref<InstanceType<typeof A4Preview> | null>(null);
+const showRecords = ref(false);
 
 const typeConfig = computed(() => (doc.value ? docTypeConfig(doc.value.docType) : null));
 const editable = computed(() => !!doc.value && !!actor.value && documentGates(doc.value, actor.value).canEdit && !!typeConfig.value?.supported);
@@ -92,7 +95,8 @@ async function locate(anchor: string) {
           <span class="gov-proof__title">{{ doc.title }}</span>
           <StatusTag :tone="STATUS_TONES[doc.status]" :label="STATUS_LABELS[doc.status]" />
           <StatusTag v-if="!typeConfig.supported" tone="neutral" :label="`${typeConfig.label}版式待支持 · 通用预览`" />
-          <RouterLink v-if="typeConfig.supported" :to="`/gov/draft/${doc.id}`" class="gov-btn gov-btn--sm gov-btn--outline">在起草页修改</RouterLink>
+          <button type="button" class="gov-btn gov-btn--sm" @click="showRecords = true">审核记录（{{ doc.history.length }}）</button>
+          <RouterLink v-if="typeConfig.supported && session.isDrafter" :to="`/gov/draft/${doc.id}`" class="gov-btn gov-btn--sm gov-btn--outline">在起草页修改</RouterLink>
           <button v-if="!issuesOpen" type="button" class="gov-btn gov-btn--sm" @click="issuesOpen = true">
             <PanelRightOpen :size="14" aria-hidden="true" />审校问题
           </button>
@@ -116,6 +120,10 @@ async function locate(anchor: string) {
         />
       </aside>
     </div>
+
+    <BaseDialog v-if="showRecords && doc" :title="`审核记录 · ${doc.title}`" :width="520" @close="showRecords = false">
+      <ReviewTimeline :records="doc.history" />
+    </BaseDialog>
   </GovLayout>
 </template>
 

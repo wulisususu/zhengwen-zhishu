@@ -31,6 +31,13 @@ export interface GovOfficeAdapter {
 
   getRuntimeStatus(): Promise<RuntimeStatus>;
   getCurrentActor(): Promise<Actor>;
+  /**
+   * Demo only: the mock adapter simulates the demo_drafter and demo_reviewer
+   * identities. A backend adapter must not implement these; real permissions
+   * come from the backend login.
+   */
+  listDemoActors?(): Promise<Actor[]>;
+  switchDemoActor?(account: string): Promise<Actor>;
 
   getPolicyStats(): Promise<PolicyStats>;
   listQaSessions(): Promise<QaSession[]>;

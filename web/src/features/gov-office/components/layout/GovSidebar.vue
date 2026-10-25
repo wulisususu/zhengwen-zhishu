@@ -13,10 +13,23 @@ import {
   PanelLeftOpen,
   ShieldCheck,
 } from "lucide-vue-next";
-import type { RuntimeStatus } from "../../types";
+import type { Actor, RuntimeStatus } from "../../types";
 
-const props = defineProps<{ collapsed: boolean; runtime: RuntimeStatus | null; pendingCount: number }>();
-const emit = defineEmits<{ (e: "toggle"): void }>();
+const props = defineProps<{
+  collapsed: boolean;
+  runtime: RuntimeStatus | null;
+  pendingCount: number;
+  actor: Actor | null;
+  /** Non-empty only in the demo environment. */
+  demoActors: Actor[];
+}>();
+const emit = defineEmits<{ (e: "toggle"): void; (e: "switch-actor", account: string): void }>();
+
+const ROLE_SHORT = { drafter: "起草人", reviewer: "审核人" } as const;
+function roleLabel(a: Actor) {
+  return a.roles.map((r) => ROLE_SHORT[r]).join("、") || "无角色";
+}
+const nextDemoActor = computed(() => props.demoActors.find((a) => a.account !== props.actor?.account));
 
 interface NavItem {
   to: string;
@@ -95,6 +108,35 @@ const runtimeKnown = computed(() => !!props.runtime && props.runtime.modelMode !
     </div>
 
     <div class="gov-nav__footer">
+      <template v-if="demoActors.length && actor">
+        <div v-if="!collapsed" class="gov-nav__identity">
+          <span class="gov-nav__identity-label">演示身份（演示权限，正式权限由后端控制）</span>
+          <div class="gov-nav__identity-seg" role="group" aria-label="切换演示身份">
+            <button
+              v-for="a in demoActors"
+              :key="a.account"
+              type="button"
+              :class="{ 'is-active': a.account === actor.account }"
+              :aria-pressed="a.account === actor.account"
+              @click="emit('switch-actor', a.account)"
+            >
+              {{ roleLabel(a) }}
+            </button>
+          </div>
+          <span class="gov-nav__identity-account">{{ actor.account }} · {{ actor.name }}</span>
+        </div>
+        <button
+          v-else
+          type="button"
+          class="gov-nav__identity-mini"
+          :title="`演示身份：${actor.name}（${actor.account}）。点击切换为${nextDemoActor ? roleLabel(nextDemoActor) : ''}`"
+          :aria-label="`当前演示身份 ${actor.name}，点击切换`"
+          @click="nextDemoActor && emit('switch-actor', nextDemoActor.account)"
+        >
+          {{ roleLabel(actor).slice(0, 1) }}
+        </button>
+      </template>
+      <div v-else-if="actor && !collapsed" class="gov-nav__identity-account">{{ actor.name }} · {{ roleLabel(actor) }}</div>
       <div v-if="!collapsed" class="gov-nav__runtime" :title="runtimeDetail">
         <span class="gov-nav__dot" :class="{ 'is-known': runtimeKnown }" aria-hidden="true" />
         <span>{{ runtimeLabel }}</span>
@@ -154,6 +196,16 @@ const runtimeKnown = computed(() => !!props.runtime && props.runtime.modelMode !
 }
 .gov-nav.is-collapsed .gov-nav__badge { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; font-size: 11px; padding: 0 4px; }
 .gov-nav__footer { border-top: 1px solid rgba(255, 255, 255, 0.12); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.gov-nav__identity { display: flex; flex-direction: column; gap: 6px; padding: 0 4px 4px; }
+.gov-nav__identity-label { font-size: 12px; line-height: 17px; color: var(--gov-nav-muted); }
+.gov-nav__identity-seg { display: flex; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: var(--gov-r-md); overflow: hidden; }
+.gov-nav__identity-seg button { flex: 1 1 0; height: 30px; border: 0; background: transparent; color: var(--gov-nav-text); font-size: 13px; cursor: pointer; }
+.gov-nav__identity-seg button.is-active { background: #fff; color: var(--gov-navy); font-weight: 500; }
+.gov-nav__identity-account { font-size: 12px; color: var(--gov-nav-text); padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gov-nav__identity-mini {
+  width: 36px; height: 36px; align-self: center; border-radius: 18px; border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08); color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
+}
 .gov-nav__runtime { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 18px; padding: 0 4px; }
 .gov-nav__dot { width: 8px; height: 8px; flex: 0 0 8px; margin-top: 5px; border-radius: 4px; background: var(--gov-nav-muted); }
 .gov-nav__dot.is-known { background: #4cc38a; }

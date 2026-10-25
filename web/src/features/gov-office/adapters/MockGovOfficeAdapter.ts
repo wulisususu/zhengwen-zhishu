@@ -5,7 +5,7 @@
 import { DEMO_CITATIONS, DEMO_DOCUMENTS, DEMO_MATERIAL_LIBRARY, DEMO_POLICY_STATS, DEMO_QA_SESSIONS } from "./mockData";
 import { GovOfficeError } from "./GovOfficeAdapter";
 import type { DocumentQuery, GovOfficeAdapter } from "./GovOfficeAdapter";
-import { documentGates, evaluateIssue, summarizeIssues } from "../domain/issueRules";
+import { documentGates, evaluateIssue, isOwnDocument, summarizeIssues } from "../domain/issueRules";
 import type {
   Actor,
   AskOptions,
@@ -19,15 +19,12 @@ import type {
   Tone,
 } from "../types";
 
-const DEMO_ACTOR: Actor = {
-  origin: "demo",
-  name: "演示用户",
-  department: "综合处",
-  // The demo actor holds both roles so the whole flow can be walked through.
-  // A real backend must keep drafter and reviewer separate.
-  roles: ["drafter", "reviewer"],
-  canFormalIssue: false,
-};
+// Demo permissions only. Real roles and the formal-issue permission must come
+// from the backend login; neither demo identity can formally issue documents.
+export const DEMO_ACTORS: Actor[] = [
+  { origin: "demo", account: "demo_drafter", name: "演示起草人", department: "综合处", roles: ["drafter"], canFormalIssue: false },
+  { origin: "demo", account: "demo_reviewer", name: "演示审核人", department: "办公室", roles: ["reviewer"], canFormalIssue: false },
+];
 
 const INTERNAL_WATERMARK = "未审核 · 内部草稿";
 
@@ -45,6 +42,7 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
   const documents = new Map(DEMO_DOCUMENTS.map((d) => [d.id, clone(d)]));
   const sessions = clone(DEMO_QA_SESSIONS);
   let recordSeq = 0;
+  let actor: Actor = DEMO_ACTORS[0];
 
   function find(id: string): OfficialDocument {
     const doc = documents.get(id);
@@ -53,13 +51,14 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
   }
 
   function record(doc: OfficialDocument, action: string, tone: Tone, note?: string) {
-    const entry: ReviewRecord = { id: `${doc.id}-r${++recordSeq}`, action, actor: DEMO_ACTOR.name, at: nowStamp(), tone };
+    const entry: ReviewRecord = { id: `${doc.id}-r${++recordSeq}`, action, actor: actor.name, at: nowStamp(), tone };
     if (note) entry.note = note;
     doc.history.push(entry);
   }
 
   function assertEditable(doc: OfficialDocument) {
-    if (!documentGates(doc, DEMO_ACTOR).canEdit) throw new GovOfficeError("文稿审核中或已审核通过，不能修改。", "locked");
+    if (!actor.roles.includes("drafter")) throw new GovOfficeError("当前身份没有起草权限，不能修改文稿。", "forbidden");
+    if (!documentGates(doc, actor).canEdit) throw new GovOfficeError("文稿审核中或已审核通过，不能修改。", "locked");
   }
 
   function setSegmentText(doc: OfficialDocument, segmentId: string, text: string) {
@@ -88,8 +87,11 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
       ((resolution.kind === "exception_requested" || resolution.kind === "exception_approved") && !(critical && issue.source === "rule"));
     if (illegal) throw new GovOfficeError("该问题不允许这样处理", "illegal_resolution");
     if ("reason" in resolution && !resolution.reason.trim()) throw new GovOfficeError("请填写处理理由", "reason_required");
-    if (resolution.kind === "exception_approved" && !DEMO_ACTOR.roles.includes("reviewer")) {
-      throw new GovOfficeError("只有审核人可以批准例外", "forbidden");
+    if (resolution.kind === "exception_approved" && (!actor.roles.includes("reviewer") || isOwnDocument(doc, actor))) {
+      throw new GovOfficeError("只有非起草人的审核人可以批准例外", "forbidden");
+    }
+    if (resolution.kind === "exception_requested" && !actor.roles.includes("drafter")) {
+      throw new GovOfficeError("只有起草人可以申请例外", "forbidden");
     }
     return issue;
   }
@@ -102,7 +104,18 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
     },
 
     async getCurrentActor() {
-      return clone(DEMO_ACTOR);
+      return clone(actor);
+    },
+
+    async listDemoActors() {
+      return clone(DEMO_ACTORS);
+    },
+
+    async switchDemoActor(account) {
+      const next = DEMO_ACTORS.find((a) => a.account === account);
+      if (!next) throw new GovOfficeError("演示身份不存在", "not_found");
+      actor = next;
+      return clone(actor);
     },
 
     async getPolicyStats() {
@@ -174,7 +187,7 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
       setSegmentText(doc, issue.suggestion.segmentId, issue.suggestion.replacement);
       const swap = issue.suggestion.replacePolicyRef;
       if (swap) doc.policyRefs = doc.policyRefs.filter((p) => p.id !== swap.fromId).concat([swap.to]);
-      doc.resolutions[issueId] = { kind: "fixed", by: DEMO_ACTOR.name, at: nowStamp() };
+      doc.resolutions[issueId] = { kind: "fixed", by: actor.name, at: nowStamp() };
       return clone(doc);
     },
 
@@ -235,7 +248,8 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
 
     async submitForReview(id) {
       const doc = find(id);
-      if (!documentGates(doc, DEMO_ACTOR).canSubmit) throw new GovOfficeError("当前状态不能提交审核", "invalid_status");
+      if (!actor.roles.includes("drafter")) throw new GovOfficeError("当前身份没有起草权限，不能提交审核。", "forbidden");
+      if (!documentGates(doc, actor).canSubmit) throw new GovOfficeError("当前状态不能提交审核", "invalid_status");
       const { blockers } = summarizeIssues(doc);
       doc.status = "pending";
       record(doc, "提交审核", "info", blockers.length ? `提交时仍有 ${blockers.length} 项严重问题待处理` : undefined);
@@ -244,7 +258,7 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
 
     async approve(id, opinion) {
       const doc = find(id);
-      const gates = documentGates(doc, DEMO_ACTOR);
+      const gates = documentGates(doc, actor);
       if (!gates.canApprove) throw new GovOfficeError(gates.approveBlockedReason, "blocked");
       doc.status = "approved";
       record(doc, "审核通过", "success", opinion.trim() || undefined);
@@ -253,7 +267,11 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
 
     async returnForRevision(id, opinion) {
       const doc = find(id);
-      if (!documentGates(doc, DEMO_ACTOR).canReturn) throw new GovOfficeError("当前状态不能退回", "invalid_status");
+      const gates = documentGates(doc, actor);
+      if (!gates.canReturn) {
+        const ownOrRole = gates.approveBlockedReason.includes("权限") || gates.approveBlockedReason.includes("自己");
+        throw new GovOfficeError(ownOrRole ? gates.approveBlockedReason : "当前状态不能退回", ownOrRole ? "forbidden" : "invalid_status");
+      }
       if (!opinion.trim()) throw new GovOfficeError("退回修改时请填写审核意见", "opinion_required");
       doc.status = "returned";
       record(doc, "退回修改", "danger", opinion.trim());
@@ -263,7 +281,7 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
     async exportDocument(id, kind): Promise<ExportResult> {
       const doc = find(id);
       if (kind === "formal") {
-        const gates = documentGates(doc, DEMO_ACTOR);
+        const gates = documentGates(doc, actor);
         throw new GovOfficeError(gates.formalExportBlockedReason || "演示环境未接入正式导出服务", "formal_export_blocked");
       }
       return {

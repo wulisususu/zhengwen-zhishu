@@ -242,7 +242,8 @@ const noticeDoc: OfficialDocument = {
   docNumber: { id: "seg-docno", text: "示数办[2025]7号" },
   fields: { ...emptyFields },
   signDate: "2025年10月25日",
-  author: "演示用户A",
+  author: "演示起草人",
+  authorAccount: "demo_drafter",
   department: "综合处",
   createdAt: "2025-10-25 09:30",
   version: 1,
@@ -376,12 +377,12 @@ const noticeDoc: OfficialDocument = {
   ],
   resolutions: {},
   history: [
-    { id: "d1-h1", action: "创建文稿", actor: "演示用户A", at: "2025-10-25 09:30", tone: "neutral" },
+    { id: "d1-h1", action: "创建文稿", actor: "演示起草人", at: "2025-10-25 09:30", tone: "neutral" },
     { id: "d1-h2", action: "审校完成", actor: "系统（演示）", at: "2025-10-25 10:41", note: "规则检查 6 项 · AI 语义审查 2 项 · 待补充字段 3 处", tone: "warning" },
   ],
 };
 
-function simpleDoc(partial: Pick<OfficialDocument, "id" | "title" | "docType" | "status" | "author" | "department" | "createdAt" | "issues" | "history"> & { paragraphs: { id: string; text: string }[]; version?: number }): OfficialDocument {
+function simpleDoc(partial: Pick<OfficialDocument, "id" | "title" | "docType" | "status" | "author" | "authorAccount" | "department" | "createdAt" | "issues" | "history"> & { paragraphs: { id: string; text: string }[]; version?: number }): OfficialDocument {
   return {
     origin: "demo",
     docNumber: { id: "seg-docno", text: "" },
@@ -401,7 +402,7 @@ export const DEMO_DOCUMENTS: OfficialDocument[] = [
   noticeDoc,
   simpleDoc({
     id: "demo-d2", title: "2025年第三季度政务服务工作情况报告", docType: "report", status: "pending",
-    author: "演示用户B", department: "政务服务处", createdAt: "2025-10-24 16:20", version: 2,
+    author: "演示用户B", authorAccount: "demo_user_b", department: "政务服务处", createdAt: "2025-10-24 16:20", version: 2,
     paragraphs: [
       { id: "p1", text: "一、总体情况　第三季度共受理政务服务事项12.6万件（演示数据），按时办结率达100%，群众满意度持续提升。" },
       { id: "p2", text: "二、主要做法　推行“一件事一次办”，新增集成服务事项18项；线上办理量占比由61%提升至68%。" },
@@ -420,7 +421,7 @@ export const DEMO_DOCUMENTS: OfficialDocument[] = [
   }),
   simpleDoc({
     id: "demo-d3", title: "关于申请调整数据共享平台运维经费的请示", docType: "request", status: "returned",
-    author: "演示用户C", department: "数据资源处", createdAt: "2025-10-23 11:05",
+    author: "演示用户C", authorAccount: "demo_user_c", department: "数据资源处", createdAt: "2025-10-23 11:05",
     paragraphs: [
       { id: "p1", text: "示例市财政局（演示机关）：" },
       { id: "p2", text: "为保障平台稳定运行，拟申请将2026年度运维经费由80万元调整为120万元；同时申请增加运维人员编制2名。" },
@@ -438,21 +439,21 @@ export const DEMO_DOCUMENTS: OfficialDocument[] = [
   }),
   simpleDoc({
     id: "demo-d4", title: "第12次主任办公会议纪要", docType: "minutes", status: "approved",
-    author: "演示用户A", department: "综合处", createdAt: "2025-10-22 17:30",
+    author: "演示起草人", authorAccount: "demo_drafter", department: "综合处", createdAt: "2025-10-22 17:30",
     paragraphs: [
       { id: "p1", text: "时间：2025年10月21日　地点：第一会议室（演示）" },
       { id: "p2", text: "会议听取了数据共享平台运行情况汇报，议定以下事项：一、年底前完成平台安全加固；二、各处室于11月10日前提交年度数据共享需求。" },
     ],
     issues: [],
     history: [
-      { id: "d4-h1", action: "创建文稿", actor: "演示用户A", at: "2025-10-22 16:00", tone: "neutral" },
-      { id: "d4-h2", action: "提交审核", actor: "演示用户A", at: "2025-10-22 17:30", tone: "info" },
+      { id: "d4-h1", action: "创建文稿", actor: "演示起草人", at: "2025-10-22 16:00", tone: "neutral" },
+      { id: "d4-h2", action: "提交审核", actor: "演示起草人", at: "2025-10-22 17:30", tone: "info" },
       { id: "d4-h3", action: "审核通过", actor: "演示审核人", at: "2025-10-23 09:12", note: "同意印发。", tone: "success" },
     ],
   }),
   simpleDoc({
     id: "demo-d5", title: "《示例市小微企业融资贴息实施办法（演示）》政策解读", docType: "interpretation", status: "pending",
-    author: "演示用户D", department: "政策研究室", createdAt: "2025-10-22 09:15",
+    author: "演示用户D", authorAccount: "demo_user_d", department: "政策研究室", createdAt: "2025-10-22 09:15",
     paragraphs: [
       { id: "p1", text: "一、适用对象　在本市依法登记注册并正常经营满一年、近两年内无严重失信记录的小微企业。" },
       { id: "p2", text: "二、补贴标准　按贷款实际支付利息的50%给予补贴，单户年度不超过20万元。" },
@@ -468,7 +469,7 @@ export const DEMO_DOCUMENTS: OfficialDocument[] = [
   }),
   simpleDoc({
     id: "demo-d6", title: "关于商请提供2025年度数据共享需求清单的函", docType: "letter", status: "pending",
-    author: "演示用户B", department: "政务服务处", createdAt: "2025-10-21 14:40",
+    author: "演示用户B", authorAccount: "demo_user_b", department: "政务服务处", createdAt: "2025-10-21 14:40",
     paragraphs: [
       { id: "p1", text: "示例市各区政务服务管理部门（演示）：" },
       { id: "p2", text: "为做好年度数据共享规划，请各单位梳理2025年度数据共享需求，形成清单报送我办。" },
@@ -485,7 +486,7 @@ export const DEMO_DOCUMENTS: OfficialDocument[] = [
   }),
   simpleDoc({
     id: "demo-d7", title: "数字政务建设专题工作总结（初稿）", docType: "report", status: "pending",
-    author: "演示用户C", department: "数据资源处", createdAt: "2025-10-20 10:20",
+    author: "演示用户C", authorAccount: "demo_user_c", department: "数据资源处", createdAt: "2025-10-20 10:20",
     paragraphs: [
       { id: "p1", text: "一、主要成效　全年节约行政成本约3000万元，办事效率提升80%。" },
       { id: "p2", text: "1. 平台建设　一、完成统一身份认证改造。" },

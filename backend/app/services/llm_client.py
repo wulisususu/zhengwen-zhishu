@@ -1728,6 +1728,9 @@ def _local_small_generate(prompt: str, max_tokens: Optional[int] = None) -> dict
             last_error = str(e)
             _time.sleep(2)
     return {"error": last_error or "Local small model failed after 3 attempts"}
+
+
+def _ollama_generate_with_fallback(prompt: str, max_tokens: Optional[int] = None) -> dict:
     try:
         result = _ollama_generate(prompt, max_tokens=max_tokens)
     except requests.exceptions.ConnectionError:

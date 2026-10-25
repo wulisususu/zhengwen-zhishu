@@ -10,3 +10,22 @@ pyyaml==6.0.2
 numpy==1.26.4
 opencv-python==4.10.0.84
 rapidocr_onnxruntime==1.4.4
+
+# ── 以下为启动链路实际依赖，原清单遗漏（缺任意一项 app.main 无法导入）──
+# HTTP 客户端：app/services/** 共 34 个模块 import requests
+requests
+# pi_agent_client（对话/文档 Agent 客户端）使用 httpx.AsyncClient
+httpx
+# 文档渲染：app/docs_pipeline/nodes.py、document_service.py 使用 docx / docxtpl
+python-docx
+docxtpl
+# docs_pipeline 输出 JSON 结构校验
+jsonschema
+# PPT_master 与 docs_pipeline 的 LangGraph 图定义
+langgraph
+
+# ── 知识库检索（体积较大，仅在启用知识库功能时必须）──
+# app/kb/embedding.py → sentence_transformers（会拉取 torch）
+sentence-transformers
+# app/kb/vector_store.py → faiss
+faiss-cpu

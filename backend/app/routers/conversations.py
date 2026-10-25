@@ -870,6 +870,8 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
         })
 
     # Security: input injection filter
+    requested_workflow = body.get("workflow_type")
+    workflow_type = _normalize_workflow_type(requested_workflow) if requested_workflow else _normalize_workflow_type(getattr(conv, "workflow_type", None))
     _sec = pre_check(content)
     if not _sec.allowed:
         msg = Message(conversation_id=conv_id, role="user", content=content, msg_type="text", workflow_type=workflow_type or "chat", intent_type="chat")
@@ -881,8 +883,6 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
             "conversation": ConversationOut.model_validate(conv).model_dump(mode="json"),
         })
     stream = body.get("stream", False)
-    requested_workflow = body.get("workflow_type")
-    workflow_type = _normalize_workflow_type(requested_workflow) if requested_workflow else _normalize_workflow_type(getattr(conv, "workflow_type", None))
     attachment_ids = _normalize_attachment_ids(body.get("attachments") or body.get("file_ids"))
     attachment_files = _valid_attachment_files(db, user.id, attachment_ids)
     attachment_ids = [file.id for file in attachment_files]
@@ -1158,6 +1158,10 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
                 NL = "\n\n"
                 doc_reply_saved = False
                 stream_error = None
+                try:
+                    preface_text = _build_document_preface(content)
+                except Exception:
+                    preface_text = ""
                 try:
                     _trace_doc_stream(conv_id, "stream_enter")
                     for task in attachment_bundle.get("tasks", []):

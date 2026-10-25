@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# Browser check output (screenshots, report.json)
+tests/browser/shots/
 .next/
 *.log
 .vite/

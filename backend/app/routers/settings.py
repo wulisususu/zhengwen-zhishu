@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ApiSetting
-from app.deps import get_current_user
+from app.deps import require_admin
 from app.errors import ok
 from app.config import get_config
 import subprocess
@@ -11,13 +11,13 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("/api")
-def get_settings(db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
     rows = db.query(ApiSetting).all()
     return ok(data=[{"key": r.key, "value": r.value, "description": r.description} for r in rows])
 
 
 @router.put("/api")
-def update_setting(body: dict, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_setting(body: dict, db: Session = Depends(get_db), _=Depends(require_admin)):
     key = body.get("key", "")
     if not key:
         return ok(message="key required")
@@ -74,13 +74,13 @@ def _parse_external_model(body: dict, *, resolve_key: bool) -> tuple[dict, str]:
 
 
 @router.get("/external-model")
-def get_external_model_config(_=Depends(get_current_user)):
+def get_external_model_config(_=Depends(require_admin)):
     from app.services.model_config import get_35b_config
     return ok(data=_external_model_payload(get_35b_config()))
 
 
 @router.post("/external-model/test")
-def test_external_model_config(body: dict, _=Depends(get_current_user)):
+def test_external_model_config(body: dict, _=Depends(require_admin)):
     from app.errors import AppError
     from app.services.model_config import test_connectivity, test_tool_call
     try:
@@ -102,7 +102,7 @@ def test_external_model_config(body: dict, _=Depends(get_current_user)):
 
 
 @router.put("/external-model")
-def set_external_model_config(body: dict, _=Depends(get_current_user)):
+def set_external_model_config(body: dict, _=Depends(require_admin)):
     from app.errors import AppError
     from app.services.model_config import (
         apply_35b_config, get_35b_config, set_35b_config, test_connectivity, test_tool_call,
@@ -136,7 +136,7 @@ def set_external_model_config(body: dict, _=Depends(get_current_user)):
 
 
 @router.get("/feature-flags")
-def get_feature_flags(_=Depends(get_current_user)):
+def get_feature_flags(_=Depends(require_admin)):
     cfg = get_config()
     flags = (cfg.get("feature_flags") or {}) if isinstance(cfg, dict) else {}
     return ok(data={
@@ -147,7 +147,7 @@ def get_feature_flags(_=Depends(get_current_user)):
 
 
 @router.get("/local-models")
-def get_local_models(_=Depends(get_current_user)):
+def get_local_models(_=Depends(require_admin)):
     models = [
         {"port": 8002, "name": "Qwen3-0.6B", "model": "Qwen3-0.6B", "role": "聊天/文档降级"},
         {"port": 8003, "name": "MiniCPM Vision", "model": "MiniCPM-V-2_6", "role": "文档解析/OCR"},

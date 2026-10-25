@@ -69,6 +69,15 @@ async def call_glm(
     if not GLM_API_KEY:
         raise GLMApiError("GLM5_API_KEY not set in environment")
 
+    # 模型出口策略：intranet / offline 下禁止直连云端 GLM，明确报错而不是静默失败
+    from app.services.model_policy import ModelPolicyError, guard_model_url
+
+    try:
+        guard_model_url(GLM_API_URL, purpose="ppt_glm")
+    except ModelPolicyError as exc:
+        logger.warning("PPT 规划被模型出口策略拒绝：%s", exc)
+        raise GLMApiError(str(exc)) from exc
+
     payload = {
         "model": "glm-5.2",
         "messages": [

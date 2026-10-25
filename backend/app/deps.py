@@ -69,6 +69,13 @@ def get_current_user(
     return user
 
 
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """管理员专用依赖。服务端校验，不依赖前端隐藏按钮。"""
+    if not bool(getattr(user, "is_admin", False)):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
 def optional_user(
     authorization: str = Header(None),
     mqw_token: str | None = Cookie(None),

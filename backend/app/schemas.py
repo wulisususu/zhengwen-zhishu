@@ -17,6 +17,16 @@ class UserCreate(BaseModel):
     username: str
     password: str
     nickname: str = ""
+    # 仅管理员通过 /users 创建账号时生效；/auth/register 忽略该字段
+    is_admin: bool = False
+
+
+class UserSelfUpdate(BaseModel):
+    """改自己 / 管理员改他人时使用。字段全部可选。"""
+
+    nickname: str = ""
+    password: str = ""
+    is_admin: Optional[bool] = None
 
 
 class UserLogin(BaseModel):
@@ -33,6 +43,7 @@ class UserOut(BaseModel):
     id: int
     username: str
     nickname: str
+    is_admin: bool = False
     created_at: datetime
     model_config = {"from_attributes": True}
 

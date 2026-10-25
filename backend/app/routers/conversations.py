@@ -890,7 +890,8 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
     if knowledge_doc_ids:
         try:
             from app.kb.db import get_documents_by_ids as _kb_docs_by_ids
-            existing_ids = {d["id"] for d in _kb_docs_by_ids(knowledge_doc_ids)}
+            _kb_owner_scope = None if bool(getattr(user, "is_admin", False)) else user.id
+            existing_ids = {d["id"] for d in _kb_docs_by_ids(knowledge_doc_ids, _kb_owner_scope)}
         except Exception:
             existing_ids = set()
         knowledge_doc_ids = [i for i in knowledge_doc_ids if i in existing_ids]
@@ -2014,7 +2015,7 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
                 yield _sse_event(_json, _workflow_event(workflow_type, intent_type, {"type": "message_start", "conversation_id": conv_id, "user_message_id": msg.id}), "message_start")
                 yield "data: " + _json.dumps(_workflow_event(workflow_type, intent_type, _user_event_payload(msg, msg_attachments, conv)), ensure_ascii=False) + NL
                 kb_full_text = ""
-                for event in stream_kb_chat(content, history_messages, workflow_type, intent_type, msg, msg_attachments, conv, user.id):
+                for event in stream_kb_chat(content, history_messages, workflow_type, intent_type, msg, msg_attachments, conv, user.id, bool(getattr(user, "is_admin", False))):
                     is_done = False
                     try:
                         for eline in event.strip().split("\n"):
@@ -2069,14 +2070,14 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
                 reply_text = str(validated_payload.get("text") or "").strip()
                 grounding = validated_payload.get("grounding") or grounding
             else:
-                reply_text, grounding = kb_chat_reply(content, history_messages, user.id)
+                reply_text, grounding = kb_chat_reply(content, history_messages, user.id, bool(getattr(user, "is_admin", False)))
                 if not (reply_text or "").strip():
                     reply_text = orchestration.get("previous_step_hint") or (
                         "OpenClaw 当前步骤未返回可校验的知识库结果。"
                         "请回到上一步检查 kb_search 工具、Gateway、provider 和 agent 配置后再重试。"
                     )
         else:
-            reply_text, grounding = kb_chat_reply(content, history_messages, user.id)
+            reply_text, grounding = kb_chat_reply(content, history_messages, user.id, bool(getattr(user, "is_admin", False)))
         reply = _save_assistant_reply(db, conv, reply_text, intent_type=intent_type)
         return ok(data={
             "messages": [_message_payload(msg, msg_attachments), _message_payload(reply)],

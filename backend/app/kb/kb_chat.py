@@ -38,7 +38,7 @@ def _condense_query(content: str, history: list) -> str:
 # Hybrid search
 # ---------------------------------------------------------------------------
 
-def _hybrid_search(kb, query: str, top_k: int = 6) -> tuple[list[dict], bool]:
+def _hybrid_search(kb, query: str, top_k: int = 6, user_id=None, is_admin: bool = False) -> tuple[list[dict], bool]:
     """Unified retrieval: semantic first, keyword fallback on low scores.
 
     Returns (results, grounded).
@@ -47,10 +47,17 @@ def _hybrid_search(kb, query: str, top_k: int = 6) -> tuple[list[dict], bool]:
         source_ref, parsed_file_id, chunk_id, parent_parsed_chunk_id,
         page_no, score, retrieval_type
     """
+    # 0. 归属范围：非管理员只能检索自己上传的文档
+    allowed_doc_ids = None
+    if not is_admin:
+        from app.kb.db import list_document_ids
+
+        allowed_doc_ids = list_document_ids(user_id) if user_id is not None else []
+
     # 1. FAISS semantic search
     try:
         raw_chunks, grounded = kb.search_with_filter(
-            query, top_k=top_k, allowed_clearance=None,
+            query, top_k=top_k, allowed_clearance=None, allowed_doc_ids=allowed_doc_ids,
         )
     except Exception as e:
         logger.error('FAISS search failed: %s', e)
@@ -74,7 +81,9 @@ def _hybrid_search(kb, query: str, top_k: int = 6) -> tuple[list[dict], bool]:
         return results, True
 
     # 3. Keyword fallback: search ParsedFileChunk
-    keyword_results = _keyword_search_from_parsed_chunks(query, top_n=_KEYWORD_FALLBACK_TOP_N)
+    keyword_results = _keyword_search_from_parsed_chunks(
+        query, top_n=_KEYWORD_FALLBACK_TOP_N, user_id=user_id, is_admin=is_admin,
+    )
     if keyword_results:
         logger.info('Hybrid: keyword fallback returned %d chunks', len(keyword_results))
         return keyword_results, True
@@ -114,7 +123,7 @@ def _normalize_semantic_results(chunks: list[dict]) -> list[dict]:
     return results
 
 
-def _keyword_search_from_parsed_chunks(query: str, top_n: int = 6) -> list[dict]:
+def _keyword_search_from_parsed_chunks(query: str, top_n: int = 6, user_id=None, is_admin: bool = False) -> list[dict]:
     """Fallback: keyword match against ParsedFileChunk table."""
     try:
         from app.database import SessionLocal
@@ -127,12 +136,17 @@ def _keyword_search_from_parsed_chunks(query: str, top_n: int = 6) -> list[dict]
 
         db = SessionLocal()
         try:
-            chunks = (
-                db.query(ParsedFileChunk)
-                .order_by(ParsedFileChunk.id.desc())
-                .limit(500)
-                .all()
-            )
+            q = db.query(ParsedFileChunk)
+            if not is_admin:
+                # 关键词回退同样必须做归属过滤，否则会绕过语义检索的权限边界
+                from app.models import File as _FileModel
+
+                q = (
+                    q.join(ParsedFile, ParsedFile.id == ParsedFileChunk.parsed_file_id)
+                     .join(_FileModel, _FileModel.id == ParsedFile.file_id)
+                     .filter(_FileModel.owner_user_id == user_id)
+                )
+            chunks = q.order_by(ParsedFileChunk.id.desc()).limit(500).all()
             scored = []
             for chunk in chunks:
                 text = chunk.content or ''
@@ -220,7 +234,7 @@ def _build_context_from_results(results: list[dict], grounded: bool) -> str:
 # ---------------------------------------------------------------------------
 
 def stream_kb_chat(content, history_messages, workflow_type, intent_type,
-                   msg, msg_attachments, conv, user_id):
+                   msg, msg_attachments, conv, user_id, is_admin: bool = False):
     """Generator for SSE events in knowledge workflow."""
     import json as json_mod
     from app.kb.kb_manager import KnowledgeBase
@@ -248,7 +262,7 @@ def stream_kb_chat(content, history_messages, workflow_type, intent_type,
 
     # Hybrid search
     try:
-        results, grounded = _hybrid_search(kb, condensed, top_k=TOP_K)
+        results, grounded = _hybrid_search(kb, condensed, top_k=TOP_K, user_id=user_id, is_admin=is_admin)
     except Exception as e:
         logger.error('Hybrid search failed: %s', e)
         results, grounded = [], False
@@ -324,7 +338,7 @@ def stream_kb_chat(content, history_messages, workflow_type, intent_type,
 # Non-streaming KB chat
 # ---------------------------------------------------------------------------
 
-def kb_chat_reply(content, history_messages, user_id):
+def kb_chat_reply(content, history_messages, user_id, is_admin: bool = False):
     """Non-stream version. Returns (reply_text, grounding_info dict)."""
     from app.kb.kb_manager import KnowledgeBase
     from app.kb.kb_prompt import build_kb_prompt
@@ -339,7 +353,7 @@ def kb_chat_reply(content, history_messages, user_id):
         return '知识库未就绪，请稍后重试。', {'grounded': False, 'sources': []}
 
     try:
-        results, grounded = _hybrid_search(kb, condensed, top_k=TOP_K)
+        results, grounded = _hybrid_search(kb, condensed, top_k=TOP_K, user_id=user_id, is_admin=is_admin)
     except Exception as e:
         logger.error('Hybrid search failed: %s', e)
         results, grounded = [], False

@@ -42,6 +42,16 @@ def _migrate(conn):
         conn.execute('ALTER TABLE documents ADD COLUMN clearance INTEGER DEFAULT 0')
         conn.commit()
 
+    # 资源隔离：文档归属用户（NULL = 历史存量文档，按「仅管理员可见」处理）
+    if 'owner_user_id' not in doc_cols:
+        logger.info('Migrating documents: adding owner_user_id')
+        conn.execute('ALTER TABLE documents ADD COLUMN owner_user_id INTEGER DEFAULT NULL')
+        conn.commit()
+    conn.execute(
+        'CREATE INDEX IF NOT EXISTS idx_kb_documents_owner ON documents(owner_user_id)'
+    )
+    conn.commit()
+
     # New unified-parse columns
     _add_col_if_missing(conn, 'documents', doc_cols, 'source_ref', 'TEXT DEFAULT ""')
     _add_col_if_missing(conn, 'documents', doc_cols, 'content_hash', 'TEXT DEFAULT ""')
@@ -219,19 +229,51 @@ def init_db():
 
 def add_document(filename, filepath, stored_name='', file_type=None, file_size=0,
                  clearance=0, source_ref='', content_hash='', parser_version='',
-                 embedding_model='', indexed_at=''):
+                 embedding_model='', indexed_at='', owner_user_id=None):
     conn = get_conn()
     cur = conn.execute(
         'INSERT INTO documents (filename, stored_name, filepath, file_type, file_size, '
-        'clearance, source_ref, content_hash, parser_version, embedding_model, indexed_at) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'clearance, source_ref, content_hash, parser_version, embedding_model, indexed_at, owner_user_id) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         (filename, stored_name or filename, filepath, file_type, file_size,
-         clearance, source_ref, content_hash, parser_version, embedding_model, indexed_at)
+         clearance, source_ref, content_hash, parser_version, embedding_model, indexed_at,
+         owner_user_id)
     )
     doc_id = cur.lastrowid
     conn.commit()
     conn.close()
     return doc_id
+
+
+def get_document_owner(doc_id):
+    """返回文档归属用户 id；文档不存在返回 None。NULL=历史存量文档。"""
+    conn = get_conn()
+    row = conn.execute('SELECT owner_user_id FROM documents WHERE id = ?', (doc_id,)).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    return row['owner_user_id']
+
+
+def get_document_owner_row(doc_id):
+    """区分「文档不存在」与「文档存在但 owner 为 NULL」。"""
+    conn = get_conn()
+    row = conn.execute('SELECT id, owner_user_id FROM documents WHERE id = ?', (doc_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_document_ids(owner_user_id):
+    """某用户可检索的文档 id 列表（用于语义检索的权限过滤）。"""
+    conn = get_conn()
+    if owner_user_id is None:
+        rows = conn.execute('SELECT id FROM documents').fetchall()
+    else:
+        rows = conn.execute(
+            'SELECT id FROM documents WHERE owner_user_id = ?', (owner_user_id,)
+        ).fetchall()
+    conn.close()
+    return [r['id'] for r in rows]
 
 
 def get_document_clearance(doc_id):
@@ -327,28 +369,40 @@ def get_document_by_source_ref(source_ref):
     return dict(row) if row else None
 
 
-def list_documents():
+def list_documents(owner_user_id=None):
+    """列出文档。owner_user_id=None 表示不按归属过滤（仅管理员使用）。"""
     conn = get_conn()
-    rows = conn.execute(
-        'SELECT id, filename, stored_name, file_type, file_size, chunk_count, '
-        'source_ref, content_hash, indexed_at, created_at '
-        'FROM documents ORDER BY id DESC'
-    ).fetchall()
+    cols = ('id, filename, stored_name, file_type, file_size, chunk_count, '
+            'source_ref, content_hash, indexed_at, created_at, owner_user_id')
+    if owner_user_id is None:
+        rows = conn.execute(
+            f'SELECT {cols} FROM documents ORDER BY id DESC'
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            f'SELECT {cols} FROM documents WHERE owner_user_id = ? ORDER BY id DESC',
+            (owner_user_id,),
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def get_documents_by_ids(doc_ids):
+def get_documents_by_ids(doc_ids, owner_user_id=None):
     """Fetch knowledge documents by id (used to resolve message knowledge refs)."""
     if not doc_ids:
         return []
     conn = get_conn()
     placeholders = ','.join('?' * len(doc_ids))
+    params = list(doc_ids)
+    where = f'id IN ({placeholders})'
+    if owner_user_id is not None:
+        where += ' AND owner_user_id = ?'
+        params.append(owner_user_id)
     rows = conn.execute(
         'SELECT id, filename, stored_name, file_type, file_size, chunk_count, '
-        'source_ref, content_hash, indexed_at, created_at '
-        'FROM documents WHERE id IN ({})'.format(placeholders),
-        doc_ids,
+        'source_ref, content_hash, indexed_at, created_at, owner_user_id '
+        f'FROM documents WHERE {where}',
+        params,
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

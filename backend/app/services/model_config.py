@@ -133,6 +133,13 @@ def _validate_base_url(base_url: str) -> str:
         raise ValueError("服务地址必须是 http(s) URL，例如 http://192.168.1.10:8000/v1")
     if parsed.username or parsed.password:
         raise ValueError("服务地址不能包含用户名或密码")
+    # 模型出口策略：intranet / offline 模式下不允许把模型地址配到公网
+    from app.services.model_policy import ModelPolicyError, guard_model_url
+
+    try:
+        guard_model_url(value, purpose="external_model_config")
+    except ModelPolicyError as exc:
+        raise ValueError(str(exc)) from exc
     return value
 
 

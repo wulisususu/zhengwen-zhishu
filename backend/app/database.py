@@ -2,6 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from pathlib import Path
 import logging
+import os
 
 DB_PATH = Path(__file__).parent.parent / "data" / "app.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -190,6 +191,45 @@ def _run_startup_migrations() -> None:
             WHERE workflow_type IS NULL OR workflow_type = '' OR workflow_type = 'chat'
             """
         )
+
+        # --- 最小角色控制：users.is_admin（SQLite 无法加 NOT NULL 列，用默认值兜住旧数据）---
+        _add_column_if_missing(conn, "users", "is_admin", "is_admin BOOLEAN NOT NULL DEFAULT 0")
+        _bootstrap_admin(conn)
+
+
+def _bootstrap_admin(conn) -> None:
+    """保证系统里至少有一个管理员。
+
+    优先用 security.admin_username 指定；未配置则取 id 最小的用户（通常是首个账号）。
+    只在「当前没有任何管理员」时执行，不会覆盖人工设置。
+    """
+    try:
+        existing = conn.exec_driver_sql("SELECT COUNT(*) FROM users WHERE is_admin = 1").scalar()
+        if existing and int(existing) > 0:
+            return
+        username = ""
+        try:
+            from app.config import get_config
+
+            username = str(((get_config() or {}).get("security") or {}).get("admin_username") or "").strip()
+        except Exception:
+            username = ""
+        username = username or str(os.getenv("ADMIN_USERNAME") or "").strip()
+        if username:
+            row = conn.exec_driver_sql("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            if row is None:
+                logger.warning("security.admin_username=%s 不存在，跳过管理员引导", username)
+                return
+            admin_id = row[0]
+        else:
+            row = conn.exec_driver_sql("SELECT id FROM users ORDER BY id ASC LIMIT 1").fetchone()
+            if row is None:
+                return  # 还没有任何用户，等注册后再引导
+            admin_id = row[0]
+        conn.exec_driver_sql("UPDATE users SET is_admin = 1 WHERE id = ?", (admin_id,))
+        logger.warning("已将用户 id=%s 引导为管理员（后续请在 /users 中维护角色）", admin_id)
+    except Exception as exc:  # 引导失败不能阻断启动
+        logger.error("管理员引导失败：%s", exc)
 
 
 def init_db():

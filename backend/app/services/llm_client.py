@@ -16,10 +16,21 @@ try:
 except Exception:  # pragma: no cover
     classify_request_intent = None
 from app.services.security import build_hardened_prompt, build_hardened_context_prompt
+from app.services.model_policy import guard_model_url
 
 DEFAULT_PROMPT_MODEL_URL = "http://127.0.0.1:8001"
 DEFAULT_OLLAMA_URL = "http://192.168.10.212:8081/v1"
 DEFAULT_OLLAMA_MODEL = "Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"
+
+
+def _guarded_post(url: str, *, purpose: str = "llm", **kwargs):
+    """所有模型请求的统一出口：先过 model_policy 再发。
+
+    被策略拒绝时抛 ModelPolicyError，调用方的 try/except 会把它当作错误返回，
+    不会退化成对云端的静默重试。
+    """
+    guard_model_url(url, purpose=purpose)
+    return requests.post(url, **kwargs)
 
 
 # === 35B reachability cache (shared with degradation.py) ===
@@ -344,7 +355,7 @@ def refine_prompt(content: str) -> str:
     url = str(_setting("prompt_model_url", DEFAULT_PROMPT_MODEL_URL)).rstrip("/")
     timeout = float(_setting("prompt_timeout_seconds", 12))
     try:
-        resp = requests.post(url + "/v1/completions", json={"prompt": PROMPT_REWRITE_TEMPLATE.format(content=original), "stream": False}, timeout=timeout)
+        resp = _guarded_post(url + "/v1/completions", purpose="prompt_rewrite", json={"prompt": PROMPT_REWRITE_TEMPLATE.format(content=original), "stream": False}, timeout=timeout)
         if resp.status_code == 200:
             refined = _clean_model_text(resp.json().get("text", ""))
             if _valid_refinement(refined, original):
@@ -1478,7 +1489,7 @@ def _ollama_generate(prompt: str, max_tokens: Optional[int] = None) -> dict:
         "temperature": temp,
         "stream": False,
     }
-    resp = requests.post(url + "/chat/completions", json=payload, timeout=timeout)
+    resp = _guarded_post(url + "/chat/completions", purpose="chat_completions", json=payload, timeout=timeout)
     if resp.status_code != 200:
         return {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
     text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -1494,7 +1505,7 @@ def _ollama_generate_direct(prompt: str, max_tokens: Optional[int] = None) -> di
         "temperature": temp,
         "stream": False,
     }
-    resp = requests.post(url + "/chat/completions", json=payload, timeout=timeout)
+    resp = _guarded_post(url + "/chat/completions", purpose="chat_completions", json=payload, timeout=timeout)
     if resp.status_code != 200:
         return {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
     text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -1577,7 +1588,7 @@ def _ollama_generate_stream(prompt: str, max_tokens: Optional[int] = None):
         "temperature": temp,
         "stream": True,
     }
-    resp = requests.post(url + "/chat/completions", json=payload, stream=True, timeout=timeout)
+    resp = _guarded_post(url + "/chat/completions", purpose="chat_completions_stream", json=payload, stream=True, timeout=timeout)
     if resp.status_code != 200:
         yield {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
         return
@@ -1611,7 +1622,7 @@ def _ollama_generate_direct_stream(prompt: str, max_tokens: Optional[int] = None
         "temperature": temp,
         "stream": True,
     }
-    resp = requests.post(url + "/chat/completions", json=payload, stream=True, timeout=timeout)
+    resp = _guarded_post(url + "/chat/completions", purpose="chat_completions_stream", json=payload, stream=True, timeout=timeout)
     if resp.status_code != 200:
         yield {"error": "Model HTTP %d: %s" % (resp.status_code, resp.text[:200])}
         return
@@ -1699,7 +1710,7 @@ def _local_small_generate(prompt: str, max_tokens: Optional[int] = None) -> dict
     last_error = None
     for attempt in range(3):
         try:
-            resp = requests.post(url, json=payload, timeout=timeout)
+            resp = _guarded_post(url, purpose="local_small", json=payload, timeout=timeout)
             if resp.status_code == 200:
                 text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
                 if text:

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from pathlib import Path
 from typing import AsyncGenerator
 import asyncio
 import requests
@@ -21,6 +22,31 @@ logger = logging.getLogger(__name__)
 CHAT_AGENT_URL = "http://127.0.0.1:18790"
 DOC_AGENT_URL = "http://127.0.0.1:18791"
 PCW_URL = "http://127.0.0.1:8099"
+
+# backend/.pi-agent/{chat,doc}/openclaw.json
+_OPENCLAW_DIR = Path(__file__).resolve().parents[3] / ".pi-agent"
+_agent_policy_warned: set[str] = set()
+
+
+def _agent_allowed(agent_type: str) -> tuple[bool, str]:
+    """Agent 是独立子进程，其出网不受 llm_client 出口约束。
+
+    intranet / offline 模式下，必须检查它 openclaw.json 里的 provider 地址；
+    不合规就跳过 Agent 路径，改用本机模型（仍在同一模式内，不算切换模式）。
+    """
+    from app.services.model_policy import ModelPolicyError, agent_providers_compliant, get_mode
+
+    try:
+        mode = get_mode()
+    except ModelPolicyError as exc:
+        return False, str(exc)
+    if mode == "cloud_allowed":
+        return True, ""
+    ok, reason = agent_providers_compliant(_OPENCLAW_DIR / agent_type / "openclaw.json", mode=mode)
+    if not ok and agent_type not in _agent_policy_warned:
+        _agent_policy_warned.add(agent_type)
+        logger.warning("跳过 %s Agent：%s", agent_type, reason)
+    return ok, reason
 
 
 def _sse_frame(payload):
@@ -192,7 +218,7 @@ async def chat_with_degradation(
     # on the same primary model before taking the local 0.6B degradation path.
     primary_attempts = 3
     primary_retry_delays = (1, 3)
-    if await health_check(f"{CHAT_AGENT_URL}/health"):
+    if _agent_allowed("chat")[0] and await health_check(f"{CHAT_AGENT_URL}/health"):
         yield _sse_frame(_wrap(workflow, intent, {
             "type": "message_start", "role": "assistant",
         }))
@@ -330,7 +356,7 @@ async def doc_with_degradation(
     preface_text = _build_document_preface(content)
 
     # --- PI Agent doc (primary path) ---
-    if await health_check(f"{DOC_AGENT_URL}/health"):
+    if _agent_allowed("doc")[0] and await health_check(f"{DOC_AGENT_URL}/health"):
         try:
             # 1. user event
             yield _sse_frame(_wrap(workflow, intent, {

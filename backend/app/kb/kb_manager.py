@@ -204,7 +204,7 @@ class KnowledgeBase:
             self.vs.add(vectors, ids)
         logger.info('FAISS index rebuilt with %d vectors', self.vs.count())
 
-    def add_file(self, filepath, original_name=None, clearance=0):
+    def add_file(self, filepath, original_name=None, clearance=0, owner_user_id=None):
         filepath = Path(filepath).resolve()
         if not filepath.exists():
             raise FileNotFoundError(f'File not found: {filepath}')
@@ -237,6 +237,7 @@ class KnowledgeBase:
             file_type=ext,
             file_size=file_size,
             clearance=clearance,
+            owner_user_id=owner_user_id,
         )
         chunk_ids = add_chunks(doc_id, chunks, clearance=clearance)
         self.vs.add(vectors, chunk_ids)
@@ -266,7 +267,8 @@ class KnowledgeBase:
         return merged
 
     def search_with_filter(self, query, top_k=TOP_K, allowed_clearance=None,
-                           score_floor=_MIN_SCORE_FLOOR, score_ratio=0.65):
+                           score_floor=_MIN_SCORE_FLOOR, score_ratio=0.65,
+                           allowed_doc_ids=None):
         """Search with clearance filtering and two-tier relevance gating.
 
         1. Over-fetch top_k * N from FAISS.
@@ -294,6 +296,10 @@ class KnowledgeBase:
                 continue
             item = {**row_map[cid], 'score': r['score']}
             if allowed_clearance is not None and item.get('clearance', 0) > allowed_clearance:
+                continue
+            # 归属过滤：allowed_doc_ids 为 None 表示不限制（仅管理员），
+            # 空集合表示该用户没有任何可检索文档 -> 一律不返回
+            if allowed_doc_ids is not None and item.get('doc_id') not in allowed_doc_ids:
                 continue
             merged.append(item)
 

@@ -41,6 +41,38 @@ async def _get_kb():
     return _kb
 
 
+def _is_admin(user: User) -> bool:
+    return bool(getattr(user, "is_admin", False))
+
+
+def _check_doc_access(doc_id: int, user: User) -> bool:
+    """文档归属校验。
+
+    - 管理员：全部可见
+    - 普通用户：仅自己上传的文档
+    - owner_user_id 为 NULL（历史存量文档）：仅管理员可见
+    返回 False 时调用方统一按 404 处理，避免泄露文档是否存在。
+    """
+    from app.kb.db import get_document_owner_row
+
+    row = get_document_owner_row(doc_id)
+    if row is None:
+        return False
+    if _is_admin(user):
+        return True
+    owner = row.get("owner_user_id")
+    return owner is not None and int(owner) == int(user.id)
+
+
+def _search_scope(user: User):
+    """返回 (allowed_doc_ids)。None 表示不限制（管理员）。"""
+    if _is_admin(user):
+        return None
+    from app.kb.db import list_document_ids
+
+    return list_document_ids(user.id)
+
+
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500)
     top_k: int = Field(default=5, ge=1, le=20)
@@ -87,7 +119,7 @@ async def upload_document(file: UploadFile = File(...), user: User = Depends(get
         tmp.write(content)
         tmp.close()
         async with _write_lock:
-            result = await asyncio.to_thread(kb.add_file, tmp.name, file.filename)
+            result = await asyncio.to_thread(kb.add_file, tmp.name, file.filename, 0, user.id)
         return ok(data={
             "doc_id": result["doc_id"],
             "filename": file.filename,
@@ -107,13 +139,16 @@ async def list_documents(user: User = Depends(get_current_user)):
     # Read directly from DB — no need to wait for KnowledgeBase init
     try:
         from app.kb.db import list_documents as _list_docs
-        return ok(data={"documents": _list_docs()})
+        scope = None if _is_admin(user) else user.id
+        return ok(data={"documents": _list_docs(scope)})
     except Exception as exc:
         return ok(data={"documents": [], "loading": True})
 
 
 @router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: int, user: User = Depends(get_current_user)):
+    if not _check_doc_access(doc_id, user):
+        return fail(40400, "Document not found")
     try:
         kb = await _get_kb()
     except Exception:
@@ -127,6 +162,8 @@ async def delete_document(doc_id: int, user: User = Depends(get_current_user)):
 
 @router.get("/documents/{doc_id}/file")
 async def preview_document_file(doc_id: int, user: User = Depends(get_current_user)):
+    if not _check_doc_access(doc_id, user):
+        raise HTTPException(status_code=404, detail="Document not found")
     from app.kb.db import get_conn
     conn = get_conn()
     row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
@@ -171,5 +208,8 @@ async def search(body: SearchRequest, user: User = Depends(get_current_user)):
         kb = await _get_kb()
     except Exception:
         return fail(ERR_INTERNAL, "Embedding model is still loading, please wait...")
-    results = await asyncio.to_thread(kb.search, body.query, body.top_k)
+    allowed_doc_ids = _search_scope(user)
+    results = await asyncio.to_thread(
+        lambda: kb.search_with_filter(body.query, top_k=body.top_k, allowed_doc_ids=allowed_doc_ids)[0]
+    )
     return ok(data={"query": body.query, "results": results})

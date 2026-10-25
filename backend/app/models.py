@@ -11,6 +11,7 @@ class User(Base):
     username = Column(String(64), unique=True, nullable=False, index=True)
     password_hash = Column(String(256), nullable=False)
     nickname = Column(String(64), default="")
+    is_admin = Column(Boolean, default=False, nullable=False, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow)
     conversations = relationship("Conversation", back_populates="user")
 

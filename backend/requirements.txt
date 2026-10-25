@@ -5,6 +5,9 @@ pydantic==2.9.0
 pydantic-settings==2.5.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+# passlib 1.7.4 与 bcrypt>=4.1 不兼容（会抛 "password cannot be longer than 72 bytes"），
+# 必须锁在 4.0.x，否则登录/注册在干净环境里直接失败
+bcrypt==4.0.1
 python-multipart==0.0.9
 pyyaml==6.0.2
 numpy==1.26.4

@@ -47,7 +47,7 @@ onMounted(() => {
     </aside>
     <main class="gov-shell__main">
       <div v-if="!session.isDemo" class="gov-banner gov-banner--info" style="display:flex;gap:12px;align-items:center;padding:6px 16px;font-size:12px;flex-wrap:wrap">
-        <span>{{ session.actor?.name || '读取真实身份中…' }} · 政策检索与自动审校尚未接入</span>
+        <span>{{ session.actor?.name || '读取真实身份中…' }} · 政策库已接入，自动审校尚未接入</span>
         <RouterLink to="/welcome">旧版功能入口</RouterLink>
         <button type="button" class="gov-btn gov-btn--text gov-btn--sm" @click="logout">退出登录</button>
       </div>

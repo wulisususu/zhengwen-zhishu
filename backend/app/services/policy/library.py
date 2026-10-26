@@ -311,6 +311,9 @@ class PolicyLibraryService:
             "clause": clause_label(c),
             "excerpt": _brief(c, 60),
             "text": fragment(c.content, start, end),
+            "sourceUrl": p.url,
+            "policyId": p.id,
+            "version": p.version,
         }
         note = self._status_note(hit)
         if note:

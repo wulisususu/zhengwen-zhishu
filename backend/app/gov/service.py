@@ -62,6 +62,9 @@ def material(file):
 
 def serialize(db, doc):
     payload = json.loads(doc.payload_json)
+    from .policy_refs import references
+    snapshot = payload.pop("_citationSnapshot", [])
+    refs = references(payload.get("citationIds", []), snapshot=snapshot)
     owner = db.get(User, doc.owner_user_id)
     records = db.query(GovReviewRecord).filter_by(document_id=doc.id).order_by(GovReviewRecord.at, GovReviewRecord.id).all()
     files = db.query(File).join(GovDocumentMaterial, GovDocumentMaterial.file_id == File.id).filter(GovDocumentMaterial.document_id == doc.id).order_by(File.id).all()
@@ -74,13 +77,16 @@ def serialize(db, doc):
             "docNumber": {"id": doc.id + "-number", "text": ""}, "blocks": blocks,
             "author": owner.nickname or owner.username, "authorAccount": owner.username, "department": "",
             "createdAt": doc.created_at.isoformat(), "materials": [material(f) for f in files],
-            "policyRefs": [], "issues": [], "resolutions": {}, "lastReviewedAt": "", "checkStatus": "not_run",
+            "policyRefs": refs, "issues": [], "resolutions": {}, "lastReviewedAt": "", "checkStatus": "not_run",
             "history": [{"id": r.id, "action": r.action, "actor": (db.get(User, r.actor_user_id).nickname or db.get(User, r.actor_user_id).username), "at": r.at.isoformat(), "tone": r.tone, "note": r.note} for r in records]}
 
 
 def create(db, user, body):
+    from .policy_refs import references
+    payload = body.model_dump()
+    payload["_citationSnapshot"] = references(body.citationIds, strict=True)
     doc = GovDocument(id=uuid.uuid4().hex, owner_user_id=user.id, status="draft", version=1,
-                      payload_json=json.dumps(body.model_dump(), ensure_ascii=False))
+                      payload_json=json.dumps(payload, ensure_ascii=False))
     db.add(doc)
     db.flush()
     record(db, doc, user, "创建文稿")
@@ -92,6 +98,7 @@ def save(db, user, document_id, body):
     doc = get_document(db, user, document_id)
     editable(doc, user)
     payload = json.loads(doc.payload_json)
+    snapshot = payload.pop("_citationSnapshot", [])
     patch = body.model_dump(exclude_unset=True, exclude={"version"})
     if any(v is None for v in patch.values()):
         raise HTTPException(422, "文稿字段不能为 null")
@@ -102,6 +109,7 @@ def save(db, user, document_id, body):
         payload = Content.model_validate(payload).model_dump()
     except ValidationError:
         raise HTTPException(422, "文稿字段不合法，标题不能为空")
+    payload["_citationSnapshot"] = snapshot
     write_revision(db, doc, body.version, payload=payload)
     record(db, doc, user, "保存草稿")
     db.commit()

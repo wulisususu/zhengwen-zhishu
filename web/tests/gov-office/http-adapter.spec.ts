@@ -69,7 +69,6 @@ describe("real government HTTP boundary", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response("自动审校未接入", 503)));
     const api = await adapter();
     await expect(api.exportDocument(doc.id, "formal")).rejects.toThrow();
-    const stats = await api.getPolicyStats();
-    expect(stats.available).toBe(false);
+    await expect(api.getPolicyStats()).rejects.toMatchObject({ code: "503" });
   });
 });

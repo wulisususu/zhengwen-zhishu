@@ -18,6 +18,7 @@ class Content(BaseModel):
     body: str = Field(default="", max_length=200000)
     fields: Fields = Field(default_factory=Fields)
     signDate: str = Field(default="", max_length=30)
+    citationIds: list[str] = Field(default_factory=list, max_length=50)
 
     @field_validator("title")
     @classmethod
@@ -55,3 +56,7 @@ class ExportRequest(BaseModel):
 
 class Generation(Revision):
     prompt: str = Field(min_length=1, max_length=12000)
+
+
+class CitationSelection(Revision):
+    citationIds: list[str] = Field(max_length=50)

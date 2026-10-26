@@ -159,6 +159,28 @@ def extract_file(filename: str, data: bytes) -> ExtractedDocument:
             document = docx.Document(io.BytesIO(data))
         except Exception:
             raise PolicyError(errors.EXTRACT_FAILED, "无法读取该 .docx 文件。") from None
-        paragraphs = [p.text.strip() for p in document.paragraphs if p.text.strip()]
-        return ExtractedDocument(text="\n".join(paragraphs))
+        from docx.text.paragraph import Paragraph
+        from docx.table import Table
+        from docx.oxml.ns import qn
+        parts = []
+        has_tables = False
+        for child in document.element.body:
+            if child.tag == qn("w:p"):
+                text = Paragraph(child, document).text.strip()
+                if text:
+                    parts.append(text)
+            elif child.tag == qn("w:tbl"):
+                has_tables = True
+                seen = set()
+                for row in Table(child, document).rows:
+                    cells = []
+                    for cell in row.cells:
+                        if cell._tc not in seen:
+                            seen.add(cell._tc)
+                            cells.append(cell.text.strip())
+                    text = "\t".join(cells).strip()
+                    if text:
+                        parts.append(text)
+        # Table text is retained, but flattening loses layout; require human review.
+        return ExtractedDocument(text="\n".join(parts), reliable=not has_tables)
     raise PolicyError(errors.UNSUPPORTED_FILE, "仅支持 .txt / .md / .html / .docx；PDF 暂不支持，请先转换。")

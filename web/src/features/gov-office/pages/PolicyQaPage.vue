@@ -10,6 +10,10 @@ import QaSessionList from "../components/policy/QaSessionList.vue";
 import { COMPACT_BELOW, useViewport } from "../composables/useViewport";
 import { usePolicyQaStore } from "../stores/policyQa";
 import type { AskOptions } from "../types";
+import { getGovOfficeAdapter } from "../adapters";
+import PolicyLibraryPanel from "../components/policy/PolicyLibraryPanel.vue";
+
+const isLive = getGovOfficeAdapter().mode === "http";
 
 const qa = usePolicyQaStore();
 const { width } = useViewport();
@@ -24,6 +28,7 @@ const session = computed(() => qa.activeSession);
 const citationIds = computed(() => [...new Set(session.value?.turns.flatMap((t) => t.answer.citationIds) ?? [])]);
 
 onMounted(() => {
+  if (isLive) return;
   historyOpen.value = !compact.value;
   qa.load();
 });
@@ -50,6 +55,11 @@ async function ask(question: string, options: AskOptions) {
 
 <template>
   <GovLayout>
+    <template v-if="isLive">
+      <GovPageHeader title="政策检索" subtitle="检索真实政策库、查看原文条款，并将可追溯依据保存到文稿" />
+      <PolicyLibraryPanel />
+    </template>
+    <template v-else>
     <GovPageHeader title="政策问答" subtitle="仅基于已入库政策检索作答，结论附条款依据；无可靠依据时不生成结论" />
 
     <div class="gov-qa">
@@ -105,6 +115,7 @@ async function ask(question: string, options: AskOptions) {
         />
       </aside>
     </div>
+    </template>
   </GovLayout>
 </template>
 

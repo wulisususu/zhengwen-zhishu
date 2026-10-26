@@ -13,6 +13,7 @@ import IssuePanel from "../components/review/IssuePanel.vue";
 import DraftFieldsForm from "../components/draft/DraftFieldsForm.vue";
 import MaterialList from "../components/draft/MaterialList.vue";
 import PolicyRefList from "../components/draft/PolicyRefList.vue";
+import PolicyLibraryPanel from "../components/policy/PolicyLibraryPanel.vue";
 import AddMaterialDialog from "../components/draft/AddMaterialDialog.vue";
 import ExportDialog from "../components/draft/ExportDialog.vue";
 import SubmitDialog from "../components/draft/SubmitDialog.vue";
@@ -42,7 +43,8 @@ const zoom = ref<"fit" | number>("fit");
 const leftOpen = ref(true);
 const rightOpen = ref(true);
 const focusAnchor = ref("");
-const dialog = ref<"" | "material" | "export" | "submit">("");
+const dialog = ref<"" | "material" | "export" | "submit" | "policy">("");
+const policyFocus = ref<number>();
 const preview = ref<InstanceType<typeof A4Preview> | null>(null);
 const fieldsForm = ref<InstanceType<typeof DraftFieldsForm> | null>(null);
 const newTitle = ref("");
@@ -152,6 +154,19 @@ async function removeMaterial(id: string) {
   if (doc.value) await store.removeMaterial(doc.value.id, id);
 }
 
+async function changeCitations(id: string, remove = false) {
+  if (dirty.value && !(await save())) return;
+  if (!doc.value || !editable.value || busy.value) return;
+  const api = getGovOfficeAdapter();
+  if (!api.selectCitations) return;
+  busy.value = true;
+  const ids = doc.value.policyRefs.map(p => p.id);
+  const result = await store.mutate(() => api.selectCitations!(doc.value!.id, remove ? ids.filter(value => value !== id) : [...new Set([...ids, id])]), remove ? "政策依据已移除。" : "政策条款已保存到文稿。");
+  busy.value = false;
+  if (result) dialog.value = "";
+}
+function showPolicy(id?: number) { policyFocus.value = id; dialog.value = "policy"; }
+
 async function generate() {
   if (!doc.value || busy.value) return;
   if (editBody.value.trim() && !window.confirm("生成成功后将替换正文，是否继续？")) return;
@@ -244,7 +259,7 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
         <aside v-if="leftOpen" class="gov-draft__left" aria-label="材料与政策依据">
           <DraftFieldsForm ref="fieldsForm" :doc="session.isDemo ? doc : { ...doc, fields: editFields }" :editable="editable && !busy" @update="updateField" />
           <MaterialList :materials="doc.materials" :editable="editable && !busy" @add="dialog = 'material'" @remove="removeMaterial" />
-          <PolicyRefList :refs="doc.policyRefs" />
+          <PolicyRefList :refs="doc.policyRefs" :live="!session.isDemo" :editable="editable && !busy" @add="showPolicy()" @view="showPolicy" @remove="changeCitations($event, true)" />
         </aside>
 
         <section class="gov-draft__center" aria-label="公文预览">
@@ -284,6 +299,12 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
       />
       <ExportDialog v-if="dialog === 'export'" :doc="doc" :actor="actor" @close="dialog = ''" @locate="exportLocate" />
       <SubmitDialog v-if="dialog === 'submit'" :blockers="summary.blockers" :check-status="doc.checkStatus" @close="dialog = ''" @confirm="submit" />
+      <div v-if="dialog === 'policy'" class="gov-policy-overlay" @click.self="dialog = ''">
+        <section class="gov-policy-dialog" role="dialog" aria-modal="true" aria-labelledby="policy-dialog-title">
+          <div class="gov-policy-dialog-head"><h2 id="policy-dialog-title">选择政策依据</h2><button type="button" class="gov-btn" @click="dialog = ''">关闭政策选择</button></div>
+          <PolicyLibraryPanel :document-id="doc.id" :initial-policy-id="policyFocus" :selectable="editable && !busy" @select="changeCitations($event)" />
+        </section>
+      </div>
     </template>
     <div v-else-if="session.loaded && !docId" class="gov-draft__loading">
       <h1>新建通知</h1>
@@ -300,6 +321,9 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
 </template>
 
 <style scoped>
+.gov-policy-overlay { position: fixed; inset: 0; z-index: 100; background: #10243f66; display: grid; place-items: center; padding: 20px; }
+.gov-policy-dialog { width: min(1100px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background: var(--gov-surface); border-radius: 12px; }
+.gov-policy-dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--gov-border); }
 .gov-draft__editor { border: 0; border-bottom: 1px solid var(--gov-border); margin: 0; padding: 12px 24px; display: flex; flex-wrap: wrap; align-items: end; gap: 12px; max-height: 280px; overflow: auto; }
 .gov-draft__body-editor { flex: 1 0 100%; }
 .gov-draft__lock { color: var(--gov-text-3); flex: 0 0 auto; }

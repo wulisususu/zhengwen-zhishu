@@ -48,7 +48,19 @@ export interface Citation {
   text: { before: string; highlight: string; after: string };
   previousClause?: string;
   nextClause?: string;
+  sourceUrl?: string;
+  policyId?: number;
+  version?: number;
 }
+
+export interface PolicyDocument {
+  id: number; title: string; url: string; doc_number?: string; issuer?: string;
+  publish_date?: string; verified_status: PolicyStatus; version: number;
+  is_current: boolean; status_note?: string; superseded_by?: number;
+}
+export interface PolicyClause { id: number; article_number?: string; heading?: string; content: string; sequence: number; needs_review: boolean; }
+export interface PolicyDetail { policy: PolicyDocument; clauses: PolicyClause[]; }
+export interface PolicyHit { citation_id: string; policy_id: number; policy_title: string; clause: string; status: PolicyStatus; excerpt: { before: string; highlight: string; after: string }; }
 
 export type AnswerSegment =
   | { kind: "text"; text: string }
@@ -131,6 +143,12 @@ export interface PolicyRef {
   title: string;
   clause: string;
   status: PolicyStatus;
+  sourceUrl?: string;
+  policyId?: number;
+  version?: number;
+  statusNote?: string;
+  excerpt?: string;
+  unresolved?: boolean;
 }
 
 export type IssueSeverity = "critical" | "warning" | "hint";

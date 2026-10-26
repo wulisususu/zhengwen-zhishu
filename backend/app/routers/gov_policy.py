@@ -18,6 +18,7 @@ from app.models import User
 from app.services.policy import errors as policy_errors
 from app.services.policy.library import ImportRequest, PolicyLibraryService, get_policy_library
 from app.services.policy.settings import MAX_FETCH_BYTES_LIMIT
+from app.services.policy.store import PolicyFilter
 
 router = APIRouter(prefix="/gov", tags=["gov-policy"])
 
@@ -73,6 +74,21 @@ def list_policies(
         keyword=keyword, doc_number=doc_number, issuer=issuer, statuses=tuple(status),
         include_history=include_history, url=url, page=page, page_size=page_size,
     ))
+
+
+@router.get("/policies/stats")
+def policy_stats(_user: User = Depends(get_current_user), library: PolicyLibraryService = Depends(get_policy_library)):
+    counts = {status: library.store.list_policies(PolicyFilter(statuses=(status,)), 1, 1)[1]
+              for status in ("current", "abolished", "unverified")}
+    return ok({"origin": "backend", "available": True, "total": sum(counts.values()), **counts})
+
+
+@router.get("/policies/{policy_id}")
+def policy_detail(policy_id: int, _user: User = Depends(get_current_user), library: PolicyLibraryService = Depends(get_policy_library)):
+    policy = library.store.get(policy_id)
+    if policy is None:
+        return fail(ERR_NOT_FOUND, "政策不存在")
+    return ok({"policy": policy.to_dict(), "clauses": [c.to_dict() for c in library.store.clauses_for(policy_id)]})
 
 
 class ClauseSearchRequest(BaseModel):

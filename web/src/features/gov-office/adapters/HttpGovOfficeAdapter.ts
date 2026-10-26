@@ -2,7 +2,7 @@ import { getSessionToken } from "../../../stores/auth.js";
 import { handleUnauthorized } from "../../../api.js";
 import { GovOfficeError } from "./GovOfficeAdapter";
 import type { GovOfficeAdapter, DocumentQuery } from "./GovOfficeAdapter";
-import type { Actor, AskOptions, Citation, DraftChanges, ExportResult, FieldKey, IssueResolution, Material, OfficialDocument, PolicyStats, QaSession, QaTurn, RuntimeStatus } from "../types";
+import type { Actor, AskOptions, Citation, DraftChanges, ExportResult, FieldKey, IssueResolution, Material, OfficialDocument, PolicyStats, PolicyStatus, PolicyDocument, PolicyDetail, PolicyHit, QaSession, QaTurn, RuntimeStatus } from "../types";
 
 const BASE = "/api/v1/gov";
 
@@ -74,9 +74,20 @@ export class HttpGovOfficeAdapter implements GovOfficeAdapter {
   }
   getRuntimeStatus() { return json<RuntimeStatus>("/runtime"); }
   getCurrentActor() { return json<Actor>("/actor"); }
-  async getPolicyStats(): Promise<PolicyStats> { return { origin: "backend", available: false, total: 0, current: 0, abolished: 0, unverified: 0 }; }
+  getPolicyStats(): Promise<PolicyStats> { return json<PolicyStats>("/policies/stats"); }
   async listQaSessions(): Promise<QaSession[]> { return []; }
-  async getCitations(_ids: string[]): Promise<Citation[]> { return []; }
+  async getCitations(ids: string[]): Promise<Citation[]> {
+    if (!ids.length) return [];
+    const result = await json<{ citations: Citation[]; missing: string[] }>("/citations/batch", "POST", { ids });
+    if (result.missing.length) throw new GovOfficeError("部分政策条款已不可用，请重新选择", "missing_citation");
+    return result.citations;
+  }
+  listPolicies(keyword = "") { return json<{ items: PolicyDocument[]; total: number }>("/policies?" + new URLSearchParams({ keyword, page_size: "50" })); }
+  searchPolicies(query: string, statuses: PolicyStatus[] = ["current"]) { return json<{ hits: PolicyHit[] }>("/policies/search", "POST", { query, statuses, limit: 30 }); }
+  getPolicy(id: number) { return json<PolicyDetail>(`/policies/${id}`); }
+  selectCitations(id: string, citationIds: string[]) { return this.change(id, "/citations", { citationIds }); }
+  importPolicy(form: FormData) { return json<{ policy: PolicyDocument }>("/policies/import", "POST", form); }
+  verifyPolicy(id: number, status: PolicyStatus, note: string) { return json<{ policy: PolicyDocument }>(`/policies/${id}/verify`, "POST", { status, status_note: note }); }
   async askPolicyQuestion(_id: string, _question: string, _options: AskOptions): Promise<QaTurn> { throw new GovOfficeError("政策检索服务未接入", "unavailable"); }
   async listDocuments(query: DocumentQuery = {}) {
     const params = new URLSearchParams();

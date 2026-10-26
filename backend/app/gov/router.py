@@ -5,7 +5,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.errors import ok
 from . import service
-from .schemas import Content, Update, Decision, Revision, ExportRequest, Generation
+from .schemas import Content, Update, Decision, Revision, ExportRequest, Generation, CitationSelection
 from .materials import router as material_router
 
 router = APIRouter(prefix="/gov", tags=["government"])
@@ -26,7 +26,7 @@ def runtime(user: User = Depends(get_current_user)):
         mode = "unknown"
     if mode not in {"cloud_allowed", "intranet", "offline"}:
         mode = "unknown"
-    return ok({"origin": "backend", "modelMode": mode, "label": "后端已连接 · 模型可用性未验证", "detail": "人工审核已接入；政策检索与自动审校未接入。"})
+    return ok({"origin": "backend", "modelMode": mode, "label": "后端已连接 · 模型可用性未验证", "detail": "人工审核与政策库已接入；自动审校未接入。"})
 
 
 @router.get("/documents")
@@ -53,6 +53,12 @@ def save(document_id: str, body: Update, user: User = Depends(get_current_user),
 @router.post("/documents/{document_id}/submit")
 def submit(document_id: str, body: Decision, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return ok(service.transition(db, user, document_id, body, "submit"))
+
+
+@router.post("/documents/{document_id}/citations")
+def select_citations(document_id: str, body: CitationSelection, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from .policy_refs import select
+    return ok(select(db, user, document_id, body))
 
 
 @router.post("/documents/{document_id}/approve")
@@ -85,7 +91,10 @@ def export(document_id: str, body: ExportRequest, user: User = Depends(get_curre
     doc = service.get_document(db, user, document_id)
     if body.kind == "formal":
         raise HTTPException(403, "正式发文权限尚未配置，仅支持内部草稿")
-    content = internal_docx(json.loads(doc.payload_json))
+    payload = json.loads(doc.payload_json)
+    from .policy_refs import references
+    payload["policyRefs"] = references(payload.get("citationIds", []), snapshot=payload.get("_citationSnapshot", []))
+    content = internal_docx(payload)
     service.record(db, doc, user, "导出内部草稿", "带内部草稿标识，不能作为正式文件使用")
     db.commit()
     return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": f'attachment; filename="draft-{doc.id}.docx"', "Cache-Control": "private, no-store"})

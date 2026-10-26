@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app.database import Base, engine
 from app.routers.auth import router as auth_router
 from .router import router
+from app.routers.gov_policy import router as policy_router
 
 
 @asynccontextmanager
@@ -20,6 +21,7 @@ async def lifespan(app):
 app = FastAPI(title="Government integration acceptance", lifespan=lifespan)
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(router, prefix="/api/v1")
+app.include_router(policy_router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health")

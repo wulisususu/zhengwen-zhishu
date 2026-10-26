@@ -27,6 +27,16 @@ def internal_docx(payload: dict) -> bytes:
         doc.add_paragraph(payload["signDate"])
     if fields.get("undertaker"):
         doc.add_paragraph("承办：" + fields["undertaker"])
+    if payload.get("policyRefs"):
+        doc.add_heading("政策依据（引用记录，须人工核验）", level=1)
+        labels = {"current": "现行", "abolished": "已废止", "unverified": "未核验"}
+        for ref in payload["policyRefs"]:
+            doc.add_paragraph(f"《{ref['title']}》 {ref['clause']} · 第 {ref.get('version') or '未知'} 版 · {labels[ref['status']]}")
+            if ref.get("statusNote"):
+                doc.add_paragraph("核验提示：" + ref["statusNote"])
+            if ref.get("excerpt"):
+                doc.add_paragraph(ref["excerpt"])
+            doc.add_paragraph("来源：" + ref["sourceUrl"])
     out = BytesIO()
     doc.save(out)
     return out.getvalue()

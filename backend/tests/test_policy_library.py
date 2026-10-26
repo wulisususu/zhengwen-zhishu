@@ -264,7 +264,7 @@ def test_citations_batch_returns_frontend_shape_in_requested_order(tmp_path):
 
     first = got[0]
     assert FRONTEND_CITATION_KEYS <= set(first)
-    assert set(first) <= FRONTEND_CITATION_KEYS | {"statusNote", "previousClause", "nextClause"}
+    assert set(first) <= FRONTEND_CITATION_KEYS | {"statusNote", "previousClause", "nextClause", "sourceUrl", "policyId", "version"}
     assert first["status"] == "current"
     assert first["docNumber"] == "示政规〔2025〕9号"
     assert first["issuer"] == "示例市政务服务管理局（演示机关）"

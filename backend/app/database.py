@@ -59,32 +59,6 @@ def _run_startup_migrations() -> None:
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_ppt_structured_workspaces_source_type ON ppt_structured_workspaces(source_type)")
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_ppt_structured_workspaces_status ON ppt_structured_workspaces(status)")
 
-        
-        # Create ppt_structured_workspaces table if not exists
-        conn.exec_driver_sql("""
-            CREATE TABLE IF NOT EXISTS ppt_structured_workspaces (
-                workspace_id TEXT PRIMARY KEY,
-                owner_user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                source_type TEXT NOT NULL DEFAULT 'builtin',
-                source_template_id TEXT,
-                status TEXT NOT NULL DEFAULT 'draft',
-                version INTEGER NOT NULL DEFAULT 1,
-                canvas TEXT NOT NULL DEFAULT 'ppt169',
-                theme_json TEXT NOT NULL DEFAULT '{}',
-                master_manifest_json TEXT NOT NULL DEFAULT '[]',
-                layout_manifest_json TEXT NOT NULL DEFAULT '[]',
-                placeholder_manifest_json TEXT NOT NULL DEFAULT '[]',
-                asset_manifest_json TEXT NOT NULL DEFAULT '[]',
-                validation_json TEXT NOT NULL DEFAULT '{}',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (owner_user_id) REFERENCES users (id)
-            )
-        """)
-        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_ppt_structured_workspaces_owner ON ppt_structured_workspaces(owner_user_id)")
-        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_ppt_structured_workspaces_source_type ON ppt_structured_workspaces(source_type)")
-        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_ppt_structured_workspaces_status ON ppt_structured_workspaces(status)")
 
         for column_name, ddl in (
             ("owner_user_id", "owner_user_id INTEGER"),

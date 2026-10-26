@@ -319,7 +319,7 @@ function parseRetryAfter(value: string | null): number | undefined {
 function httpFailure(status: number, retryAfter: string | null): { error: WorkflowError; terminalStatus?: "interrupted" } {
   const retrySeconds = parseRetryAfter(retryAfter);
   const table: Record<number, WorkflowError> = {
-    401: { code: "AUTHENTICATION_REQUIRED", message: "登录状态已失效，请重新登录", retryable: false, httpStatus: 401 },
+    401: { code: "AUTHENTICATION_REQUIRED", message: "会话已失效，请重新选择角色", retryable: false, httpStatus: 401 },
     409: { code: "IDEMPOTENT_TASK_RUNNING", message: "任务仍在生成", retryable: true, httpStatus: 409 },
     429: { code: "RATE_LIMITED", message: "服务繁忙，请稍后重试", retryable: true, httpStatus: 429, retryAfterSeconds: retrySeconds },
     413: { code: "REQUEST_TOO_LARGE", message: "请求内容过大", retryable: false, httpStatus: 413 },
@@ -410,7 +410,7 @@ export class LegacyPptMasterAdapter implements PptWorkflowAdapter {
     if (!token) {
       await this.options.onUnauthorized?.();
       yield makeEvent("task.failed", {
-        error: { code: "AUTHENTICATION_REQUIRED", message: "登录状态已失效，请重新登录", retryable: false, httpStatus: 401 },
+        error: { code: "AUTHENTICATION_REQUIRED", message: "会话已失效，请重新选择角色", retryable: false, httpStatus: 401 },
       });
       return;
     }
@@ -552,7 +552,7 @@ export class LegacyPptMasterAdapter implements PptWorkflowAdapter {
     const token = await this.options.getAccessToken();
     if (!token) {
       await this.options.onUnauthorized?.();
-      const error = new Error("登录状态已失效，请重新登录") as Error & { code: string };
+      const error = new Error("会话已失效，请重新选择角色") as Error & { code: string };
       error.code = "AUTHENTICATION_REQUIRED";
       throw error;
     }

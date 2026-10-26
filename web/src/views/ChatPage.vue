@@ -75,7 +75,7 @@
               @click="switchAccount"
             >
               <Repeat2 class="size-4" :stroke-width="2" />
-              <span>切换账号</span>
+              <span>切换角色</span>
             </button>
             <button
               type="button"
@@ -83,7 +83,7 @@
               @click="logout"
             >
               <LogOut class="size-4" :stroke-width="2" />
-              <span>退出登录</span>
+              <span>退出</span>
             </button>
           </div>
           <button
@@ -218,7 +218,7 @@ function switchAccount() {
 
 function logout() {
   auth.clearSession()
-  router.push('/login')
+  router.push('/entry')
 }
 
 function routeConversationId() {

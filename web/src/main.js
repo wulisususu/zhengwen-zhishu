@@ -9,13 +9,12 @@ import DocumentPage from './views/DocumentPage.vue'
 import GongwenPage from './views/GongwenPage.vue'
 import PolicyPage from './views/PolicyPage.vue'
 import PptHostPage from './views/PptHostPage.vue'
-import LoginPage from './views/LoginPage.vue'
+import RoleEntryPage from './features/gov-office/pages/RoleEntryPage.vue'
 import AgentDirectoryPage from './views/AgentDirectoryPage.vue'
 import SettingsPage from './views/SettingsPage.vue'
 import { hasSessionToken } from './stores/auth.js'
-// 说明：gov-office 那套页面（/gov/*）的入口本次不并入，文件保留在 features/gov-office 下，
-// 需要启用时把下一行 import 与 routes 里的 ...govOfficeRoutes 一起放开即可。
-// import { govOfficeRoutes } from './features/gov-office/routes'
+import { ENTRY_PATH, entryGuard } from './roleEntryGuard.js'
+import { govOfficeRoutes } from './features/gov-office/routes'
 import './style.css'
 import { setGovOfficeAdapter } from './features/gov-office/adapters'
 import { useGovDocumentsStore } from './features/gov-office/stores/govDocuments'
@@ -28,21 +27,24 @@ function createPptProjectId() {
 }
 
 const routes = [
-  { path: '/', component: WelcomePage },
+  { path: '/', redirect: '/gov' },
   { path: '/welcome', component: WelcomePage },
   { path: '/workspace', component: WorkspacePage },
   { path: '/knowledge', component: WorkspacePage },
   { path: '/chat', component: ChatPage },
   { path: '/chat/:id', component: ChatPage },
   { path: '/document', component: DocumentPage },
+  { path: '/document/:id', component: DocumentPage },
   { path: '/gongwen', component: GongwenPage },
   { path: '/policy', component: PolicyPage },
-  { path: '/document/:id', component: DocumentPage },
   { path: '/ppt', redirect: () => `/ppt/${createPptProjectId()}` },
   { path: '/ppt/:projectId', component: PptHostPage },
   { path: '/agents', component: AgentDirectoryPage },
   { path: '/settings', component: SettingsPage },
-  { path: '/login', component: LoginPage },
+  // 不设登录页：进入时选择「起草人」或「审核人」；旧的 /login 链接统一转到角色入口
+  { path: ENTRY_PATH, component: RoleEntryPage },
+  { path: '/login', redirect: (to) => ({ path: ENTRY_PATH, query: to.query.expired ? { expired: '1' } : {} }) },
+  ...govOfficeRoutes,
   { path: '/:pathMatch(.*)*', redirect: '/chat' },
 ]
 
@@ -51,16 +53,7 @@ const router = createRouter({
   routes,
 })
 
-const publicPaths = new Set(['/welcome', '/login'])
-
-router.beforeEach((to) => {
-  if (!publicPaths.has(to.path) && !hasSessionToken()) {
-    return { path: '/login', query: { next: to.fullPath } }
-  }
-  if (to.path === '/login' && hasSessionToken()) {
-    return typeof to.query.next === 'string' ? to.query.next : '/'
-  }
-})
+router.beforeEach((to) => entryGuard(to, hasSessionToken()))
 
 if (typeof window !== 'undefined') {
   const resetGov = () => {
@@ -70,9 +63,8 @@ if (typeof window !== 'undefined') {
   window.addEventListener('mqw-auth-changed', resetGov)
   window.addEventListener('mqw-auth-expired', () => {
     resetGov()
-    const current = router.currentRoute.value
-    if (current.path === '/login') return
-    router.replace({ path: '/login', query: { expired: '1', next: current.fullPath } })
+    if (router.currentRoute.value.path === ENTRY_PATH) return
+    router.replace({ path: ENTRY_PATH, query: { expired: '1' } })
   })
 }
 

@@ -1,19 +1,18 @@
 // Real browser, JWT, SQLite and deployed candidate tools. No request interception.
+// No login page: identities enter through /entry. Draft privacy across roles is covered by basic-live.mjs.
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { launchBrowser } from './helpers.mjs';
+import { enterAsRole, launchBrowser } from './helpers.mjs';
 const base=process.env.GOV_E2E_BASE || 'http://127.0.0.1:4319';
 const output=resolve(process.env.GOV_E2E_OUTPUT || '../.gov-runtime/full-integration');
-const auth=JSON.parse(readFileSync(process.env.GOV_E2E_ACCOUNTS,'utf8'));
 mkdirSync(output,{recursive:true});
 const browser=await launchBrowser();const contexts=[];const errors=[];let requests=0;
-async function login(name){
+async function enter(role){
  const context=await browser.newContext({viewport:{width:1600,height:1100},acceptDownloads:true});contexts.push(context);
  const page=await context.newPage();page.setDefaultTimeout(45000);
  page.on('pageerror',e=>errors.push(String(e)));page.on('request',r=>{if(r.url().includes('/api/v1/gov/'))requests++;});
- await page.goto(base+'/login');await page.getByPlaceholder('请输入账号').fill(name);await page.getByPlaceholder('请输入密码').fill(auth.password);
- await page.getByRole('button',{name:'登录',exact:true}).click();await page.waitForURL(base+'/gov');return page;
+ await enterAsRole(page,base,role);return page;
 }
 async function mutate(page,suffix,operation,timeout=60000){
  const pending=page.waitForResponse(r=>r.url().endsWith(suffix)&&['POST','PUT','DELETE'].includes(r.request().method()),{timeout});
@@ -26,7 +25,7 @@ async function download(page,name){
  await page.getByRole('button',{name:'关闭',exact:true}).click();
 }
 try{
- const admin=await login('stage2_reviewer');await admin.goto(base+'/gov/library');
+ const admin=await enter('reviewer');await admin.goto(base+'/gov/library');
  await admin.getByText('管理员导入政策',{exact:true}).click();
  await admin.getByLabel('政策原文网址',{exact:true}).fill('https://www.gov.cn/zhengce/zhengceku/202609/P020260930799553380054.pdf');
  await admin.getByLabel('导入政策标题',{exact:true}).fill('艺术发展十五五规划');
@@ -34,7 +33,7 @@ try{
  const imported=await mutate(admin,'/gov/policies/import',()=>admin.getByRole('button',{name:'导入政策',exact:true}).click());
  assert.equal(imported.extraction.parser,'opendataloader_pdf');assert.equal(imported.extraction.page_count,12);assert.equal(imported.policy.verified_status,'unverified');
  await admin.getByText(/PDF 第 1 页/).first().waitFor();await admin.screenshot({path:join(output,'pdf-library.png'),fullPage:true});
- const writer=await login('stage2_writer');await writer.goto(base+'/gov/draft');const title='整体验收通知-'+Date.now();
+ const writer=await enter('drafter');await writer.goto(base+'/gov/draft');const title='整体验收通知-'+Date.now();
  await writer.getByLabel('新建文稿标题',{exact:true}).fill(title);
  const created=await mutate(writer,'/gov/documents',()=>writer.getByRole('button',{name:'创建文稿',exact:true}).click());const id=created.id;
  await writer.waitForURL(base+'/gov/draft/'+id);
@@ -73,10 +72,9 @@ try{
  await submit(writer);await admin.reload();await admin.getByRole('row').filter({hasText:title}).click();
  await admin.getByRole('button',{name:'审核通过',exact:true}).click();const approved=await mutate(admin,'/approve',()=>admin.getByRole('button',{name:'确认通过',exact:true}).click());assert.equal(approved.status,'approved');
  await writer.reload();await download(writer,'standard-notice-with-policy.docx');await writer.screenshot({path:join(output,'approved-notice.png'),fullPage:true});
- const other=await login('stage2_other');await other.goto(base+'/gov/draft/'+id);await other.getByText('文稿不存在或无权访问',{exact:true}).waitFor();
  assert.deepEqual(errors,[]);
  const result={passed:true,documentId:id,policyId:imported.policy.id,pdfPages:12,realGovRequests:requests,modelGenerationChars:generated.body.length,defectCount:defective.issues.length,correctedCritical:checked.review.summary.critical,pageErrors:errors,
-  workflow:['real-login','PDF-import','PDF-page-provenance','create','upload','real-model-generation','save','dual-layer-review','locate','defective-draft-download','submit','return','correct','table','cite','reload','recheck','resubmit','other-person-approve','DOCX-download','cross-user-denied']};
+  workflow:['role-entry','PDF-import','PDF-page-provenance','create','upload','real-model-generation','save','dual-layer-review','locate','defective-draft-download','submit','return','correct','table','cite','reload','recheck','resubmit','other-person-approve','DOCX-download']};
  writeFileSync(join(output,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }catch(e){for(let i=0;i<contexts.length;i++)await contexts[i].pages()[0]?.screenshot({path:join(output,`failure-${i}.png`),fullPage:true}).catch(()=>{});throw e;}
 finally{await browser.close();}

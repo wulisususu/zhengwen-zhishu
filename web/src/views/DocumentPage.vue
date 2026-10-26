@@ -49,11 +49,11 @@
           <div v-if="userMenuOpen" class="absolute bottom-[58px] left-0 right-0 z-20 overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white py-1.5 shadow-[0_14px_34px_rgba(15,23,42,0.14)]">
             <button type="button" class="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#344054] transition-colors hover:bg-[#F8FAFC]" @click="switchAccount">
               <Repeat2 class="size-4" :stroke-width="2" />
-              <span>切换账号</span>
+              <span>切换角色</span>
             </button>
             <button type="button" class="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#344054] transition-colors hover:bg-[#F8FAFC]" @click="logout">
               <LogOut class="size-4" :stroke-width="2" />
-              <span>退出登录</span>
+              <span>退出</span>
             </button>
           </div>
           <button type="button" class="flex h-12 w-full items-center gap-3 rounded-[14px] px-2.5 text-left text-[#344054] transition-colors hover:bg-[#F8FAFC]" :aria-expanded="userMenuOpen ? 'true' : 'false'" @click.stop="userMenuOpen = !userMenuOpen">
@@ -164,7 +164,7 @@ function switchAccount() { logout() }
 
 function logout() {
   auth.clearSession()
-  router.push('/login')
+  router.push('/entry')
 }
 
 

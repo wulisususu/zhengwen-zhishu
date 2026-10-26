@@ -302,7 +302,7 @@ PI_AGENT_DOC=1
 | `src/components/DocumentMode.vue` | 文档生成界面 |
 | `src/views/PptHostPage.vue` | PPT 工作台宿主页 |
 | `src/views/KnowledgeFileSearchView.vue` | 知识库文件搜索 |
-| `src/views/LoginPage.vue` | 登录页 |
+| `src/features/gov-office/pages/RoleEntryPage.vue` | 角色入口（不设登录页：选择起草人或审核人，见 `docs/role-entry.md`） |
 | `src/components/ComposerBar.vue` | 底部输入栏 |
 | `src/stores/chat.js` | 对话状态 (Pinia) |
 | `src/features/ppt-workbench/` | PPT 工作台适配器 (支持 Legacy / Mock 模式) |

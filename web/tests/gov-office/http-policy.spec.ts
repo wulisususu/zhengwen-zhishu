@@ -46,5 +46,5 @@ it("rejects stale citation responses after a login change", async () => {
     localStorage.setItem("mqw-session", JSON.stringify({ token: "other-token" }));
     return response({ citations: [{ id: "clause:1" }], missing: [] });
   }));
-  await expect(new HttpGovOfficeAdapter().getCitations(["clause:1"])).rejects.toThrow("登录账号已切换");
+  await expect(new HttpGovOfficeAdapter().getCitations(["clause:1"])).rejects.toThrow("角色已切换");
 });

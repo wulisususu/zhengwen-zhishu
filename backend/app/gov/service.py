@@ -1,21 +1,39 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
+from app.deps import get_current_user
 from app.models import User, File
 from .models import GovDocument, GovDocumentMaterial, GovReviewRecord
 
 
+def is_reviewer(user) -> bool:
+    """Gov reviewer: an admin, or the role-entry 审核人 (app/gov/entry.py)."""
+    return bool(user.is_admin) or getattr(user, "gov_role", None) == "reviewer"
+
+
+def can_draft(user) -> bool:
+    """The role-entry 审核人 only reviews; everyone else may draft."""
+    return getattr(user, "gov_role", None) != "reviewer"
+
+
+def require_gov_reviewer(user: User = Depends(get_current_user)) -> User:
+    if not is_reviewer(user):
+        raise HTTPException(403, "需要审核人身份")
+    return user
+
+
 def actor(user):
+    roles = (["drafter"] if can_draft(user) else []) + (["reviewer"] if is_reviewer(user) else [])
     return {"origin": "backend", "account": user.username, "name": user.nickname or user.username,
-            "department": "", "roles": ["drafter", "reviewer"] if user.is_admin else ["drafter"], "canFormalIssue": False}
+            "department": "", "roles": roles, "canFormalIssue": False}
 
 
 def visible_query(db, user):
     q = db.query(GovDocument)
-    if user.is_admin:
+    if is_reviewer(user):
         return q.filter(or_(GovDocument.owner_user_id == user.id, GovDocument.status != "draft"))
     return q.filter(GovDocument.owner_user_id == user.id)
 
@@ -28,6 +46,8 @@ def get_document(db, user, document_id):
 
 
 def editable(doc, user):
+    if not can_draft(user):
+        raise HTTPException(403, "审核人不能起草或修改文稿")
     if doc.owner_user_id != user.id:
         raise HTTPException(403, "只能修改自己起草的文稿")
     if doc.status not in {"draft", "returned"}:
@@ -82,6 +102,8 @@ def serialize(db, doc):
 
 
 def create(db, user, body):
+    if not can_draft(user):
+        raise HTTPException(403, "审核人不能起草文稿")
     from .policy_refs import references
     payload = body.model_dump()
     payload["_citationSnapshot"] = references(body.citationIds, strict=True)
@@ -129,7 +151,7 @@ def transition(db, user, document_id, body, action):
             raise HTTPException(422, "请填写正文后再送审")
         target, label, note = "pending", "提交审核", "提交人工审核；通知批准前后端将重新运行双层审校"
     else:
-        if not user.is_admin or doc.owner_user_id == user.id:
+        if not is_reviewer(user) or doc.owner_user_id == user.id:
             raise HTTPException(403, "需要非起草人的审核人操作")
         if doc.status != "pending":
             raise HTTPException(409, "仅待审核文稿可以审核")

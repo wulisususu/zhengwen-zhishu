@@ -2,7 +2,7 @@
   <main class="gov-home flex h-dvh flex-col overflow-hidden bg-white text-black">
     <div class="gov-home-bg" aria-hidden="true"></div>
 
-    <AppHeader title="政务办公智能体" subtitle="端侧可信 · 数据不出域" @goHome="router.push('/')" @logout="router.push('/login')" />
+    <AppHeader title="政务办公智能体" subtitle="公文起草 · 政策解读" @goHome="router.push('/')" @logout="router.push('/entry')" />
 
     <section class="relative z-10 flex flex-1 flex-col items-center overflow-y-auto px-5 py-8 sm:justify-center sm:py-10">
       <div class="w-full max-w-[1080px]">

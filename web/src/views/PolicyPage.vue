@@ -645,29 +645,29 @@ async function copyAnswer(turn) {
   }
 }
 
-function toDraftFromCite() {
-  const c = activeCite.value
-  if (!c) return
-  sessionStorage.setItem('mqw-gongwen-references', JSON.stringify([{
+// 起草依据带整条条款原文（高亮只是命中的那一句）；T1 条款原文以条号开头，去掉以免与 clause_no 重复
+function draftReference(c) {
+  const content = String(c.content || c.excerpt?.hl || '').trim()
+  const clauseNo = String(c.clause_no || '').trim()
+  return {
     citation_id: c.citation_id,
     policy_title: c.policy_title,
     doc_no: c.doc_no,
     clause_no: c.clause_no,
-    content: c.excerpt?.hl || c.content,
-  }]))
+    content: clauseNo && content.startsWith(clauseNo) ? content.slice(clauseNo.length).trim() : content,
+  }
+}
+
+function toDraftFromCite() {
+  const c = activeCite.value
+  if (!c) return
+  sessionStorage.setItem('mqw-gongwen-references', JSON.stringify([draftReference(c)]))
   router.push('/gongwen')
 }
 
 function toDraft(turn) {
   const cites = turn?.data?.citations || []
-  const refs = cites.map((c) => ({
-    citation_id: c.citation_id,
-    policy_title: c.policy_title,
-    doc_no: c.doc_no,
-    clause_no: c.clause_no,
-    content: c.excerpt?.hl || c.content,
-  }))
-  sessionStorage.setItem('mqw-gongwen-references', JSON.stringify(refs))
+  sessionStorage.setItem('mqw-gongwen-references', JSON.stringify(cites.map(draftReference)))
   router.push('/gongwen')
 }
 

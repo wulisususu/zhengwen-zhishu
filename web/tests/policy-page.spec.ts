@@ -88,6 +88,24 @@ describe("PolicyPage on the existing policy library", () => {
     expect(w.text()).toContain("核验前不能作为现行依据");
   });
 
+  it("hands the full clause, not the highlighted sentence, to drafting", async () => {
+    setup(["drafter"]);
+    sessionStorage.setItem("mqw-policy-answer", JSON.stringify({
+      status: "answered", question: "贴息条件", conclusion: "须同时具备三项条件[1]。", meta: {},
+      citations: [{
+        citation_id: "clause:7", policy_title: "现行办法", doc_no: "示规〔2026〕1号", clause_no: "第三条",
+        content: "第三条 申请贴息应当同时具备下列条件：正常经营满一年；无严重失信记录；贷款用于生产经营。",
+        excerpt: { pre: "第三条 申请贴息应当同时具备下列条件：正常经营满一年；", hl: "无严重失信记录；", post: "贷款用于生产经营。" },
+      }],
+    }));
+    const w = await mountPage();
+    await w.findAll("button").find((b) => b.text().includes("加入公文起草依据"))!.trigger("click");
+    expect(JSON.parse(sessionStorage.getItem("mqw-gongwen-references")!)).toEqual([{
+      citation_id: "clause:7", policy_title: "现行办法", doc_no: "示规〔2026〕1号", clause_no: "第三条",
+      content: "申请贴息应当同时具备下列条件：正常经营满一年；无严重失信记录；贷款用于生产经营。",
+    }]);
+  });
+
   it("shows the backend's refusal instead of reporting success", async () => {
     setup(["reviewer"]);
     api.post.mockResolvedValue({ data: { code: 40000, message: "PDF解析或OCR失败，未获取完整逐页正文；未写入政策" } });

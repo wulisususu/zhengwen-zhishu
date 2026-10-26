@@ -302,6 +302,7 @@ function documentPayload() {
     docType: GOV_DOC_TYPE[v.doc_type] || 'notice',
     body: (v.body || []).map((p) => p.text).join('\n'),
     fields: { recipient: (v.recipients || []).join('、'), issuer: v.issuer_org || '', undertaker: '' },
+    urgency: v.urgency || '',
     signDate: v.sign_date || '',
     note: v.note || '',
     citationIds: references.value.map((r) => r.citation_id).filter(Boolean),

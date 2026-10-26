@@ -277,3 +277,41 @@ def test_mixed_pdf_ocr_page_is_kept_with_its_page_number(api, monkeypatch):
     api.library.verify(pid, status="current", note="", fields={"effective_date": "2020-01-01"}, verifier="t")
     res = ask(api, "补贴资金如何拨付")
     assert res["status"] == "answered" and res["citations"][0]["page"] == 2
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_model_refusal_remains_no_basis(api, streaming):
+    import json
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    question = "申请首次贷款贴息需要具备哪些条件"
+    refusal = "现有条款未作规定"
+    if streaming:
+        with patch("app.services.llm_chat.stream", return_value=iter([refusal])):
+            text = api.client.post("/api/v1/policy/qa/stream", json={"question": question}).text
+        events = [json.loads(line[5:]) for line in text.splitlines() if line.startswith("data:") and line[5:].strip() != "[DONE]"]
+        result = next(event["data"] for event in events if event.get("type") == "final")
+    else:
+        with patch("app.services.llm_chat.chat", return_value=refusal):
+            result = api.client.post("/api/v1/policy/qa", json={"question": question}).json()["data"]
+    assert result["status"] == "no_basis"
+    assert result["sufficient"] is False and result["conclusion"] == "" and result["citations"] == []
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("markers", ["[0]", "[99]", "[1][99]"])
+def test_invalid_model_citations_do_not_receive_an_unrelated_source(api, streaming, markers):
+    import json
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    question = "申请首次贷款贴息需要具备哪些条件"
+    unsupported = "所有企业无需审核即可获得贴息" + markers
+    if streaming:
+        with patch("app.services.llm_chat.stream", return_value=iter([unsupported])):
+            text = api.client.post("/api/v1/policy/qa/stream", json={"question": question}).text
+        events = [json.loads(line[5:]) for line in text.splitlines() if line.startswith("data:") and line[5:].strip() != "[DONE]"]
+        result = next(event["data"] for event in events if event.get("type") == "final")
+    else:
+        with patch("app.services.llm_chat.chat", return_value=unsupported):
+            result = api.client.post("/api/v1/policy/qa", json={"question": question}).json()["data"]
+    assert "无需审核" not in result["conclusion"]
+    assert "[99]" not in result["conclusion"] and "[0]" not in result["conclusion"]
+    assert result["meta"]["generated_by"].startswith("extractive")

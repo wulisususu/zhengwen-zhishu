@@ -347,13 +347,21 @@ def _prepare(
     }, None
 
 
+def _is_insufficient(conclusion: str) -> bool:
+    return len(conclusion or "") < 120 and any(marker in (conclusion or "") for marker in INSUFFICIENT_MARKERS)
+
+
 def _apply_guards(conclusion: str, question: str, evidence: list[Candidate],
                   error: str = "") -> tuple[str, str, str]:
     """模型输出质检：无引用 / 噪声 / 数值不可核 → 一律退回原文摘录。"""
     generated_by = "llm"
     supplement = ""
 
-    if not re.search(r"\[\d+\]", conclusion or "") or _answer_is_noisy(conclusion, question):
+    if _is_insufficient(conclusion):
+        return conclusion, generated_by, supplement
+
+    cited_ids = [int(index) for index in re.findall(r"\[(\d+)\]", conclusion or "")]
+    if not cited_ids or any(index < 1 or index > len(evidence) for index in cited_ids) or _answer_is_noisy(conclusion, question):
         conclusion = _extractive_answer(evidence, question)
         generated_by = "extractive" if not error else "extractive_after_error"
         supplement = ""
@@ -383,7 +391,7 @@ def _assemble(ctx: dict[str, Any], question: str, conclusion: str, generated_by:
     pending = ctx["pending"]
     threshold = meta["threshold"]
 
-    if any(marker in (conclusion or "") for marker in INSUFFICIENT_MARKERS) and len(conclusion) < 120:
+    if _is_insufficient(conclusion):
         payload = {
             "status": "no_basis",
             "sufficient": False,

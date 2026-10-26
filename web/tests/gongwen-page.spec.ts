@@ -18,7 +18,7 @@ function ir(docType: string) {
     doc_type: docType, title: `关于测试事项的${docType}`, recipients: ["示例市财政局"], issuer_org: "示例市数据管理局",
     signer_org: "示例市数据管理局", sign_date: "2026年10月26日", doc_number: "示数发〔2026〕3号",
     body: [{ text: "一、基本情况", level: 1 }, { text: "目前平台运维经费不足。", level: 0 }],
-    cc: [], print_org: "", print_date: "", note: "",
+    urgency: "急件", cc: [], print_org: "", print_date: "", note: "",
   };
 }
 
@@ -72,7 +72,7 @@ describe("GongwenPage saves into the existing document flow", () => {
     expect(payload).toMatchObject({
       title: "关于测试事项的通知", docType: "notice", citationIds: ["clause:7"],
       fields: { recipient: "示例市财政局", issuer: "示例市数据管理局" }, signDate: "2026年10月26日",
-      docNumber: { text: "示数发〔2026〕3号" },
+      docNumber: { text: "示数发〔2026〕3号" }, urgency: "急件",
     });
     expect((payload as { body: string }).body).toBe("一、基本情况\n目前平台运维经费不足。");
     expect(router.currentRoute.value.path).toBe("/gov/draft/doc-1");

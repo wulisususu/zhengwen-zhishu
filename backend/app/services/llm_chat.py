@@ -2,6 +2,10 @@
 
 公文起草与政策解读都需要「直接调模型、不经过闲聊兜底」，因此单独抽这一层：
 llm_client 里的考试题/算术/创作兜底会污染正式文本，不适合法律与公文场景。
+
+出口策略：同步与流式两条路在发请求前都经过 model_policy.guard_model_url，
+offline 只允许本机、intranet 只允许内网；被拒绝时抛 ModelPolicyError，
+不发出任何请求，由调用方按各自规则降级（起草退回骨架稿、问答退回原文摘录）。
 """
 from __future__ import annotations
 
@@ -9,6 +13,8 @@ import json
 from typing import Any
 
 import requests
+
+from app.services.model_policy import guard_model_url
 
 DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1"
 DEFAULT_MODEL = "qwen2.5:7b"
@@ -63,7 +69,8 @@ def chat(
         "max_tokens": max_tokens or conf["max_tokens"],
         "stream": False,
     }
-    resp = requests.post(conf["url"], json=payload, timeout=timeout or conf["timeout"])
+    url = guard_model_url(conf["url"], purpose="llm_chat")
+    resp = requests.post(url, json=payload, timeout=timeout or conf["timeout"])
     resp.raise_for_status()
     data = resp.json()
     choices = data.get("choices") or []
@@ -97,9 +104,8 @@ def stream(
         "max_tokens": max_tokens or conf["max_tokens"],
         "stream": True,
     }
-    resp = requests.post(
-        conf["url"], json=payload, timeout=timeout or conf["timeout"], stream=True
-    )
+    url = guard_model_url(conf["url"], purpose="llm_chat_stream")
+    resp = requests.post(url, json=payload, timeout=timeout or conf["timeout"], stream=True)
     resp.raise_for_status()
 
     ctype = (resp.headers.get("Content-Type") or "").lower()

@@ -39,6 +39,7 @@ try {
   contexts.push(entry.context());
   await entry.goto(base + "/gov");
   await entry.waitForURL(base + "/entry");
+  await entry.locator("button[data-role]").first().waitFor();
   assert.equal(await entry.locator("input[type=password]").count(), 0);
   assert.deepEqual(await entry.locator("button[data-role]").evaluateAll((els) => els.map((e) => e.dataset.role)), ["drafter", "reviewer"]);
   await entry.screenshot({ path: join(output, "entry.png"), fullPage: true });

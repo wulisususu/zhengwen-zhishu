@@ -14,6 +14,8 @@ def internal_docx(payload: dict) -> bytes:
     normal.font.name, normal.font.size = "仿宋", Pt(16)
     section.header.paragraphs[0].text = "未审核 · 内部草稿"
     section.footer.paragraphs[0].text = "仅供内部流转，不作正式发文"
+    if payload.get("urgency"):
+        doc.add_paragraph(payload["urgency"])
     doc.add_heading(payload["title"], level=0)
     fields = payload.get("fields", {})
     if fields.get("recipient"):
@@ -57,6 +59,14 @@ def notice_docx(draft, payload: dict) -> bytes:
         except GongwenToolError as exc:
             raise HTTPException(503, "通知生成失败：" + exc.message) from None
         doc = Document(target)
+    if payload.get("urgency"):
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        paragraph = doc.paragraphs[0].insert_paragraph_before()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        run = paragraph.add_run(payload["urgency"])
+        run.font.name, run.font.size = "黑体", Pt(16)
     _append_policy_appendix(doc, payload.get("policyRefs"))
     # The visible header marks every page as an internal draft. Detailed review
     # findings stay in the workbench; a trailing audit paragraph pushes a short
@@ -107,6 +117,7 @@ def gongwen_docx(payload: dict) -> bytes:
         "issuer_org": fields.get("issuer", ""),
         "signer_org": fields.get("issuer", ""),
         "sign_date": payload.get("signDate", ""),
+        "urgency": payload.get("urgency", ""),
         "body": payload.get("body", ""),
         "doc_number": (payload.get("docNumber") or {}).get("text", ""),
         "cc": banji.get("copyTo") or [],

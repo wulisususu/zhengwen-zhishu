@@ -119,3 +119,18 @@ def test_reviewer_role_cannot_create_drafts_from_the_drafting_page(app_client):
     client, tokens = app_client
     resp = client.post("/api/v1/gov/documents", headers=tokens["reviewer"], json={"title": "审核人起草", "docType": "request", "body": "一、内容"})
     assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("urgency", ["急件", "特急"])
+@pytest.mark.parametrize("doc_type", ["request", "notice"])
+def test_saved_urgency_survives_update_and_docx_export(app_client, urgency, doc_type):
+    client, tokens = app_client
+    doc = create(client, tokens["writer"], docType=doc_type, urgency=urgency)
+    assert doc["urgency"] == urgency
+    response = client.put(f"/api/v1/gov/documents/{doc['id']}", headers=tokens["writer"], json={"version": doc["version"], "body": "一、工作安排\n请认真落实。"})
+    assert response.status_code == 200
+    saved = response.json()["data"]
+    assert saved["urgency"] == urgency
+    response = export(client, tokens["writer"], saved)
+    assert response.status_code == 200
+    assert urgency in docx_parts(response.content)["word/document.xml"]

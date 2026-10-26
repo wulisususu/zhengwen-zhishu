@@ -18,6 +18,7 @@ class Content(BaseModel):
     docType: DocType = "notice"
     body: str = Field(default="", max_length=200000)
     fields: Fields = Field(default_factory=Fields)
+    urgency: Literal["", "急件", "特急"] = ""
     signDate: str = Field(default="", max_length=30)
     citationIds: list[str] = Field(default_factory=list, max_length=50)
     docNumber: DocNumber | None = None
@@ -44,6 +45,7 @@ class Update(Revision):
     docType: DocType | None = None
     body: str | None = Field(default=None, max_length=200000)
     fields: Fields | None = None
+    urgency: Literal["", "急件", "特急"] | None = None
     signDate: str | None = Field(default=None, max_length=30)
     docNumber: DocNumber | None = None
     banji: Banji | None = None

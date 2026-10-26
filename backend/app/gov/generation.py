@@ -53,6 +53,9 @@ def generate(db, user, document_id, body):
     if len(text) > 200000:
         raise HTTPException(503, "模型输出过长，原文稿未修改")
     payload["body"] = text
+    payload.pop("_review", None)
+    from .proofread import validate_notice
+    validate_notice(doc.id, payload)
     service.write_revision(db, doc, body.version, payload=payload)
     service.record(db, doc, user, "生成初稿", f"实际模型接口返回；使用{len(sources)}份文本材料，内容待人工核实")
     db.commit()

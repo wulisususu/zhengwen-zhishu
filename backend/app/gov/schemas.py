@@ -1,5 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.services.gongwen.schema import DocNumber, Banji, TableSpec
 
 DocType = Literal["notice", "request", "report", "letter", "minutes", "interpretation"]
 
@@ -19,6 +20,11 @@ class Content(BaseModel):
     fields: Fields = Field(default_factory=Fields)
     signDate: str = Field(default="", max_length=30)
     citationIds: list[str] = Field(default_factory=list, max_length=50)
+    docNumber: DocNumber | None = None
+    banji: Banji | None = None
+    note: str = Field(default="", max_length=200)
+    titleLines: list[str] | None = Field(default=None, max_length=4)
+    tables: list[TableSpec] = Field(default_factory=list, max_length=20)
 
     @field_validator("title")
     @classmethod
@@ -39,6 +45,11 @@ class Update(Revision):
     body: str | None = Field(default=None, max_length=200000)
     fields: Fields | None = None
     signDate: str | None = Field(default=None, max_length=30)
+    docNumber: DocNumber | None = None
+    banji: Banji | None = None
+    note: str | None = Field(default=None, max_length=200)
+    titleLines: list[str] | None = Field(default=None, max_length=4)
+    tables: list[TableSpec] | None = Field(default=None, max_length=20)
 
 
 class Decision(Revision):

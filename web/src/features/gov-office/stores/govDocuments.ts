@@ -97,8 +97,14 @@ export const useGovDocumentsStore = defineStore("govDocuments", {
     submitForReview(id: string) {
       return this.mutate(() => getGovOfficeAdapter().submitForReview(id), "已提交审核。");
     },
-    approve(id: string, opinion: string) {
-      return this.mutate(() => getGovOfficeAdapter().approve(id, opinion), "已审核通过。");
+    async approve(id: string, opinion: string) {
+      const result = await this.mutate(() => getGovOfficeAdapter().approve(id, opinion), "已审核通过。");
+      if (!result) {
+        const message = this.error;
+        await this.load(id);
+        this.error = message;
+      }
+      return result;
     },
     returnForRevision(id: string, opinion: string) {
       return this.mutate(() => getGovOfficeAdapter().returnForRevision(id, opinion), "已退回修改。");

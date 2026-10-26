@@ -11,6 +11,7 @@ import OfficialDocumentView from "../components/document/OfficialDocumentView.vu
 import DocumentOutline from "../components/document/DocumentOutline.vue";
 import IssuePanel from "../components/review/IssuePanel.vue";
 import DraftFieldsForm from "../components/draft/DraftFieldsForm.vue";
+import NoticeMetadataForm from "../components/draft/NoticeMetadataForm.vue";
 import MaterialList from "../components/draft/MaterialList.vue";
 import PolicyRefList from "../components/draft/PolicyRefList.vue";
 import PolicyLibraryPanel from "../components/policy/PolicyLibraryPanel.vue";
@@ -23,7 +24,7 @@ import { COMPACT_BELOW, useViewport } from "../composables/useViewport";
 import { useIssueMarks } from "../composables/useIssueMarks";
 import { useGovDocumentsStore } from "../stores/govDocuments";
 import { useGovSessionStore } from "../stores/govSession";
-import type { FieldKey } from "../types";
+import type { FieldKey, NoticeMetadata } from "../types";
 import { getGovOfficeAdapter } from "../adapters";
 
 const DEFAULT_DOC_ID = "demo-d1";
@@ -52,6 +53,7 @@ const editTitle = ref("");
 const editBody = ref("");
 const editDate = ref("");
 const editFields = ref({ recipient: "", issuer: "", undertaker: "" });
+const editMetadata = ref<NoticeMetadata>({ docNumber: "", printer: "", printDate: "", copyTo: "", note: "", titleLines: "", tables: [] });
 const dirty = ref(false);
 const busy = ref(false);
 const generationPrompt = ref("");
@@ -67,6 +69,7 @@ watch(doc, (value) => {
   if (!value) return;
   editTitle.value = value.title; editBody.value = value.body ?? ""; editDate.value = value.signDate;
   editFields.value = { ...value.fields }; dirty.value = false;
+  editMetadata.value = { docNumber: value.docNumber.text, printer: value.banji?.printer ?? "", printDate: value.banji?.printDate ?? "", copyTo: value.banji?.copyTo?.join('\n') ?? "", note: value.note ?? "", titleLines: value.titleLines?.join('\n') ?? "", tables: value.tables ?? [] };
 }, { immediate: true });
 onBeforeRouteLeave(() => !dirty.value || window.confirm("修改尚未保存，确定离开？"));
 
@@ -139,7 +142,10 @@ async function submit() {
 async function save() {
   if (!doc.value || busy.value) return;
   busy.value = true;
-  const saved = await store.saveDraft(doc.value.id, "草稿已保存。", session.isDemo ? undefined : { title: editTitle.value, body: editBody.value, fields: editFields.value, signDate: editDate.value });
+  const metadata = editMetadata.value;
+  const saved = await store.saveDraft(doc.value.id, "草稿已保存。", session.isDemo ? undefined : { title: editTitle.value, body: editBody.value, fields: editFields.value, signDate: editDate.value,
+    docNumber: { text: metadata.docNumber }, banji: { printer: metadata.printer, printDate: metadata.printDate, copyTo: metadata.copyTo.split('\n').map(s => s.trim()).filter(Boolean) },
+    note: metadata.note, titleLines: metadata.titleLines.split('\n').filter(Boolean), tables: metadata.tables });
   busy.value = false;
   return saved;
 }
@@ -178,8 +184,12 @@ async function generate() {
   busy.value = false;
 }
 
-function rerun() {
-  if (doc.value) store.rerunReview(doc.value.id, "已重新运行审校。");
+async function rerun() {
+  if (dirty.value && !(await save())) return;
+  if (!doc.value || busy.value) return;
+  busy.value = true;
+  await store.rerunReview(doc.value.id, "已重新运行双层审校。");
+  busy.value = false;
 }
 
 function exportLocate(anchor: string) {
@@ -248,7 +258,8 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
 
       <fieldset v-if="!session.isDemo" :disabled="!editable || busy" class="gov-draft__editor">
         <label class="gov-label">文稿标题<input v-model="editTitle" class="gov-input" aria-label="文稿标题" maxlength="256" @input="dirty = true" /></label>
-        <label class="gov-label">成文日期<input v-model="editDate" type="date" class="gov-input" aria-label="成文日期" @input="dirty = true" /></label>
+        <label class="gov-label">成文日期<input v-model="editDate" class="gov-input" aria-label="成文日期" placeholder="2026年10月26日" @input="dirty = true" /></label>
+        <NoticeMetadataForm v-if="doc.docType === 'notice'" v-model="editMetadata" @update:model-value="dirty = true" />
         <label class="gov-label gov-draft__body-editor">正文编辑<textarea v-model="editBody" class="gov-textarea" aria-label="正文编辑" rows="5" @input="dirty = true" /></label>
         <span class="gov-muted">{{ dirty ? '有修改未保存；保存后更新预览' : '当前内容已保存' }} · 第 {{ doc.version }} 版</span>
         <label class="gov-label">生成要求<input v-model="generationPrompt" class="gov-input" aria-label="生成要求" placeholder="可选；仅使用已知信息生成初稿" /></label>
@@ -278,13 +289,13 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
             :focus-anchor="focusAnchor"
             :editable="editable"
             collapsible
-            :rerun-label="session.isDemo ? '演示环境：未重新执行检查' : '自动审校未接入'"
+            :rerun-label="session.isDemo ? '演示环境：未重新执行检查' : '保存版本由后端检查'"
             @locate="locate"
             @fill-field="fillField"
             @collapse="rightOpen = false"
           >
             <template #footer>
-              <button type="button" class="gov-btn gov-btn--sm" :disabled="!session.isDemo" @click="rerun">{{ session.isDemo ? '重新审校' : '自动审校未接入' }}</button>
+              <button type="button" class="gov-btn gov-btn--sm" :disabled="busy || (!session.isDemo && doc.docType !== 'notice')" @click="rerun">{{ busy ? '审校中…' : '重新审校' }}</button>
             </template>
           </IssuePanel>
         </aside>

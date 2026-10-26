@@ -68,16 +68,16 @@ def serialize(db, doc):
     owner = db.get(User, doc.owner_user_id)
     records = db.query(GovReviewRecord).filter_by(document_id=doc.id).order_by(GovReviewRecord.at, GovReviewRecord.id).all()
     files = db.query(File).join(GovDocumentMaterial, GovDocumentMaterial.file_id == File.id).filter(GovDocumentMaterial.document_id == doc.id).order_by(File.id).all()
-    blocks = [{"id": f"{doc.id}-p{i}", "kind": "paragraph", "section": "正文",
-               "segments": [{"kind": "text", "id": f"{doc.id}-s{i}", "text": text}]}
-              for i, text in enumerate(payload.get("body", "").splitlines()) if text.strip()]
-    blocks.insert(0, {"id": doc.id + "-recipient", "kind": "recipient", "section": "主送", "segments": [{"kind": "field", "id": doc.id + "-recipient-field", "field": "recipient"}]})
-    blocks.append({"id": doc.id + "-signature", "kind": "signature", "section": "落款", "segments": [{"kind": "field", "id": doc.id + "-issuer-field", "field": "issuer"}]})
+    from . import proofread
+    blocks = proofread.blocks(doc.id, payload)
+    report = payload.pop("_review", None)
+    # A saved report is informational; approval always runs fresh checks.
     return {**payload, "id": doc.id, "origin": "backend", "status": doc.status, "version": doc.version,
-            "docNumber": {"id": doc.id + "-number", "text": ""}, "blocks": blocks,
+            "docNumber": {"id": doc.id + "-number", "text": (payload.get("docNumber") or {}).get("text", "")}, "blocks": blocks,
             "author": owner.nickname or owner.username, "authorAccount": owner.username, "department": "",
             "createdAt": doc.created_at.isoformat(), "materials": [material(f) for f in files],
-            "policyRefs": refs, "issues": [], "resolutions": {}, "lastReviewedAt": "", "checkStatus": "not_run",
+            "policyRefs": refs, "issues": report["issues"] if report else [], "review": report,
+            "resolutions": {}, "lastReviewedAt": report["reviewedAt"] if report else "", "checkStatus": "completed" if report else "not_run",
             "history": [{"id": r.id, "action": r.action, "actor": (db.get(User, r.actor_user_id).nickname or db.get(User, r.actor_user_id).username), "at": r.at.isoformat(), "tone": r.tone, "note": r.note} for r in records]}
 
 
@@ -87,6 +87,8 @@ def create(db, user, body):
     payload["_citationSnapshot"] = references(body.citationIds, strict=True)
     doc = GovDocument(id=uuid.uuid4().hex, owner_user_id=user.id, status="draft", version=1,
                       payload_json=json.dumps(payload, ensure_ascii=False))
+    from .proofread import validate_notice
+    validate_notice(doc.id, payload)
     db.add(doc)
     db.flush()
     record(db, doc, user, "创建文稿")
@@ -98,6 +100,7 @@ def save(db, user, document_id, body):
     doc = get_document(db, user, document_id)
     editable(doc, user)
     payload = json.loads(doc.payload_json)
+    payload.pop("_review", None)
     snapshot = payload.pop("_citationSnapshot", [])
     patch = body.model_dump(exclude_unset=True, exclude={"version"})
     if any(v is None for v in patch.values()):
@@ -110,6 +113,8 @@ def save(db, user, document_id, body):
     except ValidationError:
         raise HTTPException(422, "文稿字段不合法，标题不能为空")
     payload["_citationSnapshot"] = snapshot
+    from .proofread import validate_notice
+    validate_notice(doc.id, payload)
     write_revision(db, doc, body.version, payload=payload)
     record(db, doc, user, "保存草稿")
     db.commit()
@@ -122,7 +127,7 @@ def transition(db, user, document_id, body, action):
         editable(doc, user)
         if not json.loads(doc.payload_json).get("body", "").strip():
             raise HTTPException(422, "请填写正文后再送审")
-        target, label, note = "pending", "提交审核", "自动审校未接入；提交人工审核"
+        target, label, note = "pending", "提交审核", "提交人工审核；通知批准前后端将重新运行双层审校"
     else:
         if not user.is_admin or doc.owner_user_id == user.id:
             raise HTTPException(403, "需要非起草人的审核人操作")
@@ -131,8 +136,20 @@ def transition(db, user, document_id, body, action):
         if action == "return" and not body.opinion.strip():
             raise HTTPException(422, "退回修改须填写意见")
         target, label = ("approved", "审核通过") if action == "approve" else ("returned", "退回修改")
-        note = "人工审核；自动审校未接入。" + body.opinion.strip()
-    write_revision(db, doc, body.version, status=target)
+        note = "人工审核。" + body.opinion.strip()
+    payload = json.loads(doc.payload_json)
+    if doc.version != body.version:
+        raise HTTPException(409, "文稿已更新，请刷新后重试")
+    if action == "approve" and payload.get("docType", "notice") == "notice":
+        from .proofread import review
+        payload["_review"] = review(doc.id, payload)
+        if not payload["_review"]["gate"]["canApprove"]:
+            write_revision(db, doc, body.version, payload=payload)
+            record(db, doc, user, "批准前审校未通过", "；".join(payload["_review"]["gate"]["reasons"]), "warning")
+            db.commit()
+            raise HTTPException(409, "后端重新审校未通过，请查看问题并退回修改：" + "；".join(payload["_review"]["gate"]["reasons"]))
+        note = "后端重新双层审校通过；" + note
+    write_revision(db, doc, body.version, payload=payload, status=target)
     record(db, doc, user, label, note, "success" if target == "approved" else "info")
     db.commit()
     return serialize(db, doc)

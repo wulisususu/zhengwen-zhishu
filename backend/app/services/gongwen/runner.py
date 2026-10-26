@@ -52,6 +52,11 @@ def _semaphore(limit: int) -> threading.BoundedSemaphore:
 
 def _env() -> dict[str, str]:
     env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "LANG": "C.UTF-8", "NODE_OPTIONS": ""}
+    if os.name == "nt":
+        # Windows OpenSSL needs SystemRoot for its OS random provider.
+        for key in ("SystemRoot", "WINDIR", "TEMP", "TMP"):
+            if key in os.environ:
+                env[key] = os.environ[key]
     for key, value in os.environ.items():   # documented font overrides only (docs/字体.md)
         if key.startswith("GONGWEN_FONT_"):
             env[key] = value
@@ -84,13 +89,18 @@ def run_node(settings: GongwenSettings, args: list[str], *, timeout: float, cwd:
         proc = subprocess.Popen(
             [node, *args], stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(cwd), env=_env(),
-            start_new_session=True,
+            start_new_session=os.name != "nt",
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
         try:
             out, err = proc.communicate(input=stdin, timeout=timeout)
         except subprocess.TimeoutExpired:
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
+                if os.name == "nt":
+                    subprocess.run([str(Path(os.environ["SystemRoot"]) / "System32/taskkill.exe"), "/PID", str(proc.pid), "/T", "/F"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                else:
+                    os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             proc.communicate()

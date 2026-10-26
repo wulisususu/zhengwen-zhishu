@@ -46,10 +46,15 @@ function blockClass(block: DocBlock) {
       <div class="gov-doc__rule gov-doc__rule--double" />
     </template>
 
-    <h2 class="gov-doc__title">{{ doc.title }}</h2>
+    <h2 class="gov-doc__title" :data-anchor="doc.id + '-title'" :class="anchorClass(doc.id + '-title')">{{ doc.title }}</h2>
 
     <template v-for="block in doc.blocks" :key="block.id">
-      <div v-if="block.kind === 'signature'" :class="blockClass(block)" :data-anchor="block.id">
+      <table v-if="block.kind === 'table' && block.table" class="gov-doc__table" :class="anchorClass(block.id)" :data-anchor="block.id">
+        <caption>{{ block.table.caption }}</caption>
+        <thead><tr><th v-for="(cell, c) in block.table.head" :key="c">{{ cell }}</th></tr></thead>
+        <tbody><tr v-for="(row, r) in block.table.rows" :key="r"><td v-for="(cell, c) in row" :key="c">{{ cell }}</td></tr></tbody>
+      </table>
+      <div v-else-if="block.kind === 'signature'" :class="blockClass(block)" :data-anchor="block.id">
         <span v-for="(seg, i) in block.segments" :key="i" class="gov-doc__sign-line">
           <span v-if="seg.kind === 'field'" :data-anchor="seg.id" :class="anchorClass(seg.id)">
             <template v-if="fieldValue(seg)">{{ fieldValue(seg) }}</template>
@@ -77,11 +82,24 @@ function blockClass(block: DocBlock) {
         <template v-if="block.kind === 'recipient'">：</template>
       </component>
     </template>
+    <p v-if="doc.note">{{ doc.note }}</p>
+    <div v-if="doc.origin === 'backend'" class="gov-doc__banji" :data-anchor="doc.id + '-banji'" :class="anchorClass(doc.id + '-banji')">
+      <p v-if="doc.banji?.copyTo?.length">抄送：{{ doc.banji.copyTo.join('、') }}</p>
+      <p>{{ doc.banji?.printer || '【待补充：印发机关】' }}　{{ doc.banji?.printDate || '【待补充：印发日期】' }}印发</p>
+    </div>
+    <div v-if="doc.origin === 'backend' && doc.policyRefs.length" :data-anchor="doc.id + '-policies'" :class="anchorClass(doc.id + '-policies')">
+      <p>政策依据（来源及有效性须人工核验）</p>
+      <p v-for="ref in doc.policyRefs" :key="ref.id">《{{ ref.title }}》{{ ref.clause }} · {{ ref.status === 'current' ? '现行' : ref.status === 'abolished' ? '已废止' : '未核验' }} {{ ref.statusNote }}</p>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .gov-doc { display: flex; flex-direction: column; }
+.gov-doc__table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+.gov-doc__table td, .gov-doc__table th { border: 1px solid #333; padding: 4px 8px; }
+.gov-doc__banji { border-top: 1px solid #333; border-bottom: 1px solid #333; margin-top: 2em; }
+.gov-doc__heading3, .gov-doc__heading4 { margin: 0; text-indent: 2em; }
 .gov-doc__org {
   text-align: center; color: #b42318; font-family: var(--gov-font-doc-title); font-weight: 700;
   font-size: 56px; letter-spacing: 6px; line-height: 1.3;

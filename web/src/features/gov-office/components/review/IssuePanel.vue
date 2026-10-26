@@ -135,6 +135,10 @@ async function confirmDialog(reason: string) {
     </div>
 
     <div class="gov-issues__list">
+      <div v-if="doc.origin === 'backend' && doc.review" class="gov-banner" :class="doc.review.formatCheck.status === 'unavailable' ? 'gov-banner--danger' : 'gov-banner--info'">
+        确定性规则 + gongwen-kit 写法机检：{{ doc.review.formatCheck.status === 'unavailable' ? '格式机检未完成' : doc.review.formatCheck.status === 'hit' ? '发现格式问题' : '格式机检完成' }}。
+        {{ doc.review.formatCheck.message }} {{ doc.review.gate.reasons.join('；') }}
+      </div>
       <IssueCard
         v-for="e in visible"
         :key="e.issue.id"
@@ -144,7 +148,7 @@ async function confirmDialog(reason: string) {
         :editable="editable"
         @action="onAction(e, $event)"
       />
-      <div v-if="doc.checkStatus === 'not_run'" class="gov-banner gov-banner--warning">自动审校未接入，尚未运行检查；没有问题记录不代表检查通过。</div>
+      <div v-if="doc.checkStatus === 'not_run'" class="gov-banner gov-banner--warning">尚未运行当前文稿的审校；修改后须重新检查，没有问题记录不代表通过。</div>
       <div v-else-if="!visible.length" class="gov-empty">当前筛选下没有待处理问题</div>
 
       <button type="button" class="gov-btn gov-btn--text" style="align-self: flex-start" @click="showResolved = !showResolved">
@@ -167,7 +171,7 @@ async function confirmDialog(reason: string) {
     </div>
 
     <footer class="gov-issues__foot">
-      <span class="gov-muted">规则检查与 AI 审查结果；最近审校 {{ doc.lastReviewedAt }}<template v-if="rerunLabel">（{{ rerunLabel }}）</template></span>
+      <span class="gov-muted">{{ doc.origin === 'backend' ? '双层规则审校，未执行 AI 语义审查' : '规则检查与 AI 审查结果' }}；最近审校 {{ doc.lastReviewedAt || '未运行' }}<template v-if="rerunLabel">（{{ rerunLabel }}）</template></span>
       <slot name="footer" />
     </footer>
 

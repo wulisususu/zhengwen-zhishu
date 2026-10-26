@@ -122,13 +122,23 @@ export type DocSegment =
   | { kind: "text"; id?: string; text: string }
   | { kind: "field"; id: string; field: FieldKey };
 
-export type BlockKind = "recipient" | "paragraph" | "heading1" | "heading2" | "attachment" | "signature";
+export type BlockKind = "recipient" | "paragraph" | "heading1" | "heading2" | "heading3" | "heading4" | "attachment" | "signature" | "table";
+
+export interface NoticeTable { caption: string; head: string[]; rows: string[][]; }
+export interface NoticeMetadata { docNumber: string; printer: string; printDate: string; copyTo: string; note: string; titleLines: string; tables: NoticeTable[]; }
+export interface NoticeReview {
+  formatCheck: { status: "pass" | "hit" | "unavailable"; message?: string; errorCode?: string; toolVersion?: string };
+  gate: { canApprove: boolean; canExportFormal?: boolean; reasons: string[] };
+  issueDetails?: Record<string, { layer?: string; anchorPrecision?: string; candidates?: string[] }>;
+  policyVerification?: { message: string };
+}
 
 export interface DocBlock {
   id: string;
   kind: BlockKind;
   section: string;
   segments: DocSegment[];
+  table?: NoticeTable;
 }
 
 export interface Material {
@@ -193,6 +203,11 @@ export interface ReviewRecord {
 }
 
 export interface OfficialDocument {
+  banji?: { copyTo: string[]; printer: string; printDate: string } | null;
+  note?: string;
+  titleLines?: string[] | null;
+  tables?: NoticeTable[];
+  review?: NoticeReview | null;
   body?: string;
   checkStatus?: "not_run" | "completed";
   id: string;
@@ -234,6 +249,11 @@ export interface ExportResult {
 }
 
 export interface DraftChanges {
+  docNumber?: { text: string };
+  banji?: { copyTo: string[]; printer: string; printDate: string };
+  note?: string;
+  titleLines?: string[];
+  tables?: NoticeTable[];
   title?: string;
   docType?: DocTypeId;
   body?: string;

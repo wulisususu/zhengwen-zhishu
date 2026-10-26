@@ -26,7 +26,7 @@ def runtime(user: User = Depends(get_current_user)):
         mode = "unknown"
     if mode not in {"cloud_allowed", "intranet", "offline"}:
         mode = "unknown"
-    return ok({"origin": "backend", "modelMode": mode, "label": "后端已连接 · 模型可用性未验证", "detail": "人工审核与政策库已接入；自动审校未接入。"})
+    return ok({"origin": "backend", "modelMode": mode, "label": "后端已连接 · 模型可用性需单独确认", "detail": "通知支持双层审校和内部草稿；政策库已接入。正式发文未开放。"})
 
 
 @router.get("/documents")
@@ -73,8 +73,8 @@ def return_document(document_id: str, body: Decision, user: User = Depends(get_c
 
 @router.post("/documents/{document_id}/check")
 def check(document_id: str, body: Revision, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    service.get_document(db, user, document_id)
-    raise HTTPException(503, "自动审校未接入，本期仅支持人工审核")
+    from .proofread import check as run_check
+    return ok(run_check(db, user, document_id, body.version))
 
 
 @router.post("/documents/{document_id}/generate")
@@ -94,7 +94,13 @@ def export(document_id: str, body: ExportRequest, user: User = Depends(get_curre
     payload = json.loads(doc.payload_json)
     from .policy_refs import references
     payload["policyRefs"] = references(payload.get("citationIds", []), snapshot=payload.get("_citationSnapshot", []))
-    content = internal_docx(payload)
+    if payload.get("docType", "notice") == "notice":
+        from .proofread import notice, review
+        from .export import notice_docx
+        payload["_review"] = review(doc.id, payload)
+        content = notice_docx(notice(doc.id, payload), payload)
+    else:
+        content = internal_docx(payload)
     service.record(db, doc, user, "导出内部草稿", "带内部草稿标识，不能作为正式文件使用")
     db.commit()
     return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": f'attachment; filename="draft-{doc.id}.docx"', "Cache-Control": "private, no-store"})

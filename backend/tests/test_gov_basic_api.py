@@ -51,7 +51,8 @@ def app_client(tmp_path, monkeypatch):
 
 
 def create(client, headers, **extra):
-    body = {"title": "测试通知", "docType": "notice", "body": "一、工作安排\n请各单位认真落实。", "fields": {"recipient": "各单位", "issuer": "测试办公室", "undertaker": "张三"}, "signDate": "2026-10-26"} | extra
+    body = {"title": "测试通知", "docType": "notice", "body": "一、工作安排\n请各单位认真落实。", "fields": {"recipient": "各单位", "issuer": "测试办公室", "undertaker": "张三"}, "signDate": "2026年10月26日",
+            "docNumber": {"text": "测办发〔2026〕8号"}, "banji": {"printer": "测试办公室", "printDate": "2026年10月26日"}} | extra
     response = client.post("/api/v1/gov/documents", headers=headers, json=body)
     assert response.status_code == 200, response.text
     return response.json()["data"]
@@ -122,7 +123,7 @@ def test_return_revise_resubmit_and_approve(app_client):
     revised = client.put(path, headers=tokens["writer"], json={"version": returned["version"], "body": "已完善的正文"}).json()["data"]
     pending = action(client, tokens["writer"], revised, "submit").json()["data"]
     approved = action(client, tokens["reviewer"], pending, "approve", opinion="人工核对通过").json()["data"]
-    assert approved["status"] == "approved" and approved["checkStatus"] == "not_run"
+    assert approved["status"] == "approved" and approved["checkStatus"] == "completed"
     assert approved["history"][-1]["actor"] == "reviewer"
     assert "人工" in approved["history"][-1]["note"]
     assert action(client, tokens["reviewer"], approved, "approve").status_code == 409
@@ -143,12 +144,16 @@ def test_invalid_or_forged_create_payload_is_rejected(app_client, extra):
     assert response.status_code == 422
 
 
-def test_auto_review_is_explicitly_unavailable(app_client):
+def test_auto_review_failure_is_explicit_and_never_a_pass(app_client, monkeypatch):
+    from app.services.gongwen.settings import GongwenSettings
+    from app.gov import proofread
+    monkeypatch.setattr(proofread, "load_settings", lambda: GongwenSettings(node_bin="missing-node-test-only"))
     client, tokens, _ = app_client
     doc = create(client, tokens["writer"])
     response = action(client, tokens["writer"], doc, "check")
-    assert response.status_code == 503
-    assert "未接入" in response.json()["detail"]
+    assert response.status_code == 200
+    review = response.json()["data"]["review"]
+    assert review["formatCheck"]["status"] == "unavailable" and not review["gate"]["canApprove"]
 
 
 def test_upload_associate_unlink_does_not_delete_file(app_client, tmp_path, monkeypatch):
@@ -201,7 +206,7 @@ def test_internal_export_is_real_a4_docx_with_watermark(app_client):
         assert abs(int(size.attrib['{' + ns['w'] + '}w']) - 11906) <= 1
         assert abs(int(size.attrib['{' + ns['w'] + '}h']) - 16838) <= 1
         headers = b"".join(z.read(n) for n in z.namelist() if n.startswith("word/header"))
-        assert "未审核 · 内部草稿".encode() in headers
+        assert "内部草稿".encode() in headers and "未审核".encode() in headers
 
 
 @pytest.mark.parametrize("filename", ["script.exe", "noextension"])

@@ -87,6 +87,11 @@ export function evaluateIssue(issue: ReviewIssue, doc: OfficialDocument): IssueE
 }
 
 export function issueActions(issue: ReviewIssue, doc: OfficialDocument, actor: Actor): IssueAction[] {
+  if (doc.origin === "backend") {
+    const actions: IssueAction[] = issue.anchor ? ["locate"] : [];
+    if (issue.requiredField) actions.push("fill_field");
+    return actions;
+  }
   const { state, resolution } = evaluateIssue(issue, doc);
   const actions: IssueAction[] = ["locate"];
   const isReviewer = actor.roles.includes("reviewer") && !isOwnDocument(doc, actor);
@@ -166,6 +171,7 @@ export function documentGates(doc: OfficialDocument, actor: Actor): DocumentGate
   if (doc.status !== "pending") approveBlockedReason = "仅待审核文稿可以审核。";
   else if (!isReviewer) approveBlockedReason = "当前用户没有审核权限。";
   else if (ownDocument) approveBlockedReason = "不能审核自己起草的文稿。";
+  else if (doc.origin === "backend" && doc.review && !doc.review.gate.canApprove) approveBlockedReason = doc.review.gate.reasons.join("；") || "后端审校未通过，请修改后重试。";
   else if (blockers.length) approveBlockedReason = `仍有 ${blockers.length} 项严重问题未处理，须修复、完成人工复核或经审核人批准例外后才能通过。`;
 
   let formalExportBlockedReason = "";

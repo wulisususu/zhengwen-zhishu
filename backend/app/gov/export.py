@@ -40,3 +40,36 @@ def internal_docx(payload: dict) -> bytes:
     out = BytesIO()
     doc.save(out)
     return out.getvalue()
+
+
+def notice_docx(draft, payload: dict) -> bytes:
+    """Render the saved notice with the fixed kit bridge and provenance appendix."""
+    import tempfile
+    from pathlib import Path
+    from fastapi import HTTPException
+    from app.services.gongwen.review import render_notice
+    from app.services.gongwen.settings import load_settings
+    from app.services.gongwen.runner import GongwenToolError
+    with tempfile.TemporaryDirectory(prefix="gov-notice-export-") as tmp:
+        target = Path(tmp) / "draft.docx"
+        try:
+            render_notice(draft, target, load_settings(), internal_draft=True)
+        except GongwenToolError as exc:
+            raise HTTPException(503, "通知生成失败：" + exc.message) from None
+        doc = Document(target)
+    if payload.get("policyRefs"):
+        doc.add_page_break()
+        doc.add_paragraph("政策依据与审校记录（内部附件）")
+        labels = {"current": "现行", "abolished": "已废止", "unverified": "未核验"}
+        for ref in payload["policyRefs"]:
+            doc.add_paragraph(f"《{ref['title']}》 {ref['clause']} · 第 {ref.get('version') or '未知'} 版 · {labels[ref['status']]}")
+            if ref.get("statusNote"):
+                doc.add_paragraph("核验提示：" + ref["statusNote"])
+            if ref.get("excerpt"):
+                doc.add_paragraph(ref["excerpt"])
+            doc.add_paragraph("来源：" + ref.get("sourceUrl", ""))
+    report = payload.get("_review", {})
+    doc.add_paragraph("内部草稿；本次审校发现严重问题 %s 项；格式机检：%s。须人工核验。" % (report.get("summary", {}).get("critical", "未知"), report.get("formatCheck", {}).get("status", "未完成")))
+    out = BytesIO()
+    doc.save(out)
+    return out.getvalue()

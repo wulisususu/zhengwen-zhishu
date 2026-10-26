@@ -17,7 +17,7 @@ async function request(path: string, method = "GET", body?: unknown): Promise<Re
   const form = body instanceof FormData;
   if (body !== undefined && !form) headers.set("Content-Type", "application/json");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), path.endsWith("/generate") ? 180000 : 30000);
+  const timer = setTimeout(() => controller.abort(), /\/(generate|check|export)$/.test(path) || path === '/policies/import' ? 180000 : 30000);
   let res: Response;
   try {
     res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : form ? body as FormData : JSON.stringify(body), signal: controller.signal });

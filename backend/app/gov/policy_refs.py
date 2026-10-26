@@ -55,6 +55,7 @@ def select(db, user, document_id, body):
     ids = list(dict.fromkeys(body.citationIds))
     refs = references(ids, strict=True)
     payload = json.loads(doc.payload_json)
+    payload.pop("_review", None)
     payload["citationIds"] = ids
     payload["_citationSnapshot"] = refs
     service.write_revision(db, doc, body.version, payload=payload)

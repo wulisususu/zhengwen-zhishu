@@ -24,7 +24,7 @@ import { COMPACT_BELOW, useViewport } from "../composables/useViewport";
 import { useIssueMarks } from "../composables/useIssueMarks";
 import { useGovDocumentsStore } from "../stores/govDocuments";
 import { useGovSessionStore } from "../stores/govSession";
-import type { FieldKey, NoticeMetadata } from "../types";
+import type { FieldKey, NoticeMetadata, OfficialDocument } from "../types";
 import { getGovOfficeAdapter } from "../adapters";
 
 const DEFAULT_DOC_ID = "demo-d1";
@@ -65,11 +65,16 @@ async function loadDocument(id: string) {
   if (!loaded) loadFailure.value = store.error || "文稿读取失败，请刷新后重试";
   else await store.loadMaterialLibrary();
 }
-watch(doc, (value) => {
-  if (!value) return;
+function acceptSavedDocument(value: OfficialDocument) {
   editTitle.value = value.title; editBody.value = value.body ?? ""; editDate.value = value.signDate;
   editFields.value = { ...value.fields }; dirty.value = false;
   editMetadata.value = { docNumber: value.docNumber.text, printer: value.banji?.printer ?? "", printDate: value.banji?.printDate ?? "", copyTo: value.banji?.copyTo?.join('\n') ?? "", note: value.note ?? "", titleLines: value.titleLines?.join('\n') ?? "", tables: value.tables ?? [] };
+}
+watch(doc, (value, previous) => {
+  if (!value) return;
+  // A refresh started on navigation can finish after the user begins typing.
+  if (dirty.value && previous?.id === value.id) return;
+  acceptSavedDocument(value);
 }, { immediate: true });
 onBeforeRouteLeave(() => !dirty.value || window.confirm("修改尚未保存，确定离开？"));
 
@@ -146,6 +151,7 @@ async function save() {
   const saved = await store.saveDraft(doc.value.id, "草稿已保存。", session.isDemo ? undefined : { title: editTitle.value, body: editBody.value, fields: editFields.value, signDate: editDate.value,
     docNumber: { text: metadata.docNumber }, banji: { printer: metadata.printer, printDate: metadata.printDate, copyTo: metadata.copyTo.split('\n').map(s => s.trim()).filter(Boolean) },
     note: metadata.note, titleLines: metadata.titleLines.split('\n').filter(Boolean), tables: metadata.tables });
+  if (saved && docId.value === saved.id) acceptSavedDocument(saved);
   busy.value = false;
   return saved;
 }

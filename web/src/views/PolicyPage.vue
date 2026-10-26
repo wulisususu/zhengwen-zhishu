@@ -1,13 +1,14 @@
 <template>
-  <main class="flex h-dvh flex-col overflow-hidden bg-[#eef3f9] text-black">
-    <AppHeader title="" subtitle="政务办公智能体" :show-logout="false" @goHome="router.push('/')" />
+  <component :is="embedded ? 'section' : 'main'" class="flex flex-col overflow-hidden bg-[#eef3f9] text-black"
+    :class="embedded ? 'policy-chat--embedded min-h-0 flex-1' : 'h-dvh'" aria-label="政策问答">
+    <AppHeader v-if="!embedded" title="" subtitle="政务办公智能体" :show-logout="false" @goHome="router.push('/')" />
 
     <div class="flex min-h-0 flex-1 gap-3 p-3">
       <!-- ================= 左：政策库 ================= -->
-      <aside class="hidden w-[300px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#dce6f1] bg-white md:flex">
+      <aside class="policy-chat__policies hidden w-[300px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#dce6f1] bg-white md:flex">
         <div class="flex items-center gap-2 border-b border-[#EEF2F7] px-3.5 py-2.5">
           <span class="text-[14px] font-semibold text-[#344054]">政策库</span>
-          <span class="text-[12px] text-[#98A2B3]">{{ docs.length }} 件 · 待核实 {{ stats.unverified || 0 }}</span>
+          <span class="text-[12px] text-[#98A2B3]">{{ stats.total ?? docs.length }} 件 · 待核实 {{ stats.unverified || 0 }}</span>
           <button v-if="isReviewer" type="button" class="gov-icon-btn ml-auto" aria-label="导入政策" @click="showUpload = !showUpload">
             <Plus class="size-4" :stroke-width="2" />
           </button>
@@ -68,6 +69,9 @@
 
         <!-- 政策列表 -->
         <div class="min-h-0 flex-1 overflow-y-auto">
+          <p v-if="stats.total > docs.length" class="px-3.5 py-2 text-[12px] text-[#667085]">
+            显示最近 {{ docs.length }} 份；<RouterLink to="/gov/library" class="text-[#2563A8]">到政策库检索全部文件</RouterLink>。问答按所选范围检索。
+          </p>
           <button v-for="d in docs" :key="d.id" type="button"
             :class="['gov-doc', focusPolicy === d.id ? 'gov-doc--on' : '']"
             @click="focusPolicy = focusPolicy === d.id ? null : d.id">
@@ -99,7 +103,7 @@
           <div class="ml-auto flex items-center gap-1.5">
             <select v-model="scope" class="gov-select">
               <option value="current">全部现行政策</option>
-              <option value="all">全部政策（含已废止）</option>
+              <option value="all">全部政策（含待核实）</option>
               <option value="policy" :disabled="!focusPolicy">仅选中政策</option>
             </select>
             <label class="gov-check">
@@ -111,6 +115,10 @@
             </button>
           </div>
         </div>
+
+        <p v-if="stats.unverified" class="border-b border-[#EEF2F7] px-4 py-2 text-[12px] text-[#667085]">
+          有 {{ stats.unverified }} 份政策待核实；可选择「全部政策（含待核实）」试查，结果须人工核对。
+        </p>
 
         <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto bg-[#f7f9fc] px-4 py-4">
           <!-- 空态 -->
@@ -257,11 +265,13 @@
 
       <!-- ================= 原文详情抽屉 ================= -->
       <transition name="slide">
-        <aside v-if="activeCite" class="hidden w-[360px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#dce6f1] bg-white lg:flex">
+        <aside v-if="activeCite" aria-label="政策引用原文"
+          class="shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#dce6f1] bg-white"
+          :class="embedded ? 'policy-chat__citation--embedded' : 'hidden w-[360px] lg:flex'">
           <div class="flex items-center gap-2 border-b border-[#EEF2F7] px-3.5 py-2.5">
             <span class="text-[13.5px] font-semibold text-[#344054]">原文详情</span>
             <span class="gov-cite-no">[{{ activeCite.index }}]</span>
-            <button type="button" class="gov-icon-btn ml-auto" @click="activeCite = null">
+            <button type="button" class="gov-icon-btn ml-auto" aria-label="关闭引用原文" @click="activeCite = null">
               <X class="size-3.5" :stroke-width="2" />
             </button>
           </div>
@@ -276,7 +286,7 @@
               <div class="flex gap-2"><dt class="w-[64px] shrink-0 text-[#98A2B3]">状态</dt>
                 <dd><span :class="['gov-status', statusClass(activeCite.status)]">{{ activeCite.status }}</span></dd>
               </div>
-              <div class="flex gap-2"><dt class="w-[64px] shrink-0 text-[#98A2B3]">位置</dt><dd>第 {{ activeCite.page }} 页 · {{ activeCite.clause_no }}</dd></div>
+              <div class="flex gap-2"><dt class="w-[64px] shrink-0 text-[#98A2B3]">位置</dt><dd><template v-if="activeCite.page">第 {{ activeCite.page }} 页 · </template>{{ activeCite.clause_no || activeCite.source_anchor || '原文段落' }}</dd></div>
             </dl>
 
             <p class="mt-4 text-[12px] font-semibold text-[#667085]">条款原文</p>
@@ -294,11 +304,11 @@
         </aside>
       </transition>
     </div>
-  </main>
+  </component>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   AlertTriangle, BookMarked, Copy, FileSignature, Loader2, Plus, Send, Upload, X,
@@ -308,6 +318,7 @@ import api from '../api.js'
 import { getSessionToken } from '../stores/auth.js'
 
 const router = useRouter()
+defineProps({ embedded: { type: Boolean, default: false } })
 
 const docs = ref([])
 const stats = ref({})
@@ -332,6 +343,11 @@ const activeCite = ref(null)
 const focusPolicy = ref(null)
 const scroller = ref(null)
 let timer = null
+let answerController = null
+onBeforeUnmount(() => {
+  answerController?.abort()
+  clearInterval(timer)
+})
 
 const statusStyle = {
   现行有效: 'gov-status--ok',
@@ -409,6 +425,7 @@ function policyRow(p) {
   return {
     id: p.id, title: p.title, doc_no: p.doc_number || '', issuer: p.issuer || '', version: p.version,
     status: policyLabel(p), effective_date: p.effective_date || '', expire_date: p.expire_date || '',
+    checksum: String(p.content_hash || ''),
   }
 }
 
@@ -540,6 +557,7 @@ async function ask() {
   const q = question.value.trim()
   if (!q || asking.value) return
   asking.value = true
+  answerController = new AbortController()
   activeCite.value = null
   elapsed.value = 0
   timer = setInterval(() => { elapsed.value += 1 }, 1000)
@@ -571,6 +589,7 @@ async function ask() {
         Authorization: 'Bearer ' + getSessionToken(),
       },
       body: JSON.stringify(payload),
+      signal: answerController.signal,
     })
 
     if (!resp.ok || !resp.body) {
@@ -599,11 +618,12 @@ async function ask() {
     }
     if (buffer.trim()) applyStreamEvent(buffer, turn)
   } catch (err) {
-    turn.error = err?.message || '网络异常，请确认后端服务在运行'
+    if (err?.name !== 'AbortError') turn.error = err?.message || '网络异常，请确认后端服务在运行'
   } finally {
     turn.streaming = false
     clearInterval(timer)
     timer = null
+    answerController = null
     asking.value = false
     scrollToBottom()
   }
@@ -696,6 +716,15 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.policy-chat--embedded { position: relative; container-type: inline-size; }
+.policy-chat__citation--embedded {
+  position: absolute; top: 12px; bottom: 12px; right: 12px; z-index: 20;
+  display: flex; width: min(360px, calc(100% - 24px));
+  box-shadow: 0 8px 32px rgb(23 63 107 / 18%);
+}
+@container (max-width: 900px) {
+  .policy-chat__policies { display: none; }
+}
 .gov-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px; border-radius: 7px; border: 1px solid #E4E7EC;

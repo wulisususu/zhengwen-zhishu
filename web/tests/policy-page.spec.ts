@@ -47,6 +47,15 @@ beforeEach(() => {
 });
 
 describe("PolicyPage on the existing policy library", () => {
+  it("selects a library policy and displays its content hash without losing the QA composer", async () => {
+    setup(["drafter"]);
+    const w = await mountPage();
+    await w.get('.gov-doc').trigger('click');
+    expect(w.find('.gov-composer-input').exists()).toBe(true);
+    expect(w.get('.gov-doc--on').text()).toContain('校验');
+    await w.get('select.gov-select').setValue('policy');
+    expect((w.get('select.gov-select').element as HTMLSelectElement).value).toBe('policy');
+  });
   it("lists policies from /gov/policies with verification-based status labels", async () => {
     setup(["drafter"]);
     const w = await mountPage();

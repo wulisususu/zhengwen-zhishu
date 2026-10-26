@@ -11,7 +11,7 @@ import { COMPACT_BELOW, useViewport } from "../composables/useViewport";
 import { usePolicyQaStore } from "../stores/policyQa";
 import type { AskOptions } from "../types";
 import { getGovOfficeAdapter } from "../adapters";
-import PolicyLibraryPanel from "../components/policy/PolicyLibraryPanel.vue";
+import PolicyChatPage from "../../../views/PolicyPage.vue";
 
 const isLive = getGovOfficeAdapter().mode === "http";
 
@@ -54,10 +54,10 @@ async function ask(question: string, options: AskOptions) {
 </script>
 
 <template>
-  <GovLayout>
+  <GovLayout :auto-collapse-below="900">
     <template v-if="isLive">
-      <GovPageHeader title="政策检索" subtitle="检索真实政策库、查看原文条款，并将可追溯依据保存到文稿" />
-      <PolicyLibraryPanel />
+      <GovPageHeader title="政策问答" subtitle="依据已入库政策回答，引用可回看原文；未核验政策不作为现行依据" />
+      <PolicyChatPage embedded />
     </template>
     <template v-else>
     <GovPageHeader title="政策问答" subtitle="仅基于已入库政策检索作答，结论附条款依据；无可靠依据时不生成结论" />

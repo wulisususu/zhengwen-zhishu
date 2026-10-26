@@ -362,7 +362,7 @@ function statusClass(status) {
 }
 
 function sourceLabel(by) {
-  if (by === 'llm') return '本地模型生成'
+  if (by === 'llm') return '模型生成'
   if (by === 'extractive') return '原文摘录（未采用模型表述）'
   if (by === 'extractive_after_error') return '原文摘录（模型不可用）'
   if (by === 'extractive_numeric') return '原文摘录（数值直引原文）'

@@ -8,7 +8,7 @@
         <div class="mb-3">
           <h1 class="text-[17px] font-semibold text-[#111827]">公文起草</h1>
           <p class="mt-1 text-[12.5px] leading-5 text-[#98A2B3]">
-            填写要素后由端侧模型生成正文，按 GB/T 9704 版式成文
+            填写要素后由模型生成正文，按 GB/T 9704 版式成文
           </p>
         </div>
 
@@ -97,7 +97,7 @@
           {{ loading ? `生成中 ${elapsed}s` : (result ? '重新生成' : '生成正文') }}
         </button>
         <p class="mt-2 text-center text-[11.5px] leading-4 text-[#A8B2C1]">
-          端侧推理，正文不出设备
+          模型调用遵守系统出口策略；生成内容须人工核实
         </p>
       </aside>
 
@@ -111,24 +111,32 @@
           <span v-if="result" class="text-[12px] text-[#98A2B3]">
             {{ result.summary.char_count }} 字 · 用时 {{ (result.meta.elapsed_ms / 1000).toFixed(1) }}s
           </span>
-          <button type="button" class="gov-ghost ml-auto" :disabled="!result || exporting" @click="exportDocx">
+          <span v-if="saved" class="gov-tag gov-tag--ok">已保存 · 第 {{ saved.version }} 版</span>
+          <button type="button" class="gov-ghost ml-auto" :disabled="!result || saving || !canDraft"
+            :title="canDraft ? '' : '审核人不能起草文稿'" @click="saveDraft">
+            <Save class="size-4" :stroke-width="2" />
+            {{ saving ? '保存中…' : (ir.doc_type === '通知' ? '保存并进入审校' : '保存为文稿') }}
+          </button>
+          <button type="button" class="gov-ghost" :disabled="!saved || exporting" title="以后端保存的版本导出，带「未审核 · 内部草稿」标记" @click="exportDocx">
             <Download class="size-4" :stroke-width="2" />
-            {{ exporting ? '导出中…' : '导出 DOCX' }}
+            {{ exporting ? '导出中…' : '导出内部草稿' }}
           </button>
         </div>
+
+        <p v-if="notice" role="status" class="border-b border-[#D7E6D8] bg-[#F4FBF5] px-4 py-2 text-[12.5px] leading-5 text-[#2F6E3B]">{{ notice }}</p>
 
         <div class="min-h-0 flex-1 overflow-y-auto bg-[#f6f8fb] p-4">
           <!-- 空态 -->
           <div v-if="!result && !loading" class="flex h-full flex-col items-center justify-center text-center">
             <FileSignature class="size-10 text-[#C7CFDB]" :stroke-width="1.4" />
             <p class="mt-3 text-[14px] text-[#667085]">填写左侧要素后生成正文</p>
-            <p class="mt-1 text-[12.5px] text-[#98A2B3]">生成结果可直接导出为符合公文格式的 Word</p>
+            <p class="mt-1 text-[12.5px] text-[#98A2B3]">生成结果保存为文稿后，可导出带「未审核」标记的内部草稿</p>
           </div>
 
           <div v-else-if="loading" class="flex h-full flex-col items-center justify-center">
             <Loader2 class="size-8 animate-spin text-[#2563A8]" :stroke-width="1.6" />
             <p class="mt-3 text-[13.5px] text-[#475467]">模型正在成文，已等待 {{ elapsed }} 秒</p>
-            <p class="mt-1 text-[12px] text-[#98A2B3]">端侧 NPU 推理，通常 15–30 秒</p>
+            <p class="mt-1 text-[12px] text-[#98A2B3]">通常需要 15–30 秒，视模型部署方式而定</p>
           </div>
 
           <!-- A4 纸张预览 -->
@@ -153,7 +161,8 @@
         <!-- 校核结果 -->
         <div v-if="result && issues.length" class="max-h-[168px] shrink-0 overflow-y-auto border-t border-[#E6EAF2] px-4 py-3">
           <div class="mb-1.5 flex items-center gap-2">
-            <span class="text-[13px] font-semibold text-[#344054]">公文校核</span>
+            <span class="text-[13px] font-semibold text-[#344054]">起草自检</span>
+            <span class="text-[12px] text-[#98A2B3]">（仅供起草参考，不代替文稿审校）</span>
             <span class="text-[12px] text-[#98A2B3]">
               错误 {{ result.stats.error }} · 提示 {{ result.stats.warn }} · 建议 {{ result.stats.info }}
             </span>
@@ -178,7 +187,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   AlertTriangle, BookMarked, CheckCircle2, Download, FileSignature, Info,
-  Loader2, Sparkles, X, XCircle,
+  Loader2, Save, Sparkles, X, XCircle,
 } from 'lucide-vue-next'
 import AppHeader from '../components/AppHeader.vue'
 import api from '../api.js'
@@ -203,6 +212,11 @@ const form = reactive({
 
 const loading = ref(false)
 const exporting = ref(false)
+const saving = ref(false)
+// 已保存的文稿 { id, version, docType }；导出只认这个后端版本
+const saved = ref(null)
+const canDraft = ref(true)
+const notice = ref('')
 const elapsed = ref(0)
 const result = ref(null)
 const references = ref([])
@@ -250,6 +264,7 @@ async function generate() {
   if (!form.subject.trim() || loading.value) return
   loading.value = true
   result.value = null
+  saved.value = null
   elapsed.value = 0
   timer = setInterval(() => { elapsed.value += 1 }, 1000)
   try {
@@ -276,31 +291,79 @@ async function generate() {
   }
 }
 
+const GOV_DOC_TYPE = { 通知: 'notice', 请示: 'request', 报告: 'report', 函: 'letter', 纪要: 'minutes' }
+
+// 起草结果 → 既有文稿（/gov/documents）。保存后：通知进入文稿工作台走双层审校、送审与批准；
+// 其他文种保存为内部草稿，可导出带标记的内部稿（送审流程待支持，与工作台一致）。
+function documentPayload() {
+  const v = ir.value
+  const payload = {
+    title: v.title,
+    docType: GOV_DOC_TYPE[v.doc_type] || 'notice',
+    body: (v.body || []).map((p) => p.text).join('\n'),
+    fields: { recipient: (v.recipients || []).join('、'), issuer: v.issuer_org || '', undertaker: '' },
+    signDate: v.sign_date || '',
+    note: v.note || '',
+    citationIds: references.value.map((r) => r.citation_id).filter(Boolean),
+  }
+  if (v.doc_number) payload.docNumber = { text: v.doc_number }
+  if (v.print_org || v.print_date || (v.cc || []).length) {
+    payload.banji = { printer: v.print_org || '', printDate: v.print_date || '', copyTo: v.cc || [] }
+  }
+  return payload
+}
+
+function errorText(err) {
+  const res = err?.response?.data
+  return res?.detail || res?.message || err?.message || '未知错误'
+}
+
+async function saveDraft() {
+  if (!result.value || saving.value) return
+  saving.value = true
+  notice.value = ''
+  try {
+    const { data } = await api.post('/gov/documents', documentPayload())
+    if (data?.code !== 0) throw new Error(data?.message || '保存失败')
+    const doc = data.data
+    saved.value = { id: doc.id, version: doc.version, docType: doc.docType }
+    if (doc.docType === 'notice') {
+      router.push(`/gov/draft/${encodeURIComponent(doc.id)}`)
+      return
+    }
+    notice.value = `已保存为内部草稿（第 ${doc.version} 版）。可导出带「未审核」标记的内部稿；该文种的送审与批准流程待支持。`
+  } catch (err) {
+    window.alert('保存失败：' + errorText(err))
+  } finally {
+    saving.value = false
+  }
+}
+
 async function exportDocx() {
-  if (!result.value || exporting.value) return
+  if (!saved.value || exporting.value) return
   exporting.value = true
   try {
-    const res = await api.post('/gongwen/render', { ir: result.value.ir }, { responseType: 'blob' })
-    const encoded = res.headers['x-filename'] || ''
-    const filename = encoded
-      ? decodeURIComponent(encoded)
-      : `${ir.value.title || ir.value.doc_type}_${Date.now()}.docx`
+    const res = await api.post(`/gov/documents/${encodeURIComponent(saved.value.id)}/export`,
+      { kind: 'internal_draft' }, { responseType: 'blob' })
     const url = URL.createObjectURL(new Blob([res.data]))
     const a = document.createElement('a')
     a.href = url
-    a.download = filename
+    a.download = `${ir.value.title || ir.value.doc_type}-内部草稿.docx`
     document.body.appendChild(a)
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
   } catch (err) {
-    window.alert('导出失败：' + (err.message || '未知错误'))
+    window.alert('导出失败：' + errorText(err))
   } finally {
     exporting.value = false
   }
 }
 
 onMounted(() => {
+  api.get('/gov/actor').then(({ data }) => {
+    canDraft.value = (data?.data?.roles || []).includes('drafter')
+  }).catch(() => { /* 以后端校验为准 */ })
   // 政策解读页「加入起草依据」带过来的条款
   try {
     const rawRefs = sessionStorage.getItem('mqw-gongwen-references')

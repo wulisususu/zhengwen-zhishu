@@ -48,7 +48,7 @@
             <div class="agent-hero-inner">
               <div class="agent-hero-badge">GOV AGENT HUB</div>
               <h1 class="agent-hero-title">政务智能体中心</h1>
-              <p class="agent-hero-desc">四类政务办公任务，端侧本地推理；材料不出单位，请求全程留痕</p>
+              <p class="agent-hero-desc">四类政务办公任务，请求全程留痕；模型接入方式以系统配置为准</p>
             </div>
             <div class="agent-hero-deco" aria-hidden="true">
               <div class="deco-ring deco-ring--1"></div>
@@ -117,7 +117,7 @@ const agents = [
     tag: '核心业务',
     tagColor: '#173F6B',
     tagBg: '#E0EAFA',
-    model: 'Qwen2.5-1.5B · 端侧',
+    model: '模型以系统配置为准',
     route: '/gongwen',
   },
   {
@@ -130,7 +130,7 @@ const agents = [
     tag: '重点业务',
     tagColor: '#1E4E79',
     tagBg: '#E6EEF8',
-    model: 'Qwen2.5-1.5B · 端侧',
+    model: '模型以系统配置为准',
     route: '/policy',
   },
   {
@@ -143,7 +143,7 @@ const agents = [
     tag: '常用',
     tagColor: '#3B4699',
     tagBg: '#EDEFF7',
-    model: 'Qwen2.5-1.5B · 端侧',
+    model: '模型以系统配置为准',
     route: '/document?scene=manuscript',
   },
   {
@@ -156,7 +156,7 @@ const agents = [
     tag: '高频',
     tagColor: '#2C6B4F',
     tagBg: '#E8F1EC',
-    model: 'Qwen2.5-1.5B · 端侧',
+    model: '模型以系统配置为准',
     route: '/chat?scene=summary',
   },
 ]

@@ -1,16 +1,16 @@
 """公文起草与版式导出接口。
 
-POST /api/v1/gongwen/draft   表单 → IR + 校核结果
-POST /api/v1/gongwen/check   已有 IR → 重新校核
-POST /api/v1/gongwen/render  IR → GB/T 9704 版式 DOCX
+POST /api/v1/gongwen/draft   表单 → IR + 起草自检结果
+POST /api/v1/gongwen/check   已有 IR → 重新自检
 GET  /api/v1/gongwen/meta    文种与字段元信息
+
+这里只起草、不导出、不审校：起草结果须保存为文稿（POST /gov/documents），
+导出一律走 /gov/documents/{id}/export —— 以后端保存版本为准、内部草稿带标记、
+正式版受审核与权限限制；通知的双层审校、送审与批准也在既有文稿流程中进行。
 """
 from __future__ import annotations
 
-from urllib.parse import quote
-
 from fastapi import APIRouter, Body, Depends
-from fastapi.responses import Response
 
 from app.deps import get_current_user
 from app.errors import ok
@@ -26,9 +26,6 @@ from .schema import (
 )
 
 router = APIRouter(prefix="/gongwen", tags=["gongwen"])
-
-DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
 
 @router.get("/meta")
 def gongwen_meta(user: User = Depends(get_current_user)):
@@ -64,17 +61,3 @@ def gongwen_check(payload: dict = Body(...), user: User = Depends(get_current_us
         "stats": stats(issues),
         "summary": summarize(doc),
     })
-
-
-@router.post("/render")
-def gongwen_render(payload: dict = Body(...), user: User = Depends(get_current_user)):
-    data, filename = service.render_docx(payload)
-    return Response(
-        content=data,
-        media_type=DOCX_MIME,
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
-            "X-Filename": quote(filename),
-            "Cache-Control": "no-store",
-        },
-    )

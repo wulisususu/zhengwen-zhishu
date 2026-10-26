@@ -117,9 +117,14 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/v1/gongwen/meta` | 文种、密级、紧急程度、字段说明 |
-| POST | `/api/v1/gongwen/draft` | 表单 → IR + 校核结果 |
-| POST | `/api/v1/gongwen/check` | 已有 IR → 重新校核 |
-| POST | `/api/v1/gongwen/render` | IR → DOCX（`Content-Disposition` 带文件名） |
+| POST | `/api/v1/gongwen/draft` | 表单 → IR + 起草自检结果 |
+| POST | `/api/v1/gongwen/check` | 已有 IR → 重新自检 |
+
+本模块只起草，不导出：起草页把结果保存为文稿（`POST /api/v1/gov/documents`），导出一律走
+`POST /api/v1/gov/documents/{id}/export`——以后端保存的版本为准，内部草稿每页页眉标「未审核 · 内部草稿」，
+正式版须审核通过并具备正式发文权限（目前未开放）。请示、报告、函、纪要用本模块的渲染器（`renderer.py`）
+出内部草稿；通知走 gongwen-kit，并在既有文稿流程中完成双层审校、送审与批准。
+起草页的自检只用于起草时提示，不代替文稿审校。
 
 `draft` 返回的 `meta.generated_by` 取值：
 

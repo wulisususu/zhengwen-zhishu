@@ -406,15 +406,3 @@ def ir_from_payload(payload: dict[str, Any]) -> GongwenDoc:
     if isinstance(body_text, str) and body_text.strip():
         doc.body = normalize_body(body_text)
     return doc
-
-
-def render_docx(payload: dict[str, Any]) -> tuple[bytes, str]:
-    """渲染并返回 (字节流, 建议文件名)。"""
-    from .renderer import render_bytes
-
-    doc = ir_from_payload(payload)
-    data = render_bytes(doc)
-
-    safe_title = re.sub(r"[\\/:*?\"<>|\r\n\t]", "", doc.title or doc.doc_type)[:40]
-    filename = f"{safe_title or doc.doc_type}_{date.today().strftime('%Y%m%d')}.docx"
-    return data, filename

@@ -57,26 +57,69 @@ def notice_docx(draft, payload: dict) -> bytes:
         except GongwenToolError as exc:
             raise HTTPException(503, "通知生成失败：" + exc.message) from None
         doc = Document(target)
-    if payload.get("policyRefs"):
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        appendix_start = len(doc.paragraphs)
-        doc.add_page_break()
-        doc.add_paragraph("政策依据与审校记录（内部附件）")
-        labels = {"current": "现行", "abolished": "已废止", "unverified": "未核验"}
-        for ref in payload["policyRefs"]:
-            doc.add_paragraph(f"《{ref['title']}》 {ref['clause']} · 第 {ref.get('version') or '未知'} 版 · {labels[ref['status']]}")
-            if ref.get("statusNote"):
-                doc.add_paragraph("核验提示：" + ref["statusNote"])
-            if ref.get("excerpt"):
-                doc.add_paragraph(ref["excerpt"])
-            if ref.get("pageNumber"):
-                doc.add_paragraph(f"原文定位：PDF第 {ref['pageNumber']} 页")
-            doc.add_paragraph("来源：" + ref.get("sourceUrl", ""))
-        for paragraph in doc.paragraphs[appendix_start:]:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    _append_policy_appendix(doc, payload.get("policyRefs"))
     # The visible header marks every page as an internal draft. Detailed review
     # findings stay in the workbench; a trailing audit paragraph pushes a short
     # notice onto an otherwise empty page after the bottom-anchored banji.
+    out = BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
+def _append_policy_appendix(doc, refs) -> None:
+    if not refs:
+        return
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    appendix_start = len(doc.paragraphs)
+    doc.add_page_break()
+    doc.add_paragraph("政策依据与审校记录（内部附件）")
+    labels = {"current": "现行", "abolished": "已废止", "unverified": "未核验"}
+    for ref in refs:
+        doc.add_paragraph(f"《{ref['title']}》 {ref['clause']} · 第 {ref.get('version') or '未知'} 版 · {labels[ref['status']]}")
+        if ref.get("statusNote"):
+            doc.add_paragraph("核验提示：" + ref["statusNote"])
+        if ref.get("excerpt"):
+            doc.add_paragraph(ref["excerpt"])
+        if ref.get("pageNumber"):
+            doc.add_paragraph(f"原文定位：PDF第 {ref['pageNumber']} 页")
+        doc.add_paragraph("来源：" + ref.get("sourceUrl", ""))
+    for paragraph in doc.paragraphs[appendix_start:]:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+
+# 请示、报告、函、纪要：用 app.gongwen 的 GB/T 9704 版式渲染器，从后端保存的文稿生成内部草稿。
+# 通知走上面的 notice_docx（gongwen-kit）；解读稿等仍用 internal_docx。
+GONGWEN_DOC_TYPES = {"request": "请示", "report": "报告", "letter": "函", "minutes": "纪要"}
+INTERNAL_MARK = "未审核 · 内部草稿 · 不得作为正式公文使用"
+
+
+def gongwen_docx(payload: dict) -> bytes:
+    """Render a saved non-notice draft; every page header carries the internal-draft mark."""
+    from app.gongwen.renderer import render_bytes
+    from app.gongwen.schema import GongwenDoc
+
+    fields = payload.get("fields") or {}
+    banji = payload.get("banji") or {}
+    gw = GongwenDoc.from_dict({
+        "doc_type": GONGWEN_DOC_TYPES[payload["docType"]],
+        "title": payload.get("title", ""),
+        "recipients": fields.get("recipient", ""),
+        "issuer_org": fields.get("issuer", ""),
+        "signer_org": fields.get("issuer", ""),
+        "sign_date": payload.get("signDate", ""),
+        "body": payload.get("body", ""),
+        "doc_number": (payload.get("docNumber") or {}).get("text", ""),
+        "cc": banji.get("copyTo") or [],
+        "print_org": banji.get("printer", ""),
+        "print_date": banji.get("printDate", ""),
+        "note": payload.get("note", ""),
+    })
+    doc = Document(BytesIO(render_bytes(gw)))
+    for section in doc.sections:
+        for header in (section.header, section.even_page_header):
+            paragraph = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+            paragraph.text = INTERNAL_MARK
+    _append_policy_appendix(doc, payload.get("policyRefs"))
     out = BytesIO()
     doc.save(out)
     return out.getvalue()

@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { getGovOfficeAdapter, GovOfficeError } from "../adapters";
 import type { DocumentQuery } from "../adapters";
-import type { ExportResult, FieldKey, IssueResolution, Material, OfficialDocument } from "../types";
+import type { DraftChanges, ExportResult, FieldKey, IssueResolution, Material, OfficialDocument } from "../types";
 
 /** Shared document state for drafting, proofreading and the review center. */
 export const useGovDocumentsStore = defineStore("govDocuments", {
@@ -17,6 +17,13 @@ export const useGovDocumentsStore = defineStore("govDocuments", {
     list: (state) => state.order.map((id) => state.byId[id]).filter(Boolean),
   },
   actions: {
+    async create(changes: DraftChanges) {
+      const adapter = getGovOfficeAdapter();
+      if (!adapter.createDocument) return this.run(async () => { throw new GovOfficeError("演示模式不支持新建", "unavailable"); });
+      const doc = await this.run(() => adapter.createDocument!(changes));
+      if (doc) this.upsert(doc);
+      return doc;
+    },
     upsert(doc: OfficialDocument) {
       this.byId = { ...this.byId, [doc.id]: doc };
       if (!this.order.includes(doc.id)) this.order = [...this.order, doc.id];
@@ -80,8 +87,8 @@ export const useGovDocumentsStore = defineStore("govDocuments", {
     removeMaterial(id: string, materialId: string) {
       return this.mutate(() => getGovOfficeAdapter().removeMaterial(id, materialId), "已移除材料。");
     },
-    saveDraft(id: string, notice: string) {
-      return this.mutate(() => getGovOfficeAdapter().saveDraft(id), notice);
+    saveDraft(id: string, notice: string, changes?: DraftChanges) {
+      return this.mutate(() => getGovOfficeAdapter().saveDraft(id, changes), notice);
     },
     submitForReview(id: string) {
       return this.mutate(() => getGovOfficeAdapter().submitForReview(id), "已提交审核。");

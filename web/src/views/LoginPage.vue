@@ -5,7 +5,7 @@
 
     <section class="login-card">
       <div class="login-head">
-        <button type="button" class="back-link" @click="router.push('/')">
+        <button type="button" class="back-link" @click="router.push('/welcome')">
           <span class="back-arrow">←</span>
           <span>返回首页</span>
         </button>
@@ -317,8 +317,8 @@ async function setupGradientBlinds(container) {
 
 function safeNextPath(value) {
   const next = Array.isArray(value) ? value[0] : value
-  if (!next || typeof next !== 'string') return '/chat'
-  if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/login')) return '/chat'
+  if (!next || typeof next !== 'string') return '/gov'
+  if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/login')) return '/gov'
   return next
 }
 

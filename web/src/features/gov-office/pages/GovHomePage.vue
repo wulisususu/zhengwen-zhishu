@@ -29,15 +29,15 @@ const kpis = computed(() => {
   return [
     {
       label: "入库政策",
-      value: policyStats.value ? String(policyStats.value.total) : "—",
+      value: policyStats.value && policyStats.value.available !== false ? String(policyStats.value.total) : "—",
       unit: "件",
-      sub: policyStats.value
+      sub: policyStats.value?.available === false ? "政策检索未接入" : policyStats.value
         ? `现行 ${policyStats.value.current} · 已废止 ${policyStats.value.abolished} · 待核实 ${policyStats.value.unverified}`
         : "读取中…",
     },
     { label: "待审核文稿", value: String(pending.length), unit: "份", sub: `其中 ${pendingBlocked} 份存在阻断审批的严重问题` },
     { label: "文稿总数", value: String(docs.value.length), unit: "份", sub: "草稿、待审核、退回与已通过" },
-    { label: "未处理审校问题", value: String(openIssues), unit: "项", sub: "含规则检查与 AI 语义审查" },
+    { label: "未处理审校问题", value: session.isDemo ? String(openIssues) : "—", unit: "项", sub: session.isDemo ? "含规则检查与 AI 语义审查" : "自动审校未接入" },
   ];
 });
 const recent = computed(() => docs.value.slice(0, 6));

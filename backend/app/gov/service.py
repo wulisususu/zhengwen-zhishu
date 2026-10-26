@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy import or_, update
 from sqlalchemy.orm import Session
@@ -41,7 +41,7 @@ def record(db, doc, user, action, note="", tone="neutral"):
 
 def write_revision(db, doc, version, *, payload=None, status=None):
     """Compare-and-swap in SQLite, not an unprotected read followed by commit."""
-    values = {"version": version + 1, "updated_at": datetime.utcnow()}
+    values = {"version": version + 1, "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)}
     if payload is not None:
         values["payload_json"] = json.dumps(payload, ensure_ascii=False)
     if status is not None:
@@ -66,6 +66,8 @@ def serialize(db, doc):
     blocks = [{"id": f"{doc.id}-p{i}", "kind": "paragraph", "section": "正文",
                "segments": [{"kind": "text", "id": f"{doc.id}-s{i}", "text": text}]}
               for i, text in enumerate(payload.get("body", "").splitlines()) if text.strip()]
+    blocks.insert(0, {"id": doc.id + "-recipient", "kind": "recipient", "section": "主送", "segments": [{"kind": "field", "id": doc.id + "-recipient-field", "field": "recipient"}]})
+    blocks.append({"id": doc.id + "-signature", "kind": "signature", "section": "落款", "segments": [{"kind": "field", "id": doc.id + "-issuer-field", "field": "issuer"}]})
     return {**payload, "id": doc.id, "origin": "backend", "status": doc.status, "version": doc.version,
             "docNumber": {"id": doc.id + "-number", "text": ""}, "blocks": blocks,
             "author": owner.nickname or owner.username, "authorAccount": owner.username, "department": "",
@@ -93,7 +95,11 @@ def save(db, user, document_id, body):
         raise HTTPException(422, "文稿字段不能为 null")
     payload.update(patch)
     from .schemas import Content
-    payload = Content.model_validate(payload).model_dump()
+    from pydantic import ValidationError
+    try:
+        payload = Content.model_validate(payload).model_dump()
+    except ValidationError:
+        raise HTTPException(422, "文稿字段不合法，标题不能为空")
     write_revision(db, doc, body.version, payload=payload)
     record(db, doc, user, "保存草稿")
     db.commit()

@@ -5,6 +5,11 @@ import GovSidebar from "./GovSidebar.vue";
 import { useGovSessionStore } from "../../stores/govSession";
 import { useGovDocumentsStore } from "../../stores/govDocuments";
 import { useViewport } from "../../composables/useViewport";
+import { useAuthStore } from "../../../../stores/auth.js";
+import { useRouter } from "vue-router";
+const auth = useAuthStore();
+const router = useRouter();
+function logout() { auth.clearSession(); router.push('/login'); }
 
 /** Collapse the navigation automatically when the viewport is narrower than this. */
 const props = withDefaults(defineProps<{ autoCollapseBelow?: number }>(), { autoCollapseBelow: 0 });
@@ -41,6 +46,12 @@ onMounted(() => {
       />
     </aside>
     <main class="gov-shell__main">
+      <div v-if="!session.isDemo" class="gov-banner gov-banner--info" style="display:flex;gap:12px;align-items:center;padding:6px 16px;font-size:12px;flex-wrap:wrap">
+        <span>{{ session.actor?.name || '读取真实身份中…' }} · 政策检索与自动审校尚未接入</span>
+        <RouterLink to="/welcome">旧版功能入口</RouterLink>
+        <button type="button" class="gov-btn gov-btn--text gov-btn--sm" @click="logout">退出登录</button>
+      </div>
+      <div v-if="session.error" class="gov-banner gov-banner--danger" role="alert">{{ session.error }}</div>
       <slot />
     </main>
   </div>

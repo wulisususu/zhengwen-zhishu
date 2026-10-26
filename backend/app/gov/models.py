@@ -1,6 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey
 from app.database import Base
+
+def utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class GovDocument(Base):
@@ -10,8 +13,8 @@ class GovDocument(Base):
     status = Column(String(16), nullable=False, default="draft", index=True)
     version = Column(Integer, nullable=False, default=1)
     payload_json = Column(Text, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
 
 
 class GovDocumentMaterial(Base):
@@ -28,4 +31,4 @@ class GovReviewRecord(Base):
     action = Column(String(32), nullable=False)
     note = Column(Text, nullable=False, default="")
     tone = Column(String(16), nullable=False, default="neutral")
-    at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    at = Column(DateTime, nullable=False, default=utcnow)

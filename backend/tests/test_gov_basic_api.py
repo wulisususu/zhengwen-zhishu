@@ -14,6 +14,8 @@ from app.deps import hash_password
 from app.models import User
 from app.routers import auth
 
+PASSWORD_HASH = hash_password("local-test-password")
+
 
 @pytest.fixture()
 def app_client(tmp_path, monkeypatch):
@@ -29,7 +31,7 @@ def app_client(tmp_path, monkeypatch):
     factory = sessionmaker(bind=engine)
     with factory() as db:
         for name, admin in [("writer", False), ("other", False), ("reviewer", True)]:
-            db.add(User(username=name, nickname=name, password_hash=hash_password("local-test-password"), is_admin=admin))
+            db.add(User(username=name, nickname=name, password_hash=PASSWORD_HASH, is_admin=admin))
         db.commit()
     app = FastAPI()
     app.include_router(auth.router, prefix="/api/v1")
@@ -206,3 +208,54 @@ def test_internal_export_is_real_a4_docx_with_watermark(app_client):
 def test_material_upload_validates_type(app_client, filename):
     client, tokens, _ = app_client
     assert client.post("/api/v1/gov/materials", headers=tokens["writer"], files={"file": (filename, b"test")}).status_code == 422
+
+
+def generation_module():
+    import importlib.util
+    assert importlib.util.find_spec("app.gov.generation") is not None, "model generation boundary is missing"
+    return importlib.import_module("app.gov.generation")
+
+
+@pytest.mark.parametrize("result", [{"error": "unavailable"}, {"text": ""}])
+def test_model_failure_keeps_saved_document(app_client, monkeypatch, result):
+    client, tokens, _ = app_client
+    module = generation_module()
+    monkeypatch.setattr(module, "generate_text", lambda prompt: result)
+    doc = create(client, tokens["writer"])
+    response = action(client, tokens["writer"], doc, "generate", prompt="请起草通知")
+    assert response.status_code == 503
+    loaded = client.get(f"/api/v1/gov/documents/{doc['id']}", headers=tokens["writer"]).json()["data"]
+    assert loaded["version"] == doc["version"] and loaded["body"] == doc["body"]
+
+
+def test_model_success_is_persisted_with_server_version(app_client, monkeypatch):
+    client, tokens, _ = app_client
+    module = generation_module()
+    monkeypatch.setattr(module, "generate_text", lambda prompt: {"text": "真实模型接口测试替身输出"})
+    doc = create(client, tokens["writer"])
+    response = action(client, tokens["writer"], doc, "generate", prompt="请起草通知")
+    assert response.status_code == 200
+    saved = response.json()["data"]
+    assert saved["body"] == "真实模型接口测试替身输出" and saved["version"] == doc["version"] + 1
+    assert saved["checkStatus"] == "not_run"
+
+
+def test_model_result_does_not_overwrite_concurrent_edit(app_client, monkeypatch):
+    client, tokens, factory = app_client
+    module = generation_module()
+    doc = create(client, tokens["writer"])
+    def generate(prompt):
+        from sqlalchemy import update
+        from app.gov.models import GovDocument
+        with factory() as db:
+            db.execute(update(GovDocument).where(GovDocument.id == doc["id"]).values(version=99))
+            db.commit()
+        return {"text": "过期生成结果"}
+    monkeypatch.setattr(module, "generate_text", generate)
+    assert action(client, tokens["writer"], doc, "generate", prompt="起草").status_code == 409
+
+
+def test_blank_saved_title_is_validation_error_not_server_error(app_client):
+    client, tokens, _ = app_client
+    doc = create(client, tokens["writer"])
+    assert client.put(f"/api/v1/gov/documents/{doc['id']}", headers=tokens["writer"], json={"version": doc["version"], "title": "   "}).status_code == 422

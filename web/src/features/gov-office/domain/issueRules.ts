@@ -160,7 +160,7 @@ export function documentGates(doc: OfficialDocument, actor: Actor): DocumentGate
   const isReviewer = actor.roles.includes("reviewer");
   const isDrafter = actor.roles.includes("drafter");
   const ownDocument = isOwnDocument(doc, actor);
-  const editable = isDrafter && (doc.status === "draft" || doc.status === "returned");
+  const editable = isDrafter && (doc.origin !== "backend" || ownDocument) && (doc.status === "draft" || doc.status === "returned");
 
   let approveBlockedReason = "";
   if (doc.status !== "pending") approveBlockedReason = "仅待审核文稿可以审核。";

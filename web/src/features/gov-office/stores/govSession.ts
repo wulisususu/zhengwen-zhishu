@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { getGovOfficeAdapter, GovOfficeError } from "../adapters";
 import type { Actor, RuntimeStatus } from "../types";
+import { getSessionToken } from "../../../stores/auth.js";
 
 const NAV_PREF_KEY = "gov-office-nav-collapsed";
 
@@ -14,6 +15,7 @@ function readNavPref(): boolean | null {
 }
 
 let loading: Promise<void> | null = null;
+export function resetGovSessionLoading() { loading = null; }
 
 export const useGovSessionStore = defineStore("govSession", {
   state: () => ({
@@ -37,17 +39,20 @@ export const useGovSessionStore = defineStore("govSession", {
       if (this.loaded) return Promise.resolve();
       if (!loading) {
         const adapter = getGovOfficeAdapter();
+        const token = getSessionToken();
         loading = Promise.all([
           adapter.getRuntimeStatus(),
           adapter.getCurrentActor(),
           adapter.listDemoActors ? adapter.listDemoActors() : Promise.resolve([] as Actor[]),
         ]).then(([runtime, actor, demoActors]) => {
+          if (getSessionToken() !== token) return;
           this.runtime = runtime;
           this.actor = actor;
           this.demoActors = demoActors;
           this.loaded = true;
-          loading = null;
-        });
+        }).catch((err) => {
+          this.error = err instanceof Error ? err.message : "身份读取失败";
+        }).finally(() => { loading = null; });
       }
       return loading;
     },

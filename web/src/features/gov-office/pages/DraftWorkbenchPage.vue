@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { Download, Lock, PanelLeftClose, PanelLeftOpen, PanelRightOpen, Save, Send } from "lucide-vue-next";
 import GovLayout from "../components/layout/GovLayout.vue";
 import GovPageHeader from "../components/layout/GovPageHeader.vue";
@@ -23,14 +23,16 @@ import { useIssueMarks } from "../composables/useIssueMarks";
 import { useGovDocumentsStore } from "../stores/govDocuments";
 import { useGovSessionStore } from "../stores/govSession";
 import type { FieldKey } from "../types";
+import { getGovOfficeAdapter } from "../adapters";
 
 const DEFAULT_DOC_ID = "demo-d1";
 const route = useRoute();
+const router = useRouter();
 const store = useGovDocumentsStore();
 const session = useGovSessionStore();
 const { width } = useViewport();
 
-const docId = computed(() => (route.params.id as string) || DEFAULT_DOC_ID);
+const docId = computed(() => (route.params.id as string) || (session.isDemo ? DEFAULT_DOC_ID : ""));
 const doc = computed(() => store.byId[docId.value]);
 const actor = computed(() => session.actor);
 const typeConfig = computed(() => (doc.value ? docTypeConfig(doc.value.docType) : DOC_TYPES[0]));
@@ -43,6 +45,28 @@ const focusAnchor = ref("");
 const dialog = ref<"" | "material" | "export" | "submit">("");
 const preview = ref<InstanceType<typeof A4Preview> | null>(null);
 const fieldsForm = ref<InstanceType<typeof DraftFieldsForm> | null>(null);
+const newTitle = ref("");
+const editTitle = ref("");
+const editBody = ref("");
+const editDate = ref("");
+const editFields = ref({ recipient: "", issuer: "", undertaker: "" });
+const dirty = ref(false);
+const busy = ref(false);
+const generationPrompt = ref("");
+const loadFailure = ref("");
+async function loadDocument(id: string) {
+  loadFailure.value = "";
+  const loaded = await store.load(id);
+  if (docId.value !== id) return;
+  if (!loaded) loadFailure.value = store.error || "文稿读取失败，请刷新后重试";
+  else await store.loadMaterialLibrary();
+}
+watch(doc, (value) => {
+  if (!value) return;
+  editTitle.value = value.title; editBody.value = value.body ?? ""; editDate.value = value.signDate;
+  editFields.value = { ...value.fields }; dirty.value = false;
+}, { immediate: true });
+onBeforeRouteLeave(() => !dirty.value || window.confirm("修改尚未保存，确定离开？"));
 
 const { summary, marks } = useIssueMarks(doc);
 const gates = computed(() => (doc.value && actor.value ? documentGates(doc.value, actor.value) : null));
@@ -69,10 +93,16 @@ const watermark = computed(() => (doc.value && doc.value.status !== "approved" ?
 onMounted(async () => {
   leftOpen.value = width.value >= 1400;
   await session.load();
-  await store.load(docId.value);
-  store.loadMaterialLibrary();
+  if (docId.value) await loadDocument(docId.value);
 });
-watch(docId, (id) => store.load(id));
+watch(docId, (id) => { if (id) loadDocument(id); });
+
+async function createDraft() {
+  busy.value = true;
+  const created = await store.create({ title: newTitle.value.trim(), docType: "notice" });
+  busy.value = false;
+  if (created) await router.replace(`/gov/draft/${created.id}`);
+}
 
 async function locate(anchor: string) {
   focusAnchor.value = anchor;
@@ -88,21 +118,49 @@ async function fillField(field: FieldKey) {
 }
 
 function updateField(field: FieldKey, value: string) {
-  if (doc.value) store.updateFields(doc.value.id, { [field]: value });
+  if (session.isDemo && doc.value) store.updateFields(doc.value.id, { [field]: value });
+  else { editFields.value[field] = value; dirty.value = true; }
 }
 
 async function addMaterials(ids: string[]) {
   dialog.value = "";
+  if (dirty.value && !(await save())) return;
   if (doc.value) await store.addMaterials(doc.value.id, ids);
 }
 
 async function submit() {
   dialog.value = "";
+  if (dirty.value && !(await save())) return;
   if (doc.value) await store.submitForReview(doc.value.id);
 }
 
-function save() {
-  if (doc.value) store.saveDraft(doc.value.id, "草稿已保存。");
+async function save() {
+  if (!doc.value || busy.value) return;
+  busy.value = true;
+  const saved = await store.saveDraft(doc.value.id, "草稿已保存。", session.isDemo ? undefined : { title: editTitle.value, body: editBody.value, fields: editFields.value, signDate: editDate.value });
+  busy.value = false;
+  return saved;
+}
+
+async function openExport() {
+  if (dirty.value && !(await save())) return;
+  dialog.value = "export";
+}
+
+async function removeMaterial(id: string) {
+  if (dirty.value && !(await save())) return;
+  if (doc.value) await store.removeMaterial(doc.value.id, id);
+}
+
+async function generate() {
+  if (!doc.value || busy.value) return;
+  if (editBody.value.trim() && !window.confirm("生成成功后将替换正文，是否继续？")) return;
+  if (dirty.value && !(await save())) return;
+  const adapter = getGovOfficeAdapter();
+  if (!adapter.generateDraft) return;
+  busy.value = true;
+  await store.mutate(() => adapter.generateDraft!(doc.value!.id, generationPrompt.value.trim() || `请起草一份标题为《${doc.value!.title}》的通知，仅根据已知信息写正文，未知事实明确标注待补充。`), "模型初稿已保存，请逐项人工核实。");
+  busy.value = false;
 }
 
 function rerun() {
@@ -131,9 +189,9 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
           <Lock v-if="!editable" :size="16" class="gov-draft__lock" aria-label="编辑已锁定" />
         </template>
         <template #actions>
-          <button type="button" class="gov-btn" :disabled="!editable" @click="save"><Save :size="15" aria-hidden="true" />保存草稿</button>
-          <button type="button" class="gov-btn" @click="dialog = 'export'"><Download :size="15" aria-hidden="true" />导出</button>
-          <button type="button" class="gov-btn gov-btn--primary" :disabled="!gates.canSubmit || !typeConfig.supported" @click="dialog = 'submit'">
+          <button type="button" class="gov-btn" :disabled="!editable || busy" @click="save"><Save :size="15" aria-hidden="true" />保存草稿</button>
+          <button type="button" class="gov-btn" :disabled="busy" @click="openExport"><Download :size="15" aria-hidden="true" />导出</button>
+          <button type="button" class="gov-btn gov-btn--primary" :disabled="!gates.canSubmit || !typeConfig.supported || busy" @click="dialog = 'submit'">
             <Send :size="15" aria-hidden="true" />提交审核
           </button>
         </template>
@@ -147,7 +205,7 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
         </button>
         <label class="gov-draft__inline">
           文种
-          <select class="gov-select" :value="doc.docType" aria-describedby="gov-doctype-note">
+          <select class="gov-select" :value="doc.docType" disabled aria-describedby="gov-doctype-note">
             <option v-for="t in DOC_TYPES" :key="t.id" :value="t.id" :disabled="!t.supported">{{ t.label }}{{ t.supported ? "" : "（待支持）" }}</option>
           </select>
         </label>
@@ -173,10 +231,19 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
       <div v-if="lockText" class="gov-draft__lockbar gov-banner gov-banner--info">{{ lockText }}</div>
       <StoreMessages />
 
+      <fieldset v-if="!session.isDemo" :disabled="!editable || busy" class="gov-draft__editor">
+        <label class="gov-label">文稿标题<input v-model="editTitle" class="gov-input" aria-label="文稿标题" maxlength="256" @input="dirty = true" /></label>
+        <label class="gov-label">成文日期<input v-model="editDate" type="date" class="gov-input" aria-label="成文日期" @input="dirty = true" /></label>
+        <label class="gov-label gov-draft__body-editor">正文编辑<textarea v-model="editBody" class="gov-textarea" aria-label="正文编辑" rows="5" @input="dirty = true" /></label>
+        <span class="gov-muted">{{ dirty ? '有修改未保存；保存后更新预览' : '当前内容已保存' }} · 第 {{ doc.version }} 版</span>
+        <label class="gov-label">生成要求<input v-model="generationPrompt" class="gov-input" aria-label="生成要求" placeholder="可选；仅使用已知信息生成初稿" /></label>
+        <button type="button" class="gov-btn" @click="generate">{{ busy ? '处理中…' : '使用模型生成初稿' }}</button>
+      </fieldset>
+
       <div class="gov-draft__work">
         <aside v-if="leftOpen" class="gov-draft__left" aria-label="材料与政策依据">
-          <DraftFieldsForm ref="fieldsForm" :doc="doc" :editable="editable" @update="updateField" />
-          <MaterialList :materials="doc.materials" :editable="editable" @add="dialog = 'material'" @remove="(id) => store.removeMaterial(doc!.id, id)" />
+          <DraftFieldsForm ref="fieldsForm" :doc="session.isDemo ? doc : { ...doc, fields: editFields }" :editable="editable && !busy" @update="updateField" />
+          <MaterialList :materials="doc.materials" :editable="editable && !busy" @add="dialog = 'material'" @remove="removeMaterial" />
           <PolicyRefList :refs="doc.policyRefs" />
         </aside>
 
@@ -196,13 +263,13 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
             :focus-anchor="focusAnchor"
             :editable="editable"
             collapsible
-            rerun-label="演示环境：未重新执行检查"
+            :rerun-label="session.isDemo ? '演示环境：未重新执行检查' : '自动审校未接入'"
             @locate="locate"
             @fill-field="fillField"
             @collapse="rightOpen = false"
           >
             <template #footer>
-              <button type="button" class="gov-btn gov-btn--sm" @click="rerun">重新审校</button>
+              <button type="button" class="gov-btn gov-btn--sm" :disabled="!session.isDemo" @click="rerun">{{ session.isDemo ? '重新审校' : '自动审校未接入' }}</button>
             </template>
           </IssuePanel>
         </aside>
@@ -216,16 +283,25 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
         @confirm="addMaterials"
       />
       <ExportDialog v-if="dialog === 'export'" :doc="doc" :actor="actor" @close="dialog = ''" @locate="exportLocate" />
-      <SubmitDialog v-if="dialog === 'submit'" :blockers="summary.blockers" @close="dialog = ''" @confirm="submit" />
+      <SubmitDialog v-if="dialog === 'submit'" :blockers="summary.blockers" :check-status="doc.checkStatus" @close="dialog = ''" @confirm="submit" />
     </template>
-    <div v-else class="gov-draft__loading">
+    <div v-else-if="session.loaded && !docId" class="gov-draft__loading">
+      <h1>新建通知</h1>
+      <label class="gov-label">文稿标题<input v-model="newTitle" class="gov-input" aria-label="新建文稿标题" maxlength="256" placeholder="请输入文稿标题" /></label>
+      <p class="gov-muted">先创建并保存文稿，再编辑正文、上传材料和送交人工审核。目前支持通知内部草稿。</p>
+      <button type="button" class="gov-btn gov-btn--primary" :disabled="!newTitle.trim() || busy" @click="createDraft">创建文稿</button>
       <StoreMessages />
-      <span v-if="!store.error" class="gov-muted">正在加载文稿…</span>
+    </div>
+    <div v-else class="gov-draft__loading">
+      <div v-if="loadFailure" class="gov-banner gov-banner--danger" role="alert">{{ loadFailure }}</div>
+      <template v-else><StoreMessages /><span v-if="!store.error" class="gov-muted">正在加载文稿…</span></template>
     </div>
   </GovLayout>
 </template>
 
 <style scoped>
+.gov-draft__editor { border: 0; border-bottom: 1px solid var(--gov-border); margin: 0; padding: 12px 24px; display: flex; flex-wrap: wrap; align-items: end; gap: 12px; max-height: 280px; overflow: auto; }
+.gov-draft__body-editor { flex: 1 0 100%; }
 .gov-draft__lock { color: var(--gov-text-3); flex: 0 0 auto; }
 .gov-draft__toolbar {
   flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px;

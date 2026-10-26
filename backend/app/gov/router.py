@@ -5,7 +5,7 @@ from app.deps import get_current_user
 from app.models import User
 from app.errors import ok
 from . import service
-from .schemas import Content, Update, Decision, Revision, ExportRequest
+from .schemas import Content, Update, Decision, Revision, ExportRequest, Generation
 from .materials import router as material_router
 
 router = APIRouter(prefix="/gov", tags=["government"])
@@ -69,6 +69,12 @@ def return_document(document_id: str, body: Decision, user: User = Depends(get_c
 def check(document_id: str, body: Revision, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     service.get_document(db, user, document_id)
     raise HTTPException(503, "自动审校未接入，本期仅支持人工审核")
+
+
+@router.post("/documents/{document_id}/generate")
+def generate(document_id: str, body: Generation, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from .generation import generate as run_generation
+    return ok(run_generation(db, user, document_id, body))
 
 
 @router.post("/documents/{document_id}/export")

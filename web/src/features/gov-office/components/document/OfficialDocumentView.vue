@@ -10,7 +10,10 @@ const props = defineProps<{
   focusAnchor: string;
 }>();
 
-const letterhead = computed(() => previewLetterhead(props.doc.docType));
+const letterhead = computed(() => {
+  const layout = previewLetterhead(props.doc.docType);
+  return props.doc.origin === "backend" ? { ...layout, orgText: props.doc.fields.issuer || "【待补充：发文机关】" } : layout;
+});
 
 function anchorClass(anchor: string | undefined) {
   if (!anchor) return {};

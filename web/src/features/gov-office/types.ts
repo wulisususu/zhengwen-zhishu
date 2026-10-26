@@ -87,6 +87,7 @@ export interface QaSession {
 }
 
 export interface PolicyStats {
+  available?: boolean;
   origin: DataOrigin;
   total: number;
   current: number;
@@ -122,6 +123,7 @@ export interface Material {
   id: string;
   name: string;
   meta: string;
+  downloadUrl?: string;
 }
 
 export interface PolicyRef {
@@ -173,6 +175,8 @@ export interface ReviewRecord {
 }
 
 export interface OfficialDocument {
+  body?: string;
+  checkStatus?: "not_run" | "completed";
   id: string;
   origin: DataOrigin;
   title: string;
@@ -208,4 +212,13 @@ export interface ExportResult {
   kind: "internal_draft" | "formal";
   watermark?: string;
   message: string;
+  filename?: string;
+}
+
+export interface DraftChanges {
+  title?: string;
+  docType?: DocTypeId;
+  body?: string;
+  fields?: Record<FieldKey, string>;
+  signDate?: string;
 }

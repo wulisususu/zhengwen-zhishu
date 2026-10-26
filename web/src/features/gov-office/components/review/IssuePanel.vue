@@ -144,7 +144,8 @@ async function confirmDialog(reason: string) {
         :editable="editable"
         @action="onAction(e, $event)"
       />
-      <div v-if="!visible.length" class="gov-empty">当前筛选下没有待处理问题</div>
+      <div v-if="doc.checkStatus === 'not_run'" class="gov-banner gov-banner--warning">自动审校未接入，尚未运行检查；没有问题记录不代表检查通过。</div>
+      <div v-else-if="!visible.length" class="gov-empty">当前筛选下没有待处理问题</div>
 
       <button type="button" class="gov-btn gov-btn--text" style="align-self: flex-start" @click="showResolved = !showResolved">
         {{ showResolved ? "收起已处理问题" : `查看已处理问题（${summary.resolved.length}）` }}

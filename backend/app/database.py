@@ -234,6 +234,7 @@ def _bootstrap_admin(conn) -> None:
 
 def init_db():
     from app import models  # noqa
+    from app.policy import models as _policy_models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _run_startup_migrations()
     # --- P3-B Guided Strategist: ensure guided_projects table exists (idempotent) ---

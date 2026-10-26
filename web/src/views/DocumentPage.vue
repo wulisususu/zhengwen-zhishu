@@ -1,6 +1,6 @@
 <template>
   <main class="flex h-dvh flex-col overflow-hidden bg-[#e2e9f1] text-black">
-    <AppHeader title="" subtitle="中科信创（南京）" :show-logout="false" @goHome="router.push('/')" />
+    <AppHeader title="" subtitle="政务办公智能体" :show-logout="false" @goHome="router.push('/')" />
 
     <div class="flex min-h-0 flex-1 p-3 gap-3">
       <aside class="hidden w-[232px] shrink-0 rounded-[12px] border border-[#dce6f1] bg-white px-4 py-3 md:flex md:min-h-0 md:flex-col">
@@ -24,7 +24,7 @@
             <Presentation class="size-4" :stroke-width="2" />
             <span>PPT生成</span>
           </button>
-          <button type="button" class="flex h-12 w-full items-center gap-3 rounded-[14px] border border-transparent px-3.5 text-left text-[15px] font-semibold text-[#667085] transition-all duration-150 hover:border-[#E6EAF2] hover:bg-[#F6F8FC] hover:text-[#111827]" v-if="ff.show_agents" title="智能体功能占位">
+          <button type="button" class="flex h-12 w-full items-center gap-3 rounded-[14px] border border-transparent px-3.5 text-left text-[15px] font-semibold text-[#667085] transition-all duration-150 hover:border-[#E6EAF2] hover:bg-[#F6F8FC] hover:text-[#111827]" v-if="ff.show_agents" @click="router.push('/agents')" title="进入政务智能体中心">
             <Bot class="size-4" :stroke-width="2" />
             <span>智能体</span>
           </button>
@@ -69,7 +69,13 @@
           <button @click="createNewDocument" class="h-10 shrink-0 rounded-[10px] border border-transparent bg-transparent px-3 text-[15px] font-semibold text-[#667085] hover:border-[#E6EAF2] hover:bg-[#F8FAFC] hover:text-[#111827]">新文档</button>
           <button class="h-10 shrink-0 rounded-[10px] border border-[rgba(94,106,210,0.10)] bg-[#EEF2FF] px-3 text-[15px] font-semibold text-[#5E6AD2] shadow-[0_1px_2px_rgba(16,24,40,0.04)]">文档</button>
           <button type="button" class="h-10 shrink-0 rounded-[10px] border border-transparent bg-transparent px-3 text-[15px] font-semibold text-[#667085] hover:border-[#E6EAF2] hover:bg-[#F8FAFC] hover:text-[#111827]" @click="router.push('/ppt')">PPT生成</button>
-          <button type="button" class="h-10 shrink-0 rounded-[10px] border border-transparent bg-transparent px-3 text-[15px] font-semibold text-[#667085] hover:border-[#E6EAF2] hover:bg-[#F8FAFC] hover:text-[#111827]" v-if="ff.show_agents" title="智能体功能占位">智能体</button>
+          <button type="button" class="h-10 shrink-0 rounded-[10px] border border-transparent bg-transparent px-3 text-[15px] font-semibold text-[#667085] hover:border-[#E6EAF2] hover:bg-[#F8FAFC] hover:text-[#111827]" v-if="ff.show_agents" @click="router.push('/agents')">智能体</button>
+        </div>
+
+        <div v-if="sceneLabel" class="flex flex-wrap items-center gap-2 border-b border-[#E6EAF2] bg-white/85 px-4 py-2">
+          <span class="rounded-[6px] bg-[#EEF2FF] px-2 py-0.5 text-[12px] font-semibold text-[#4F5BD5]">业务场景</span>
+          <span class="text-[13px] font-semibold text-[#344054]">{{ sceneLabel }}</span>
+          <span class="text-[12px] text-[#98A2B3]">{{ sceneHint }}</span>
         </div>
 
         <div class="min-h-0 flex-1 overflow-hidden p-3">
@@ -103,6 +109,14 @@ const historyScroller = ref(null)
 const userMenuRef = ref(null)
 const userMenuOpen = ref(false)
 const rightPanelMode = ref('chat')
+
+const SCENES = {
+  gongwen: { label: '公文起草', hint: '说明文种、事由与主送机关；成文后可导出 DOCX 继续核稿' },
+  manuscript: { label: '文稿撰写', hint: '说明场合、听众与时长（中文讲话约 220 字/分钟）' },
+}
+
+const sceneLabel = computed(() => SCENES[String(route.query.scene || '')]?.label || '')
+const sceneHint = computed(() => SCENES[String(route.query.scene || '')]?.hint || '')
 
 const displayUserName = computed(() => {
   const session = auth.session || {}

@@ -7,10 +7,11 @@ import WorkspacePage from './views/WorkspacePage.vue'
 import ChatPage from './views/ChatPage.vue'
 import PrototypeChatPage from './views/PrototypeChatPage.vue'
 import DocumentPage from './views/DocumentPage.vue'
+import GongwenPage from './views/GongwenPage.vue'
+import PolicyPage from './views/PolicyPage.vue'
 import PptHostPage from './views/PptHostPage.vue'
 import LoginPage from './views/LoginPage.vue'
 import AgentDirectoryPage from './views/AgentDirectoryPage.vue'
-import PediatricQAPage from './views/PediatricQAPage.vue'
 import SettingsPage from './views/SettingsPage.vue'
 import { hasSessionToken } from './stores/auth.js'
 import { govOfficeRoutes } from './features/gov-office/routes'
@@ -28,12 +29,12 @@ const routes = [
   { path: '/chat', component: ChatPage },
   { path: '/chat/:id', component: ChatPage },
   { path: '/document', component: DocumentPage },
+  { path: '/gongwen', component: GongwenPage },
+  { path: '/policy', component: PolicyPage },
   { path: '/document/:id', component: DocumentPage },
   { path: '/ppt', redirect: () => `/ppt/${createPptProjectId()}` },
   { path: '/ppt/:projectId', component: PptHostPage },
   { path: '/agents', component: AgentDirectoryPage },
-  { path: '/agents/pediatric-medical-qa', component: PediatricQAPage },
-  { path: '/agents/pediatric-medical-qa/:id', component: PediatricQAPage },
   { path: '/settings', component: SettingsPage },
   { path: '/login', component: LoginPage },
   ...govOfficeRoutes,

@@ -1,6 +1,6 @@
 <template>
   <main class="agent-root flex h-dvh flex-col overflow-hidden text-black">
-    <AppHeader title="" subtitle="中科信创（南京）" :show-logout="false" @goHome="router.push('/')" />
+    <AppHeader title="" subtitle="政务办公智能体" :show-logout="false" @goHome="router.push('/')" />
 
     <div class="flex min-h-0 flex-1">
       <aside class="agent-sidebar hidden w-[220px] shrink-0 border-r border-[#E8E0D8] px-3 py-5 md:flex md:min-h-0 md:flex-col">
@@ -10,14 +10,21 @@
             class="sidebar-item"
           >
             <MessageSquare class="size-[18px]" :stroke-width="1.8" />
-            <span>聊天</span>
+            <span>通用对话</span>
           </button>
           <button
-            type="button"
+            @click="router.push('/document')"
             class="sidebar-item"
           >
-            <Presentation class="size-[18px]" :stroke-width="1.8" />
-            <span>PPT生成</span>
+            <FileText class="size-[18px]" :stroke-width="1.8" />
+            <span>文档</span>
+          </button>
+          <button
+            @click="router.push('/knowledge')"
+            class="sidebar-item"
+          >
+            <BookMarked class="size-[18px]" :stroke-width="1.8" />
+            <span>知识库</span>
           </button>
           <button
             type="button"
@@ -31,16 +38,17 @@
 
       <section class="flex min-w-0 flex-1 flex-col">
         <div class="mobile-tabs flex items-center gap-1 border-b border-[#E8E0D8] px-3 py-2 md:hidden">
-          <button @click="router.push('/chat')" class="mobile-tab">聊天</button>
+          <button @click="router.push('/chat')" class="mobile-tab">对话</button>
+          <button @click="router.push('/knowledge')" class="mobile-tab">知识库</button>
           <button class="mobile-tab mobile-tab--active">智能体</button>
         </div>
 
         <div class="agent-canvas min-h-0 flex-1 overflow-y-auto">
           <div class="agent-hero">
             <div class="agent-hero-inner">
-              <div class="agent-hero-badge">AGENT HUB</div>
-              <h1 class="agent-hero-title">智能体中心</h1>
-              <p class="agent-hero-desc">探索专属 AI 助手，各司其职，精准高效</p>
+              <div class="agent-hero-badge">GOV AGENT HUB</div>
+              <h1 class="agent-hero-title">政务智能体中心</h1>
+              <p class="agent-hero-desc">四类政务办公任务，端侧本地推理；材料不出单位，请求全程留痕</p>
             </div>
             <div class="agent-hero-deco" aria-hidden="true">
               <div class="deco-ring deco-ring--1"></div>
@@ -52,7 +60,7 @@
           <div class="agent-body">
             <div class="agent-section-label">
               <span class="agent-section-line"></span>
-              <span class="agent-section-text">可用智能体</span>
+              <span class="agent-section-text">政务业务智能体</span>
               <span class="agent-section-line"></span>
             </div>
 
@@ -67,7 +75,7 @@
                 <div class="agent-card-glow" :style="{ background: agent.glow }" aria-hidden="true"></div>
                 <div class="agent-card-head">
                   <div class="agent-card-icon" :style="{ background: agent.bg }">
-                    <span class="agent-card-emoji">{{ agent.emoji }}</span>
+                    <component :is="agent.icon" class="size-[22px]" :style="{ color: agent.tagColor }" :stroke-width="1.7" />
                   </div>
                   <div class="agent-card-tag" :style="{ color: agent.tagColor, background: agent.tagBg }">
                     {{ agent.tag }}
@@ -93,24 +101,63 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import { ArrowRight, Bot, MessageSquare, Presentation } from 'lucide-vue-next'
+import { ArrowRight, BookMarked, Bot, FileSignature, FileText, ListChecks, MessageSquare, PenLine } from 'lucide-vue-next'
 import AppHeader from '../components/AppHeader.vue'
 
 const router = useRouter()
 
 const agents = [
   {
-    id: 'pediatric-medical-qa',
-    name: '少儿问答',
-    description: '面向儿童的健康问答助手，用温暖易懂的语言解答少儿健康问题，帮助家长获取专业参考',
-    emoji: '🩺',
-    bg: 'linear-gradient(145deg, #DCFCE7 0%, #BBF7D0 100%)',
-    glow: 'radial-gradient(circle at 30% 70%, rgba(34,197,94,0.12) 0%, transparent 70%)',
-    tag: '健康',
-    tagColor: '#166534',
-    tagBg: '#DCFCE7',
-    model: 'Qwen2.5-1.5B',
-    route: '/agents/pediatric-medical-qa',
+    id: 'gongwen-draft',
+    name: '公文起草智能体',
+    description: '承接通知、请示、报告、函、会议纪要五类文种，按机关行文规范成文，可直接导出 DOCX 继续核稿',
+    icon: FileSignature,
+    bg: 'linear-gradient(145deg, #E0EAFA 0%, #C7DAF2 100%)',
+    glow: 'radial-gradient(circle at 30% 70%, rgba(37,99,168,0.12) 0%, transparent 70%)',
+    tag: '核心业务',
+    tagColor: '#173F6B',
+    tagBg: '#E0EAFA',
+    model: 'Qwen2.5-1.5B · 端侧',
+    route: '/gongwen',
+  },
+  {
+    id: 'policy-interpret',
+    name: '政策解读智能体',
+    description: '上传政策原文，按条款逐条解读适用对象、办理条件、时限与材料，每句结论可回溯到原文条款',
+    icon: BookMarked,
+    bg: 'linear-gradient(145deg, #E6EEF8 0%, #D2E2F3 100%)',
+    glow: 'radial-gradient(circle at 30% 70%, rgba(23,63,107,0.10) 0%, transparent 70%)',
+    tag: '重点业务',
+    tagColor: '#1E4E79',
+    tagBg: '#E6EEF8',
+    model: 'Qwen2.5-1.5B · 端侧',
+    route: '/policy',
+  },
+  {
+    id: 'manuscript-write',
+    name: '文稿撰写智能体',
+    description: '领导讲话、汇报材料、工作总结，按场合与时长成文，遵循开场—形势—成绩—问题—部署—要求的结构',
+    icon: PenLine,
+    bg: 'linear-gradient(145deg, #EDEFF7 0%, #DCE1F0 100%)',
+    glow: 'radial-gradient(circle at 30% 70%, rgba(79,91,213,0.10) 0%, transparent 70%)',
+    tag: '常用',
+    tagColor: '#3B4699',
+    tagBg: '#EDEFF7',
+    model: 'Qwen2.5-1.5B · 端侧',
+    route: '/document?scene=manuscript',
+  },
+  {
+    id: 'summarize',
+    name: '提炼总结智能体',
+    description: '上传会议记录、调研报告或长文，提炼议题、决议、责任人与时限，输出纪要表格与待办清单',
+    icon: ListChecks,
+    bg: 'linear-gradient(145deg, #E8F1EC 0%, #D5E7DC 100%)',
+    glow: 'radial-gradient(circle at 30% 70%, rgba(44,107,79,0.10) 0%, transparent 70%)',
+    tag: '高频',
+    tagColor: '#2C6B4F',
+    tagBg: '#E8F1EC',
+    model: 'Qwen2.5-1.5B · 端侧',
+    route: '/chat?scene=summary',
   },
 ]
 
@@ -124,11 +171,11 @@ function openAgent(agent) {
 
 /* --- Root & Sidebar --- */
 .agent-root {
-  background: #FDF8F3;
+  background: #F5F9FD;
 }
 
 .agent-sidebar {
-  background: linear-gradient(180deg, #FDF8F3 0%, #FAF5EE 100%);
+  background: linear-gradient(180deg, #F8FBFF 0%, #F1F6FC 100%);
 }
 
 .sidebar-item {
@@ -167,7 +214,7 @@ function openAgent(agent) {
 
 /* --- Mobile Tabs --- */
 .mobile-tabs {
-  background: #FDF8F3;
+  background: #F5F9FD;
 }
 
 .mobile-tab {
@@ -196,9 +243,9 @@ function openAgent(agent) {
 /* --- Canvas --- */
 .agent-canvas {
   background:
-    radial-gradient(ellipse at 80% 10%, rgba(251,191,36,0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 20% 90%, rgba(34,197,94,0.04) 0%, transparent 50%),
-    #FDF8F3;
+    radial-gradient(ellipse at 80% 10%, rgba(37,99,168,0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 20% 90%, rgba(23,63,107,0.03) 0%, transparent 50%),
+    #F5F9FD;
 }
 
 /* --- Hero --- */
@@ -257,7 +304,7 @@ function openAgent(agent) {
 .deco-ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(28,25,23,0.07);
+  border: 1.5px solid rgba(23,63,107,0.08);
 }
 
 .deco-ring--1 {
@@ -282,10 +329,10 @@ function openAgent(agent) {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #D97706;
+  background: #2563A8;
   top: 65px;
   right: 80px;
-  box-shadow: 0 0 0 4px rgba(217,119,6,0.15);
+  box-shadow: 0 0 0 4px rgba(37,99,168,0.14);
 }
 
 @keyframes spin-slow {
@@ -308,11 +355,11 @@ function openAgent(agent) {
 .agent-section-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(28,25,23,0.08) 0%, transparent 100%);
+  background: linear-gradient(90deg, rgba(23,63,107,0.10) 0%, transparent 100%);
 }
 
 .agent-section-line:last-child {
-  background: linear-gradient(270deg, rgba(28,25,23,0.08) 0%, transparent 100%);
+  background: linear-gradient(270deg, rgba(23,63,107,0.10) 0%, transparent 100%);
 }
 
 .agent-section-text {
@@ -338,8 +385,8 @@ function openAgent(agent) {
   flex-direction: column;
   padding: 24px;
   border-radius: 16px;
-  border: 1px solid #E7E5E4;
-  background: rgba(255,255,255,0.82);
+  border: 1px solid #E4EAF2;
+  background: rgba(255,255,255,0.88);
   backdrop-filter: blur(8px);
   text-align: left;
   cursor: pointer;
@@ -360,7 +407,7 @@ function openAgent(agent) {
 }
 
 .agent-card:hover {
-  border-color: #D6D3D1;
+  border-color: #BFD3E7;
   transform: translateY(-4px);
   box-shadow:
     0 20px 40px rgba(28,25,23,0.08),
@@ -397,11 +444,6 @@ function openAgent(agent) {
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
-.agent-card-emoji {
-  font-size: 26px;
-  line-height: 1;
-}
-
 .agent-card-tag {
   padding: 3px 10px;
   border-radius: 6px;
@@ -432,7 +474,7 @@ function openAgent(agent) {
   justify-content: space-between;
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #F5F5F4;
+  border-top: 1px solid #EEF2F7;
 }
 
 .agent-card-model {

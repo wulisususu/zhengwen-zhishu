@@ -18,8 +18,7 @@ import uvicorn
 app = FastAPI(title="LLM Server", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-MODEL_PATH = "/home/youyeetoo/rkllm_model_zoo/Qwen2.5-3B-Instruct RKLLM/Qwen2.5-3B-Instruct.rkllm"
-MODEL = MODEL_PATH  # for template replacement in write_runner()
+MODEL = "/home/youyeetoo/rkllm_model_zoo/qwen2.5-1.5b-rkllm/Qwen2.5-1.5B-Instruct_W8A8_RK3588.rkllm"
 WORKDIR = "/home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm"
 PYTHON = WORKDIR + "/.venv/bin/python3"
 LIB = WORKDIR + "/lib"
@@ -37,7 +36,7 @@ RUNNER_SCRIPT = "/tmp/_llm_persistent.py"
 
 def write_runner():
     code = '''
-import os, sys, json, time
+import os, sys, json, time, re
 os.chdir("WORKDIR")
 sys.path.insert(0, ".")
 os.environ["RKLLM_LOG_LEVEL"] = "1"
@@ -70,9 +69,17 @@ def cb(r, ud, s):
 
 param = rkllm_binding.create_default_param()
 param.model_path = MODEL.encode()
-param.max_new_tokens = 96
+param.max_context_len = 4096
+param.max_new_tokens = 512
+param.top_k = 40
+param.top_p = 0.9
+param.temperature = 0.7
+param.repeat_penalty = 1.2
 ext = RKLLMExtendParam()
 ext.base_domain_id = 1
+ext.n_batch = 1
+ext.enabled_cpus_num = 4
+ext.enabled_cpus_mask = 0xF0
 param.extend_param = ext
 
 sys.stderr.write("Loading model...\\n")
@@ -125,6 +132,10 @@ while True:
 
     # Use callback-collected tokens for non-streaming; stream file is a fallback.
     full = "".join(current_output)
+    full = re.sub(r"<think[\\s\\S]*?</think>", "", full)
+    full = re.sub(r"<think[\\s\\S]*$", "", full)
+    for _tok in ("<|im_end|>", "<|endoftext|>", "<|im_start|>"):
+        full = full.replace(_tok, "")
     if not full and os.path.exists(STREAM):
         with open(STREAM) as f:
             for line in f:
@@ -165,7 +176,7 @@ def start_llm():
     _proc = subprocess.Popen(
         [PYTHON, RUNNER_SCRIPT],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        stderr=open("/home/youyeetoo/backend/data/llm_runner.err", "ab", buffering=0),
         env=env,
     )
 
@@ -266,7 +277,14 @@ def llm_generate_stream(prompt: str):
                         try:
                             obj = json.loads(line)
                             if obj.get("type") == "token":
-                                yield "data: " + json.dumps({"text": obj["content"]}, ensure_ascii=False) + "\n\n"
+                                piece = obj["content"]
+                                # 同时给 text 与 OpenAI 的 choices[].delta，
+                                # 简化客户端与 OpenAI 客户端都能直接消费
+                                yield "data: " + json.dumps({
+                                    "text": piece,
+                                    "choices": [{"index": 0, "delta": {"content": piece},
+                                                 "finish_reason": None}],
+                                }, ensure_ascii=False) + "\n\n"
                             elif obj.get("type") == "done":
                                 # Read final result from response file
                                 time.sleep(0.1)
@@ -340,11 +358,14 @@ async def chat_completions(request: Request):
     body = await request.json()
     messages = body.get("messages", [])
     stream = body.get("stream", False)
+    # Qwen / DeepSeek-R1-Distill 系列使用 ChatML 模板，模板不对会导致模型不停止并退化
     parts = []
     for msg in messages:
-        parts.append("%s: %s" % (msg.get("role", "user").capitalize(), msg.get("content", "")))
-    parts.append("Assistant:")
-    prompt = "\n".join(parts)
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        parts.append("<|im_start|>%s\n%s<|im_end|>\n" % (role, content))
+    parts.append("<|im_start|>assistant\n")
+    prompt = "".join(parts)
 
     if stream:
         def sse_stream():
@@ -362,4 +383,4 @@ async def chat_completions(request: Request):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8004)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

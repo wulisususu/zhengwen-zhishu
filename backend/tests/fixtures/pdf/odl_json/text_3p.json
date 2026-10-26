@@ -1,0 +1,187 @@
+{
+  "file name" : "text_3p.pdf",
+  "number of pages" : 3,
+  "author" : "(anonymous)",
+  "title" : "示例政策（演示）",
+  "creation date" : "D:20261025121615-07'00'",
+  "modification date" : "D:20261025121615-07'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 1,
+    "level" : "Doctitle",
+    "page number" : 1,
+    "bounding box" : [ 147.472, 708.436, 453.472, 728.848 ],
+    "heading level" : 1,
+    "font" : "STSong-Light",
+    "font size" : 18.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "示例市政务数据共享管理办法（演示）"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 1,
+    "bounding box" : [ 85.37, 677.841, 295.37, 689.748 ],
+    "font" : "STSong-Light",
+    "font size" : 10.5,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（演示文本，非真实政策，仅用于解析测试）"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 3,
+    "level" : "Subtitle",
+    "page number" : 1,
+    "bounding box" : [ 85.37, 632.444, 206.736, 648.32 ],
+    "heading level" : 2,
+    "font" : "STSong-Light",
+    "font size" : 14.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第一章 第1部分规定"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 1,
+    "bounding box" : [ 85.37, 562.952, 507.854, 620.56 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第一条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 1,
+    "bounding box" : [ 85.37, 496.952, 507.854, 554.56 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第二条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 1,
+    "bounding box" : [ 85.37, 430.952, 507.854, 488.56 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第三条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 1,
+    "bounding box" : [ 85.37, 364.952, 507.854, 422.56 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第四条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 8,
+    "level" : "Subtitle",
+    "page number" : 2,
+    "bounding box" : [ 85.37, 713.452, 206.736, 729.328 ],
+    "heading level" : 2,
+    "font" : "STSong-Light",
+    "font size" : 14.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第二章 第2部分规定"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 2,
+    "bounding box" : [ 85.37, 643.96, 507.854, 701.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第五条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 2,
+    "bounding box" : [ 85.37, 577.96, 507.854, 635.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第六条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 2,
+    "bounding box" : [ 85.37, 511.96, 507.854, 569.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第七条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 2,
+    "bounding box" : [ 85.37, 445.96, 507.854, 503.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第八条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 13,
+    "level" : "Subtitle",
+    "page number" : 3,
+    "bounding box" : [ 85.37, 713.452, 206.736, 729.328 ],
+    "heading level" : 2,
+    "font" : "STSong-Light",
+    "font size" : 14.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第三章 第3部分规定"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 3,
+    "bounding box" : [ 85.37, 643.96, 507.854, 701.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第九条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "page number" : 3,
+    "bounding box" : [ 85.37, 577.96, 507.854, 635.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第十条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实、 准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门应 当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 16,
+    "page number" : 3,
+    "bounding box" : [ 85.37, 511.96, 507.854, 569.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第十一条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实 、准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门 应当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 17,
+    "page number" : 3,
+    "bounding box" : [ 85.37, 445.96, 507.854, 503.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "第十二条 数据提供部门应当按照政务数据资源目录提供数据，保证数据真实 、准确、完整，并在数据发生变化后及时更新。共享申请提出后，数据提供部门 应当在十个工作日内予以答复；不予共享的，应当说明理由并提供相关依据。"
+  } ]
+}

@@ -37,6 +37,13 @@ const listOpen = ref(true);
 const issuesOpen = ref(true);
 const preview = ref<InstanceType<typeof A4Preview> | null>(null);
 const showRecords = ref(false);
+const reviewing = ref(false);
+async function rerun() {
+  if (!doc.value || reviewing.value) return;
+  reviewing.value = true;
+  await store.rerunReview(doc.value.id, "双层审校已完成，请逐项查看。");
+  reviewing.value = false;
+}
 
 const typeConfig = computed(() => (doc.value ? docTypeConfig(doc.value.docType) : null));
 const editable = computed(() => !!doc.value && !!actor.value && documentGates(doc.value, actor.value).canEdit && !!typeConfig.value?.supported);
@@ -63,7 +70,7 @@ async function locate(anchor: string) {
 
 <template>
   <GovLayout :auto-collapse-below="COMPACT_BELOW">
-    <GovPageHeader title="文稿审校" subtitle="规则检查与 AI 语义审查结果、问题定位与修改；审批在审核中心进行">
+    <GovPageHeader title="文稿审校" :subtitle="session.isDemo ? '规则检查与 AI 语义审查结果、问题定位与修改；审批在审核中心进行' : '通知双层规则审校、问题定位与修改；审批在审核中心进行'">
       <template #actions>
         <RouterLink to="/gov/review-center" class="gov-btn">前往审核中心</RouterLink>
       </template>
@@ -117,7 +124,7 @@ async function locate(anchor: string) {
           @locate="locate"
           @fill-field="() => $router.push(`/gov/draft/${doc!.id}`)"
           @collapse="issuesOpen = false"
-        />
+        ><template #footer><button type="button" class="gov-btn gov-btn--sm" :disabled="reviewing || (!session.isDemo && doc.docType !== 'notice')" @click="rerun">{{ reviewing ? '审校中…' : '重新审校' }}</button></template></IssuePanel>
       </aside>
     </div>
 

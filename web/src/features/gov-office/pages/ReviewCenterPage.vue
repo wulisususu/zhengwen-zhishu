@@ -188,7 +188,8 @@ const lockedText = computed(() => {
             :editable="false"
             @action="onIssueAction(e, $event)"
           />
-          <div v-if="!gates.blockers.length" class="gov-banner gov-banner--success">没有阻断审批的严重问题。</div>
+          <div v-if="doc.checkStatus === 'not_run'" class="gov-banner gov-banner--warning">当前版本尚未审校，请核对全文和材料。通知批准前后端会重新运行双层审校。</div>
+          <div v-else-if="!gates.blockers.length" class="gov-banner gov-banner--success">没有阻断审批的严重问题。</div>
 
           <template v-if="summary.humanReviewed.length">
             <h3 class="gov-subtitle">人工复核与例外记录</h3>

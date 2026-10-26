@@ -63,7 +63,7 @@ function issueChips(doc: OfficialDocument) {
         <span role="cell" class="gov-table__type">{{ docTypeConfig(doc.docType).label }}</span>
         <span role="cell" class="gov-table__chips">
           <StatusTag v-for="c in issueChips(doc)" :key="c.key" :tone="c.tone" :label="c.label" />
-          <span v-if="!issueChips(doc).length" class="gov-muted">无</span>
+          <span v-if="!issueChips(doc).length" class="gov-muted">{{ doc.checkStatus === 'not_run' ? '未检查' : '无' }}</span>
         </span>
         <span role="cell"><StatusTag :tone="STATUS_TONES[doc.status]" :label="STATUS_LABELS[doc.status]" /></span>
       </button>

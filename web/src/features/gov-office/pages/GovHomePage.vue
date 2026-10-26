@@ -15,9 +15,11 @@ import type { PolicyStats } from "../types";
 const store = useGovDocumentsStore();
 const session = useGovSessionStore();
 const policyStats = ref<PolicyStats | null>(null);
+const policyError = ref("");
 
 onMounted(async () => {
-  policyStats.value = await getGovOfficeAdapter().getPolicyStats();
+  try { policyStats.value = await getGovOfficeAdapter().getPolicyStats(); }
+  catch { policyError.value = "政策库读取失败，请稍后重试"; }
 });
 
 const docs = computed(() => store.list);
@@ -29,22 +31,22 @@ const kpis = computed(() => {
   return [
     {
       label: "入库政策",
-      value: policyStats.value ? String(policyStats.value.total) : "—",
+      value: policyStats.value && policyStats.value.available !== false ? String(policyStats.value.total) : "—",
       unit: "件",
-      sub: policyStats.value
+      sub: policyStats.value?.available === false ? "政策检索未接入" : policyStats.value
         ? `现行 ${policyStats.value.current} · 已废止 ${policyStats.value.abolished} · 待核实 ${policyStats.value.unverified}`
-        : "读取中…",
+        : policyError.value || "读取中…",
     },
     { label: "待审核文稿", value: String(pending.length), unit: "份", sub: `其中 ${pendingBlocked} 份存在阻断审批的严重问题` },
     { label: "文稿总数", value: String(docs.value.length), unit: "份", sub: "草稿、待审核、退回与已通过" },
-    { label: "未处理审校问题", value: String(openIssues), unit: "项", sub: "含规则检查与 AI 语义审查" },
+    { label: "未处理审校问题", value: String(openIssues), unit: "项", sub: session.isDemo ? "含规则检查与 AI 语义审查" : "已保存的双层审校结果；修改后须重检" },
   ];
 });
 const recent = computed(() => docs.value.slice(0, 6));
 const entries = [
-  { to: "/gov/policy-qa", title: "政策问答", desc: "检索现行政策，回答附条款依据", icon: MessageSquare },
+  { to: "/gov/policy-qa", title: "政策检索", desc: "检索政策条款，查看来源并保存文稿依据", icon: MessageSquare },
   { to: "/gov/draft", title: "公文起草", desc: "按文种模板起草，缺失要素自动标记", icon: FilePen },
-  { to: "/gov/proofread", title: "文稿审校", desc: "规则检查与 AI 语义审查，问题定位", icon: FileCheck },
+  { to: "/gov/proofread", title: "文稿审校", desc: "通知双层规则审校与问题定位", icon: FileCheck },
   { to: "/gov/review-center", title: "审核中心", desc: "待审核任务、通过与退回、审核记录", icon: ShieldCheck },
 ];
 

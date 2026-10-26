@@ -57,7 +57,7 @@ const exceptionReason = computed(() => {
     <p v-if="issue.suggestion" class="gov-issue__suggest">建议：{{ issue.suggestion.text }}</p>
     <p v-if="exceptionReason" class="gov-issue__suggest">例外申请 · {{ exceptionReason }}</p>
     <div class="gov-issue__actions">
-      <button type="button" class="gov-btn gov-btn--sm" @click="emit('action', 'locate')">
+      <button v-if="actions.includes('locate')" type="button" class="gov-btn gov-btn--sm" @click="emit('action', 'locate')">
         <Crosshair :size="13" aria-hidden="true" />定位
       </button>
       <button

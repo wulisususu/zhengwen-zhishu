@@ -1,0 +1,72 @@
+{
+  "code": 200,
+  "msg": "操作成功",
+  "data": null,
+  "searchVO": {
+    "totalCount": 0,
+    "catMap": {
+      "gongwen": {
+        "listVO": [
+          {
+            "id": "remote-001",
+            "title": "国务院办公厅关于加强<em>数据</em><em>安全</em>管理的<br/>指导意见",
+            "summary": "为贯彻落实&ldquo;数据安全法&rdquo;有关要求，进一步规范……",
+            "url": "https://www.gov.cn/zhengce/content/202401/content_0000001.htm",
+            "puborg": "国务院办公厅",
+            "pcode": "国办发〔2024〕5号",
+            "fwzh": "",
+            "pubtimeStr": "2024.01.16",
+            "ptime": 1705334400000,
+            "index": "000014349/2024-00005",
+            "childtype": "综合政务\\其他"
+          },
+          {
+            "id": "remote-002",
+            "title": "关于印发《<em>数据</em>出境<em>安全</em>评估办法》的通知 &amp; 解读",
+            "summary": "  评估办法自发布之日起施行。  ",
+            "url": "https://www.gov.cn/zhengce/zhengceku/202402/content_0000002.htm",
+            "puborg": "国家互联网信息办公室",
+            "pcode": "",
+            "fwzh": "",
+            "ptime": 1708963200000,
+            "index": "",
+            "childtype": "工业、交通\\信息产业（含电信）"
+          }
+        ]
+      },
+      "bumenfile": {
+        "listVO": [
+          {
+            "id": "remote-003",
+            "title": "部门规章：<em>数据</em>分类分级指引",
+            "summary": "适用于各部门数据处理活动。",
+            "url": "https://www.gov.cn/zhengce/zhengceku/202403/content_0000003.htm",
+            "puborg": "工业和信息化部",
+            "pcode": "工信部规〔2024〕1号",
+            "pubtimeStr": "2024.03.05",
+            "childtype": "工业、交通"
+          }
+        ]
+      },
+      "otherfile": { "listVO": [] },
+      "gongbao": {
+        "listVO": [
+          {
+            "id": "remote-001-gb",
+            "title": "国务院办公厅关于加强<em>数据</em><em>安全</em>管理的指导意见",
+            "summary": "公报转载。",
+            "url": "https://www.gov.cn/zhengce/content/202401/content_0000001.htm",
+            "puborg": "国务院办公厅",
+            "pcode": "国办发〔2024〕5号",
+            "pubtimeStr": "2024.01.16"
+          },
+          {
+            "id": "remote-bad",
+            "title": "",
+            "url": ""
+          }
+        ]
+      }
+    }
+  }
+}

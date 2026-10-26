@@ -6,14 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_config
 from app.database import init_db
 from app.errors import AppError
-from app.routers import health, auth, users, conversations, chat, files, knowledge, asr, tts, settings, system, documents, internal
+from app.routers import health, auth, users, conversations, chat, files, knowledge, asr, tts, settings, system, documents, internal, policy, gov_policy
 from app.minicpm_pipeline.router import router as minicpm_documents_router
 from app.docs_pipeline import router as docs_pipeline_router
 from app.gongwen.router import router as gongwen_router
 from app.policy.router import router as policy_router
 from app.PPT_master import router as ppt_master_router
+from app.routers import gov_docs  # 公文生成与审校（gongwen-kit）；单独一行，避免与其他分支改同一行
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from app.gov.router import router as gov_router
 
 cfg = get_config()
 logging.basicConfig(level=getattr(logging, cfg["logging"]["level"]), format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -36,11 +38,15 @@ app.include_router(settings.router,      prefix=API)
 app.include_router(system.router,        prefix=API)
 app.include_router(documents.router,     prefix=API)
 app.include_router(internal.router,      prefix=API)
+app.include_router(policy.router,        prefix=API)
+app.include_router(gov_policy.router,    prefix=API)
 app.include_router(minicpm_documents_router, prefix=API)
 app.include_router(docs_pipeline_router, prefix=API)
 app.include_router(gongwen_router,        prefix=API)
 app.include_router(policy_router,         prefix=API)
 app.include_router(ppt_master_router,   prefix=API)
+app.include_router(gov_router, prefix=API)
+app.include_router(gov_docs.router,     prefix=API)
 
 # docs_pipeline v3 standalone frontend
 _docs_static = Path(__file__).resolve().parent / "docs_pipeline" / "static"

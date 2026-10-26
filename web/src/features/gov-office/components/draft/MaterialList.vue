@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { FileText, Plus, X } from "lucide-vue-next";
 import type { Material } from "../../types";
+import { downloadGovMaterial } from "../../adapters/HttpGovOfficeAdapter";
+import { useGovDocumentsStore } from "../../stores/govDocuments";
+const store = useGovDocumentsStore();
 
 defineProps<{ materials: Material[]; editable: boolean }>();
 const emit = defineEmits<{ (e: "add"): void; (e: "remove", id: string): void }>();
@@ -18,6 +21,7 @@ const emit = defineEmits<{ (e: "add"): void; (e: "remove", id: string): void }>(
       <FileText :size="16" class="gov-materials__icon" aria-hidden="true" />
       <div class="gov-materials__text">
         <span class="gov-materials__name">{{ m.name }}</span>
+        <button v-if="m.downloadUrl" type="button" class="gov-btn gov-btn--text gov-btn--sm" @click="store.run(() => downloadGovMaterial(m))">下载材料</button>
         <span class="gov-muted">{{ m.meta }}</span>
       </div>
       <button
@@ -30,7 +34,7 @@ const emit = defineEmits<{ (e: "add"): void; (e: "remove", id: string): void }>(
         <X :size="14" aria-hidden="true" />
       </button>
     </div>
-    <div v-if="!materials.length" class="gov-empty">暂无材料。无材料时，正文中的事实性内容将标记为待补充。</div>
+    <div v-if="!materials.length" class="gov-empty">暂无材料。正文中的事实性内容须人工核实。</div>
   </section>
 </template>
 

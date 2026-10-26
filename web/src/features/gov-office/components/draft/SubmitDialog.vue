@@ -2,7 +2,7 @@
 import BaseDialog from "../common/BaseDialog.vue";
 import type { IssueEvaluation } from "../../domain/issueRules";
 
-defineProps<{ blockers: IssueEvaluation[] }>();
+defineProps<{ blockers: IssueEvaluation[]; checkStatus?: string }>();
 const emit = defineEmits<{ (e: "close"): void; (e: "confirm"): void }>();
 </script>
 
@@ -17,6 +17,7 @@ const emit = defineEmits<{ (e: "close"): void; (e: "confirm"): void }>();
         <li v-for="b in blockers" :key="b.issue.id">{{ b.issue.title }}（{{ b.issue.locationLabel }}）</li>
       </ul>
     </template>
+    <div v-else-if="checkStatus === 'not_run'" class="gov-banner gov-banner--warning">当前版本尚未审校；可以送人工审核，通知批准前后端会重新检查。</div>
     <div v-else class="gov-banner gov-banner--success">没有未处理的严重问题。</div>
     <template #footer>
       <button type="button" class="gov-btn" data-dialog-close @click="emit('close')">取消</button>

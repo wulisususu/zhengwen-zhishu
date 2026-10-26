@@ -1,4 +1,5 @@
 import { createMockGovOfficeAdapter } from "./MockGovOfficeAdapter";
+import { HttpGovOfficeAdapter } from "./HttpGovOfficeAdapter";
 import type { GovOfficeAdapter } from "./GovOfficeAdapter";
 
 export type { DocumentQuery, GovOfficeAdapter } from "./GovOfficeAdapter";
@@ -7,12 +8,11 @@ export { GovOfficeError } from "./GovOfficeAdapter";
 let instance: GovOfficeAdapter | null = null;
 
 /**
- * Only the mock adapter exists: the backend endpoints for policy QA, drafting,
- * proofreading and review are not defined yet. Add an HTTP adapter here once
- * they are; do not point the UI at guessed endpoints.
+ * Production uses the real government API. Demo data requires an explicit
+ * VITE_GOV_OFFICE_MODE=demo build; network failure never selects the mock.
  */
 export function getGovOfficeAdapter(): GovOfficeAdapter {
-  if (!instance) instance = createMockGovOfficeAdapter();
+  if (!instance) instance = import.meta.env.VITE_GOV_OFFICE_MODE === "demo" ? createMockGovOfficeAdapter() : new HttpGovOfficeAdapter();
   return instance;
 }
 

@@ -1,7 +1,8 @@
 import { defineStore } from "pinia";
+import { getSessionToken } from "../../../stores/auth.js";
 import { getGovOfficeAdapter, GovOfficeError } from "../adapters";
 import type { DocumentQuery } from "../adapters";
-import type { ExportResult, FieldKey, IssueResolution, Material, OfficialDocument } from "../types";
+import type { DraftChanges, ExportResult, FieldKey, IssueResolution, Material, OfficialDocument } from "../types";
 
 /** Shared document state for drafting, proofreading and the review center. */
 export const useGovDocumentsStore = defineStore("govDocuments", {
@@ -17,6 +18,13 @@ export const useGovDocumentsStore = defineStore("govDocuments", {
     list: (state) => state.order.map((id) => state.byId[id]).filter(Boolean),
   },
   actions: {
+    async create(changes: DraftChanges) {
+      const adapter = getGovOfficeAdapter();
+      if (!adapter.createDocument) return this.run(async () => { throw new GovOfficeError("演示模式不支持新建", "unavailable"); });
+      const doc = await this.run(() => adapter.createDocument!(changes));
+      if (doc) this.upsert(doc);
+      return doc;
+    },
     upsert(doc: OfficialDocument) {
       this.byId = { ...this.byId, [doc.id]: doc };
       if (!this.order.includes(doc.id)) this.order = [...this.order, doc.id];
@@ -26,12 +34,15 @@ export const useGovDocumentsStore = defineStore("govDocuments", {
       this.notice = "";
     },
     async run<T>(op: () => Promise<T>, notice = ""): Promise<T | undefined> {
+      const token = getSessionToken();
       this.error = "";
       try {
         const result = await op();
+        if (getSessionToken() !== token) return undefined;
         if (notice) this.notice = notice;
         return result;
       } catch (err) {
+        if (getSessionToken() !== token) return undefined;
         this.notice = "";
         this.error = err instanceof GovOfficeError ? err.message : "操作失败，请稍后重试。";
         return undefined;
@@ -80,14 +91,20 @@ export const useGovDocumentsStore = defineStore("govDocuments", {
     removeMaterial(id: string, materialId: string) {
       return this.mutate(() => getGovOfficeAdapter().removeMaterial(id, materialId), "已移除材料。");
     },
-    saveDraft(id: string, notice: string) {
-      return this.mutate(() => getGovOfficeAdapter().saveDraft(id), notice);
+    saveDraft(id: string, notice: string, changes?: DraftChanges) {
+      return this.mutate(() => getGovOfficeAdapter().saveDraft(id, changes), notice);
     },
     submitForReview(id: string) {
       return this.mutate(() => getGovOfficeAdapter().submitForReview(id), "已提交审核。");
     },
-    approve(id: string, opinion: string) {
-      return this.mutate(() => getGovOfficeAdapter().approve(id, opinion), "已审核通过。");
+    async approve(id: string, opinion: string) {
+      const result = await this.mutate(() => getGovOfficeAdapter().approve(id, opinion), "已审核通过。");
+      if (!result) {
+        const message = this.error;
+        await this.load(id);
+        this.error = message;
+      }
+      return result;
     },
     returnForRevision(id: string, opinion: string) {
       return this.mutate(() => getGovOfficeAdapter().returnForRevision(id, opinion), "已退回修改。");

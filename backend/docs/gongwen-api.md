@@ -33,7 +33,7 @@ NoticeDraft(JSON) ─校验(pydantic)─┬─ 自研规则 rules.py ───�
 
 ## 接口
 
-都要登录（复用 `get_current_user`），前缀 `/api/v1`。业务错误沿用 `ok()/fail()` 的 `{code, message, data}`。
+都要会话（复用 `get_current_user`）。前端不设登录页，会话来自角色入口 `POST /gov/entry`（见 `docs/role-entry.md`）。前缀 `/api/v1`。业务错误沿用 `ok()/fail()` 的 `{code, message, data}`。
 
 ### POST /gov/notices/review
 

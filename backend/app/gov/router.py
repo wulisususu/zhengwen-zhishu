@@ -7,9 +7,11 @@ from app.errors import ok
 from . import service
 from .schemas import Content, Update, Decision, Revision, ExportRequest, Generation, CitationSelection
 from .materials import router as material_router
+from .entry import router as entry_router
 
 router = APIRouter(prefix="/gov", tags=["government"])
 router.include_router(material_router)
+router.include_router(entry_router)
 
 
 @router.get("/actor")

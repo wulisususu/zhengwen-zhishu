@@ -84,3 +84,14 @@ export async function navigate(page, path) {
   await page.locator(`.gov-nav a[href='${path}']`).click();
   await page.waitForTimeout(350);
 }
+
+/** Workflow start page of each role (web/src/features/gov-office/roleEntry.ts ROLE_HOME). */
+export const ROLE_HOME = { drafter: "/gov/draft", reviewer: "/gov/review-center" };
+
+/** No login page: open the site without a session and pick a role at /entry. */
+export async function enterAsRole(page, base, role) {
+  await page.goto(base + "/");
+  await page.waitForURL(base + "/entry");
+  await page.locator(`button[data-role='${role}']`).click();
+  await page.waitForURL(base + ROLE_HOME[role]);
+}

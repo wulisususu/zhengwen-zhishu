@@ -7,11 +7,12 @@ import WorkspacePage from './views/WorkspacePage.vue'
 import ChatPage from './views/ChatPage.vue'
 import DocumentPage from './views/DocumentPage.vue'
 import PptHostPage from './views/PptHostPage.vue'
-import LoginPage from './views/LoginPage.vue'
+import RoleEntryPage from './features/gov-office/pages/RoleEntryPage.vue'
 import AgentDirectoryPage from './views/AgentDirectoryPage.vue'
 import PediatricQAPage from './views/PediatricQAPage.vue'
 import SettingsPage from './views/SettingsPage.vue'
 import { hasSessionToken } from './stores/auth.js'
+import { ENTRY_PATH, entryGuard } from './roleEntryGuard.js'
 import { govOfficeRoutes } from './features/gov-office/routes'
 import './style.css'
 import { setGovOfficeAdapter } from './features/gov-office/adapters'
@@ -39,7 +40,9 @@ const routes = [
   { path: '/agents/pediatric-medical-qa', component: PediatricQAPage },
   { path: '/agents/pediatric-medical-qa/:id', component: PediatricQAPage },
   { path: '/settings', component: SettingsPage },
-  { path: '/login', component: LoginPage },
+  // 不设登录页：进入时选择「起草人」或「审核人」；旧的 /login 链接统一转到角色入口
+  { path: ENTRY_PATH, component: RoleEntryPage },
+  { path: '/login', redirect: (to) => ({ path: ENTRY_PATH, query: to.query.expired ? { expired: '1' } : {} }) },
   ...govOfficeRoutes,
   { path: '/:pathMatch(.*)*', redirect: '/chat' },
 ]
@@ -49,16 +52,7 @@ const router = createRouter({
   routes,
 })
 
-const publicPaths = new Set(['/welcome', '/login'])
-
-router.beforeEach((to) => {
-  if (!publicPaths.has(to.path) && !hasSessionToken()) {
-    return { path: '/login', query: { next: to.fullPath } }
-  }
-  if (to.path === '/login' && hasSessionToken()) {
-    return typeof to.query.next === 'string' ? to.query.next : '/gov'
-  }
-})
+router.beforeEach((to) => entryGuard(to, hasSessionToken()))
 
 if (typeof window !== 'undefined') {
   const resetGov = () => {
@@ -68,9 +62,8 @@ if (typeof window !== 'undefined') {
   window.addEventListener('mqw-auth-changed', resetGov)
   window.addEventListener('mqw-auth-expired', () => {
     resetGov()
-    const current = router.currentRoute.value
-    if (current.path === '/login') return
-    router.replace({ path: '/login', query: { expired: '1', next: current.fullPath } })
+    if (router.currentRoute.value.path === ENTRY_PATH) return
+    router.replace({ path: ENTRY_PATH, query: { expired: '1' } })
   })
 }
 

@@ -7,12 +7,12 @@ import type { Actor, AskOptions, Citation, DraftChanges, ExportResult, FieldKey,
 const BASE = "/api/v1/gov";
 
 function assertSession(token: string | null) {
-  if (getSessionToken() !== token) throw new GovOfficeError("登录账号已切换，已忽略旧请求结果", "auth_changed");
+  if (getSessionToken() !== token) throw new GovOfficeError("角色已切换，已忽略旧请求结果", "auth_changed");
 }
 
 async function request(path: string, method = "GET", body?: unknown): Promise<Response> {
   const token = getSessionToken();
-  if (!token) throw new GovOfficeError("请先登录", "401");
+  if (!token) throw new GovOfficeError("请先选择角色", "401");
   const headers = new Headers({ Authorization: `Bearer ${token}` });
   const form = body instanceof FormData;
   if (body !== undefined && !form) headers.set("Content-Type", "application/json");

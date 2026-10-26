@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { getGovOfficeAdapter, GovOfficeError } from "../adapters";
 import type { Actor, RuntimeStatus } from "../types";
 import { getSessionToken } from "../../../stores/auth.js";
+import { currentEntryRole } from "../roleEntry";
 
 const NAV_PREF_KEY = "gov-office-nav-collapsed";
 
@@ -44,7 +45,11 @@ export const useGovSessionStore = defineStore("govSession", {
           adapter.getRuntimeStatus(),
           adapter.getCurrentActor(),
           adapter.listDemoActors ? adapter.listDemoActors() : Promise.resolve([] as Actor[]),
-        ]).then(([runtime, actor, demoActors]) => {
+        ]).then(async ([runtime, actor, demoActors]) => {
+          // Demo build: start as the demo identity that matches the role picked at the entry.
+          const role = currentEntryRole();
+          const target = role && !actor.roles.includes(role) ? demoActors.find((a) => a.roles.includes(role)) : undefined;
+          if (target && adapter.switchDemoActor) actor = await adapter.switchDemoActor(target.account);
           if (getSessionToken() !== token) return;
           this.runtime = runtime;
           this.actor = actor;

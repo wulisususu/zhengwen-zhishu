@@ -1,27 +1,24 @@
 // Real browser, real JWT and real policy storage; no API interception.
+// No login page: identities enter through /entry (审核人 maintains the library, 起草人 cites it).
 import assert from "node:assert/strict";
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { launchBrowser } from "./helpers.mjs";
+import { enterAsRole, launchBrowser } from "./helpers.mjs";
 const base = process.env.GOV_E2E_BASE || "http://127.0.0.1:4318";
 const output = resolve(process.env.GOV_E2E_OUTPUT || "../.gov-runtime/policy-evidence");
-const auth = JSON.parse(readFileSync(process.env.GOV_E2E_ACCOUNTS || "../.gov-runtime/accounts.json", "utf8"));
 const source = process.env.GOV_E2E_POLICY_SOURCE;
 assert.ok(source, "GOV_E2E_POLICY_SOURCE must be an actual official HTML document");
 mkdirSync(output, { recursive: true });
 const browser = await launchBrowser(); const contexts = []; const errors = [];
-async function login(name) {
+async function enter(role) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   contexts.push(context); const page = await context.newPage(); page.setDefaultTimeout(20000);
   page.on("pageerror", error => errors.push(String(error)));
-  await page.goto(base + "/login");
-  await page.getByPlaceholder("请输入账号").fill(name);
-  await page.getByPlaceholder("请输入密码").fill(auth.password);
-  await page.getByRole("button", { name: "登录", exact: true }).click(); await page.waitForURL(base + "/gov");
+  await enterAsRole(page, base, role);
   return page;
 }
 try {
-  const admin = await login("gov_reviewer"); await admin.goto(base + "/gov/library");
+  const admin = await enter("reviewer"); await admin.goto(base + "/gov/library");
   await admin.getByText("管理员导入政策", { exact: true }).click();
   await admin.getByLabel("政策原文网址", { exact: true }).fill("https://www.gov.cn/zhengce/content/202506/content_7026294.htm");
   await admin.getByLabel("导入政策标题", { exact: true }).fill("政务数据共享条例");
@@ -30,7 +27,7 @@ try {
   await admin.getByRole("button", { name: "导入政策", exact: true }).click();
   const imported = await (await importing).json(); assert.equal(imported.code, 0, imported.message);
   const policyId = imported.data.policy.id; assert.equal(imported.data.policy.verified_status, "unverified");
-  const writer = await login("gov_writer"); await writer.goto(base + "/gov/draft");
+  const writer = await enter("drafter"); await writer.goto(base + "/gov/draft");
   await writer.getByLabel("新建文稿标题", { exact: true }).fill("政策引用验收通知-" + Date.now());
   const creating = writer.waitForResponse(r => r.url().endsWith("/gov/documents") && r.request().method() === "POST");
   await writer.getByRole("button", { name: "创建文稿", exact: true }).click();

@@ -1058,7 +1058,7 @@ async function downloadDoc(task) {
     URL.revokeObjectURL(url)
   } catch (error) {
     console.error('Download document failed:', error)
-    task.error = '下载失败，请重新登录后再试。'
+    task.error = '下载失败，请重新选择角色后再试。'
   }
 }
 

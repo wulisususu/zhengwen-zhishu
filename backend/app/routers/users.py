@@ -9,7 +9,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User
+from app.models import ROLE_ENTRY_PREFIX, User
 from app.schemas import UserCreate, UserOut, UserSelfUpdate
 from app.deps import get_current_user, require_admin, hash_password
 from app.errors import ok, fail, ERR_PARAM, ERR_NOT_FOUND
@@ -29,6 +29,8 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 
 @router.post("")
 def create_user(body: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    if body.username.lower().startswith(ROLE_ENTRY_PREFIX):
+        return fail(ERR_PARAM, "username is reserved")
     if db.query(User).filter(User.username == body.username).first():
         return fail(ERR_PARAM, "username already exists")
     user = User(
@@ -61,6 +63,9 @@ def update_user(
 
     # 只有管理员能改角色
     wants_role_change = body.is_admin is not None and bool(body.is_admin) != bool(target.is_admin)
+    if target.gov_role and (body.is_admin is True or body.password):
+        raise HTTPException(status_code=403, detail="角色入口账号不能设置密码或管理员权限")
+
     if wants_role_change:
         if not is_admin:
             raise HTTPException(status_code=403, detail="需要管理员权限才能修改角色")

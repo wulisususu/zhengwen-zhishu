@@ -143,7 +143,7 @@ function parseRetryAfter(value: string | null): number | undefined {
 function httpFailure(status: number, retryAfter: string | null): WorkflowError {
   const retryAfterSeconds = parseRetryAfter(retryAfter);
   const table: Record<number, WorkflowError> = {
-    401: { code: "AUTHENTICATION_REQUIRED", message: "登录状态已失效，请重新登录", retryable: false, httpStatus: 401 },
+    401: { code: "AUTHENTICATION_REQUIRED", message: "会话已失效，请重新选择角色", retryable: false, httpStatus: 401 },
     409: { code: "IDEMPOTENT_TASK_RUNNING", message: "任务仍在生成", retryable: true, httpStatus: 409 },
     413: { code: "REQUEST_TOO_LARGE", message: "请求内容过大", retryable: false, httpStatus: 413 },
     422: { code: "INVALID_REQUEST", message: "生成参数不合法", retryable: false, httpStatus: 422 },
@@ -344,7 +344,7 @@ export class HttpPptWorkflowAdapter implements PptWorkflowAdapter {
       await this.options.onUnauthorized?.();
           yield makeSyntheticEvent(provisionalTaskId, input.projectId, input.chatId, 0, "task.started", { requestId, pageCount });
       yield makeSyntheticEvent(provisionalTaskId, input.projectId, input.chatId, 1, "task.failed", {
-        error: { code: "AUTHENTICATION_REQUIRED", message: "登录状态已失效，请重新登录", retryable: false, httpStatus: 401 },
+        error: { code: "AUTHENTICATION_REQUIRED", message: "会话已失效，请重新选择角色", retryable: false, httpStatus: 401 },
       });
       return;
     }
@@ -668,7 +668,7 @@ export class HttpPptWorkflowAdapter implements PptWorkflowAdapter {
     const token = await this.options.getAccessToken();
     if (!token) {
       await this.options.onUnauthorized?.();
-      throw new Error("登录状态已失效，请重新登录");
+      throw new Error("会话已失效，请重新选择角色");
     }
     const downloadUrl = absoluteUrl(this.options.baseUrl, artifact.downloadUrl);
     if (!downloadUrl) {

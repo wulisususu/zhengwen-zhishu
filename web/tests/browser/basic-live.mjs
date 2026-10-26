@@ -1,29 +1,25 @@
 // Real browser + real JWT + real HTTP. No route interception or fake token.
+// No login page: each identity enters through /entry by picking 起草人 or 审核人.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { launchBrowser } from "./helpers.mjs";
+import { enterAsRole, launchBrowser } from "./helpers.mjs";
 
 const base = process.env.GOV_E2E_BASE || "http://127.0.0.1:4318";
 const output = resolve(process.env.GOV_E2E_OUTPUT || "../.gov-runtime/evidence");
-const credentials = JSON.parse(readFileSync(process.env.GOV_E2E_ACCOUNTS || "../.gov-runtime/accounts.json", "utf8"));
 mkdirSync(output, { recursive: true });
 const browser = await launchBrowser();
 const contexts = [];
 const errors = [];
 let requestCount = 0;
-async function login(username) {
+async function enter(role) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   contexts.push(context);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
   page.on("pageerror", (err) => errors.push(String(err)));
   page.on("request", (req) => { if (req.url().includes("/api/v1/gov/")) requestCount++; });
-  await page.goto(base + "/login");
-  await page.getByPlaceholder("请输入账号").fill(username);
-  await page.getByPlaceholder("请输入密码").fill(credentials.password);
-  await page.getByRole("button", { name: "登录", exact: true }).click();
-  await page.waitForURL(base + "/gov");
+  await enterAsRole(page, base, role);
   return page;
 }
 async function mutation(page, suffix, run) {
@@ -39,8 +35,15 @@ async function submit(page) {
 }
 
 try {
-  const writer = await login("gov_writer");
-  await writer.goto(base + "/gov/draft");
+  const entry = await (await browser.newContext()).newPage();
+  contexts.push(entry.context());
+  await entry.goto(base + "/gov");
+  await entry.waitForURL(base + "/entry");
+  assert.equal(await entry.locator("input[type=password]").count(), 0);
+  assert.deepEqual(await entry.locator("button[data-role]").evaluateAll((els) => els.map((e) => e.dataset.role)), ["drafter", "reviewer"]);
+  await entry.screenshot({ path: join(output, "entry.png"), fullPage: true });
+
+  const writer = await enter("drafter");
   const title = `基础联调通知-${Date.now()}`;
   await writer.getByLabel("新建文稿标题", { exact: true }).fill(title);
   const created = await mutation(writer, "/documents", () => writer.getByRole("button", { name: "创建文稿", exact: true }).click());
@@ -53,6 +56,10 @@ try {
   await mutation(writer, created.id, () => writer.getByRole("button", { name: "保存草稿", exact: true }).click());
   await writer.reload();
   assert.match(await writer.getByLabel("正文编辑", { exact: true }).inputValue(), /材料核对/);
+  const reviewer = await enter("reviewer");
+  await reviewer.goto(base + path);   // drafts stay private until submitted
+  await reviewer.getByText("文稿不存在或无权访问", { exact: true }).waitFor();
+  assert.equal(await reviewer.getByLabel("正文编辑", { exact: true }).count(), 0);
   await writer.getByRole("button", { name: "添加材料", exact: true }).click();
   const upload = writer.waitForResponse((res) => res.url().endsWith("/api/v1/gov/materials") && res.request().method() === "POST");
   await writer.getByLabel("上传材料", { exact: true }).setInputFiles({ name: "联调材料.txt", mimeType: "text/plain", buffer: Buffer.from("测试材料：本周完成材料核对。") });
@@ -63,7 +70,6 @@ try {
   await writer.getByText("文稿审核中，编辑已锁定", { exact: false }).waitFor();
   assert.equal(await writer.getByLabel("正文编辑", { exact: true }).isDisabled(), true);
 
-  const reviewer = await login("gov_reviewer");
   await reviewer.goto(base + "/gov/review-center");
   await reviewer.getByRole("row").filter({ hasText: title }).click();
   await reviewer.getByLabel("审核意见", { exact: true }).fill("请补充承办要求");
@@ -71,6 +77,11 @@ try {
 
   await writer.reload();
   await writer.getByLabel("正文编辑", { exact: true }).fill("一、工作安排\n请各单位核对材料。\n二、承办要求\n综合处负责汇总。");
+  // 批准前后端会重跑双层审校：补齐发文字号、成文日期与版记，否则按要素缺失拦下
+  await writer.getByLabel("发文字号", { exact: true }).fill("测办发〔2026〕8号");
+  await writer.getByLabel("成文日期", { exact: true }).fill("2026年10月26日");
+  await writer.getByLabel("印发机关", { exact: true }).fill("联调测试办公室");
+  await writer.getByLabel("印发日期", { exact: true }).fill("2026年10月26日");
   await mutation(writer, created.id, () => writer.getByRole("button", { name: "保存草稿", exact: true }).click());
   await submit(writer);
   await reviewer.reload();
@@ -88,13 +99,9 @@ try {
   await download.saveAs(docx);
   assert.ok(statSync(docx).size > 1000);
 
-  const other = await login("gov_other");
-  await other.goto(base + path);
-  await other.getByText("文稿不存在或无权访问", { exact: true }).waitFor();
-  assert.equal(await other.getByLabel("正文编辑", { exact: true }).count(), 0);
   assert.ok(requestCount >= 15);
   assert.deepEqual(errors, []);
-  const result = { passed: true, documentId: created.id, realGovRequests: requestCount, pageErrors: errors, workflow: ["real-login", "create", "save", "reload", "upload", "submit", "return", "revise", "resubmit", "approve", "docx-download", "cross-user-denied"] };
+  const result = { passed: true, documentId: created.id, realGovRequests: requestCount, pageErrors: errors, workflow: ["role-entry", "create", "save", "reload", "draft-hidden-from-reviewer", "upload", "submit", "return", "revise", "resubmit", "approve", "docx-download"] };
   writeFileSync(join(output, "result.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 } catch (error) {

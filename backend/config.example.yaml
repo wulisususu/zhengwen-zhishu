@@ -19,6 +19,7 @@ model:
   # offline       : 只允许本机 loopback；无法完成时明确报错，不会静默改用云端
   # 注意：这里只是应用层开关，不能证明设备没有外网流量；真正的断网需在
   #      操作系统层（iptables/nftables/防火墙）限制。可用环境变量 AI_BOX_MODEL_MODE 覆盖。
+  # 公文起草 / 政策问答 / 文稿初稿生成走云端政务模型 API（EXTERNAL_MODEL_*，见 .env.example），须 cloud_allowed。
   mode: cloud_allowed
 
 # ── 管理员引导：首次启动时若没有任何 admin，则把该用户名提升为管理员 ──

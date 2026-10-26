@@ -58,7 +58,8 @@ BM25 的词权重依赖语料规模：库里只有一两份小政策时分数整
 4. **库外问题闸门**：问题实义词在政策库中的覆盖率 < 35% 时不生成结论。
 5. **模型拒答识别**：模型明确表示「未作规定」时转为无依据。
 
-模型调用经 `llm_chat`，遵守 `model.mode`（offline / intranet / cloud_allowed）；被拒绝或不可用时退回原文摘录，
+模型调用经 `llm_chat` 走既有云端政务模型 API（`EXTERNAL_MODEL_*`，与设置页「外部模型」同一份配置），不使用本地模型；
+须 `model.mode: cloud_allowed`，offline / intranet 下拒绝且不发请求。被拒绝、未配置密钥或调用失败时退回原文摘录，
 `meta.generated_by` 如实标注 `llm` / `extractive*` / `none`，不把摘录冒充模型输出。
 
 ## 5. 接口

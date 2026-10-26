@@ -1,4 +1,4 @@
-"""Reuse the guarded model transport, without canned conversational fallbacks."""
+"""Draft generation through the shared cloud model client, without canned conversational fallbacks."""
 import json
 from pathlib import Path
 from fastapi import HTTPException
@@ -6,17 +6,19 @@ from app.models import File
 from .models import GovDocumentMaterial
 from . import service
 
+SYSTEM_PROMPT = "你负责起草内部公文初稿。仅根据用户提供的事实和材料写正文，未知内容标注【待补充】，不编造政策依据、日期或数字。"
+
 
 def generate_text(prompt: str) -> dict:
-    from app.services.llm_client import _ollama_settings, _guarded_post, _clean_model_text
-    url, model, timeout, max_tokens, temperature = _ollama_settings(4096)
-    response = _guarded_post(url + "/chat/completions", purpose="chat_completions", timeout=(3, min(max(timeout, 1), 90)), json={
-        "model": model, "messages": [{"role": "system", "content": "你负责起草内部公文初稿。仅根据用户提供的事实和材料写正文，未知内容标注【待补充】，不编造政策依据、日期或数字。"}, {"role": "user", "content": prompt}],
-        "max_tokens": max_tokens, "temperature": temperature, "stream": False,
-    })
-    if response.status_code != 200:
+    """Same cloud API, configuration and egress check as /gongwen and /policy (app.services.llm_chat)."""
+    import requests
+    from app.services import llm_chat
+    from app.services.llm_client import _clean_model_text
+    try:
+        text = llm_chat.chat([{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+                             max_tokens=4096, temperature=0.2, timeout=90)
+    except requests.HTTPError:
         return {"error": "model unavailable"}
-    text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
     return {"text": _clean_model_text(text)}
 
 

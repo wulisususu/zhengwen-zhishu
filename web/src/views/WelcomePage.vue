@@ -10,7 +10,7 @@
         <div class="mb-7">
           <div class="gov-badge">
             <span class="gov-badge-dot"></span>
-            起草 · 解读 · 审校全程留痕
+            云端政务模型 API · 全程留痕
           </div>
           <h1 class="mt-4 text-[30px] font-semibold leading-[40px] tracking-[-0.02em] text-[#111827] sm:text-[38px] sm:leading-[48px]">
             政务办公智能体
@@ -19,7 +19,7 @@
             公文起草 · 政策解读 · 文稿撰写 · 提炼总结
           </p>
           <p class="mt-1.5 text-[13.5px] leading-6 text-[#98A2B3]">
-            模型接入方式以系统配置为准；生成内容须人工核实，每一次生成全程留痕，可核可溯。
+            公文生成与政策问答调用云端政务模型 API，内容会发送至该服务；生成内容须人工核实，每一次生成全程留痕，可核可溯。
           </p>
         </div>
 

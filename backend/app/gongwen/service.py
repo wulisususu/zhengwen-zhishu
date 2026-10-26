@@ -3,7 +3,8 @@
 关键取舍：
 - 模型只负责「正文语义」，标题、主送、署名、日期等结构字段来自表单，不交给模型猜；
 - 模型输出解析失败时退回骨架稿，并在 meta 里如实标注 generated_by，不冒充模型输出；
-- 直接调用 OpenAI 兼容接口，绕开 llm_client 里的闲聊兜底逻辑（那些兜底会污染公文正文）。
+- 模型经 app.services.llm_chat 调用既有云端政务 API（与政策问答、文稿初稿生成同一客户端、配置与出口检查），
+  绕开 llm_client 里的闲聊兜底逻辑（那些兜底会污染公文正文）；不使用本地模型。
 """
 from __future__ import annotations
 
@@ -13,7 +14,6 @@ import time
 from datetime import date
 from typing import Any
 
-import requests
 
 from .checker import check, stats
 from .schema import (
@@ -25,10 +25,6 @@ from .schema import (
     summarize,
 )
 
-DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1"
-DEFAULT_MODEL = "qwen2.5:7b"
-DEFAULT_TIMEOUT = 180
-DEFAULT_MAX_TOKENS = 1600
 DEFAULT_TEMPERATURE = 0.35
 
 SYSTEM_PROMPT = (
@@ -64,15 +60,6 @@ _CN = "一二三四五六七八九十"
 
 
 # ---------------------------------------------------------------- 配置
-
-def _cfg() -> dict:
-    try:
-        from app.config import get_config
-
-        return (get_config() or {}).get("llm", {}) or {}
-    except Exception:
-        return {}
-
 
 def _llm_settings() -> dict[str, Any]:
     from app.services import llm_chat

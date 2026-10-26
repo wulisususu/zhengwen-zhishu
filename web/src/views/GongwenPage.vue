@@ -8,7 +8,7 @@
         <div class="mb-3">
           <h1 class="text-[17px] font-semibold text-[#111827]">公文起草</h1>
           <p class="mt-1 text-[12.5px] leading-5 text-[#98A2B3]">
-            填写要素后由模型生成正文，按 GB/T 9704 版式成文
+            填写要素后由云端政务模型 API 生成正文，按 GB/T 9704 版式成文
           </p>
         </div>
 
@@ -97,7 +97,7 @@
           {{ loading ? `生成中 ${elapsed}s` : (result ? '重新生成' : '生成正文') }}
         </button>
         <p class="mt-2 text-center text-[11.5px] leading-4 text-[#A8B2C1]">
-          模型调用遵守系统出口策略；生成内容须人工核实
+          调用云端政务模型 API（内容会发送至该服务），遵守系统出口策略；生成内容须人工核实
         </p>
       </aside>
 
@@ -135,8 +135,8 @@
 
           <div v-else-if="loading" class="flex h-full flex-col items-center justify-center">
             <Loader2 class="size-8 animate-spin text-[#2563A8]" :stroke-width="1.6" />
-            <p class="mt-3 text-[13.5px] text-[#475467]">模型正在成文，已等待 {{ elapsed }} 秒</p>
-            <p class="mt-1 text-[12px] text-[#98A2B3]">通常需要 15–30 秒，视模型部署方式而定</p>
+            <p class="mt-3 text-[13.5px] text-[#475467]">云端模型正在成文，已等待 {{ elapsed }} 秒</p>
+            <p class="mt-1 text-[12px] text-[#98A2B3]">云端模型生成中，通常需要 10–30 秒</p>
           </div>
 
           <!-- A4 纸张预览 -->

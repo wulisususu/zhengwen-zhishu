@@ -1,11 +1,16 @@
-"""OpenAI 兼容的最小 chat 客户端。
+"""公文起草、政策问答与文稿初稿生成共用的云端模型客户端。
 
-公文起草与政策解读都需要「直接调模型、不经过闲聊兜底」，因此单独抽这一层：
-llm_client 里的考试题/算术/创作兜底会污染正式文本，不适合法律与公文场景。
+架构：本项目不使用本地 NPU 推理。模型一律经既有的云端（OpenAI 兼容）政务 API 调用，
+地址、模型名、密钥与超时取自 model_config.get_35b_config() —— 与设置页「外部模型」
+同一份配置（EXTERNAL_MODEL_BASE_URL / EXTERNAL_MODEL_NAME / EXTERNAL_MODEL_API_KEY，
+或 DEEPSEEK_API_KEY；可写在环境变量或后端 .env）。本模块不启动、不切换任何本地模型。
 
-出口策略：同步与流式两条路在发请求前都经过 model_policy.guard_model_url，
-offline 只允许本机、intranet 只允许内网；被拒绝时抛 ModelPolicyError，
-不发出任何请求，由调用方按各自规则降级（起草退回骨架稿、问答退回原文摘录）。
+与 llm_client 分开，是因为后者的考试题 / 算术 / 创作兜底会污染公文与政策文本。
+
+出口策略：同步与流式两条路在发请求前都经过 model_policy.guard_model_url。云端地址只在
+model.mode=cloud_allowed 时放行；offline / intranet 下拒绝，抛 ModelPolicyError，不发请求。
+未配置密钥时同样不发请求，抛 ModelNotConfigured。调用方按各自规则降级（起草退回骨架稿、
+问答退回原文摘录、文稿初稿生成返回 503），不会退回本地模型。
 """
 from __future__ import annotations
 
@@ -16,41 +21,48 @@ import requests
 
 from app.services.model_policy import guard_model_url
 
-DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1"
-DEFAULT_MODEL = "qwen2.5:7b"
-DEFAULT_TIMEOUT = 180
 DEFAULT_MAX_TOKENS = 1600
 DEFAULT_TEMPERATURE = 0.3
+#: 交互请求的超时上限（秒）；配置里的外部模型超时可能长达 600 秒
+MAX_TIMEOUT = 180
 
 
-def _cfg() -> dict:
-    try:
-        from app.config import get_config
-
-        return (get_config() or {}).get("llm", {}) or {}
-    except Exception:
-        return {}
+class ModelNotConfigured(RuntimeError):
+    """云端模型 API 未配置（缺密钥），请求未发出。"""
 
 
-def build_endpoint(base_url: str) -> str:
-    base = (base_url or DEFAULT_BASE_URL).rstrip("/")
-    if base.endswith("/chat/completions"):
-        return base
-    if base.endswith("/v1"):
-        return base + "/chat/completions"
-    if "/v1/" in base:
-        return base
-    return base + "/v1/chat/completions"
+def _endpoint(base_url: str) -> str:
+    base = (base_url or "").rstrip("/")
+    return base if base.endswith("/chat/completions") else base + "/chat/completions"
+
+
+def _conf() -> dict[str, Any]:
+    from app.services.model_config import get_35b_config
+
+    cfg = get_35b_config()
+    return {
+        "url": _endpoint(cfg["base_url"]),
+        "model": cfg["model"],
+        "timeout": min(int(cfg["timeout_seconds"]), MAX_TIMEOUT),
+        "max_tokens": DEFAULT_MAX_TOKENS,
+        "api_key": cfg["api_key"],
+    }
 
 
 def settings() -> dict[str, Any]:
-    cfg = _cfg()
-    return {
-        "url": build_endpoint(str(cfg.get("ollama_base_url") or DEFAULT_BASE_URL)),
-        "model": str(cfg.get("ollama_model") or DEFAULT_MODEL),
-        "timeout": int(cfg.get("ollama_timeout_seconds") or DEFAULT_TIMEOUT),
-        "max_tokens": int(cfg.get("ollama_max_tokens") or DEFAULT_MAX_TOKENS),
-    }
+    """当前云端模型设置（不含密钥），供调用方记录模型名。"""
+    return {k: v for k, v in _conf().items() if k != "api_key"}
+
+
+def _post(payload: dict, *, purpose: str, timeout: int | None, stream: bool = False):
+    conf = _conf()
+    url = guard_model_url(conf["url"], purpose=purpose)
+    if not conf["api_key"]:
+        raise ModelNotConfigured("云端模型 API 未配置密钥（EXTERNAL_MODEL_API_KEY 或 DEEPSEEK_API_KEY），未发送请求")
+    body = {"model": conf["model"], **payload}
+    body["max_tokens"] = body.get("max_tokens") or conf["max_tokens"]
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {conf['api_key']}"}
+    return requests.post(url, json=body, headers=headers, timeout=timeout or conf["timeout"], stream=stream)
 
 
 def chat(
@@ -61,16 +73,8 @@ def chat(
     timeout: int | None = None,
 ) -> str:
     """同步调用，返回纯文本；异常直接抛出，由调用方决定降级策略。"""
-    conf = settings()
-    payload = {
-        "model": conf["model"],
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens or conf["max_tokens"],
-        "stream": False,
-    }
-    url = guard_model_url(conf["url"], purpose="llm_chat")
-    resp = requests.post(url, json=payload, timeout=timeout or conf["timeout"])
+    resp = _post({"messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": False},
+                 purpose="llm_chat", timeout=timeout)
     resp.raise_for_status()
     data = resp.json()
     choices = data.get("choices") or []
@@ -92,20 +96,10 @@ def stream(
 ):
     """流式调用，逐块 yield 文本增量。
 
-    上游不支持 SSE（部分端侧服务把 stream 参数忽略掉）时不报错，
-    而是整体取回后一次性 yield —— 前端照旧按流式渲染，
-    只是「逐字出现」会退化成「一次性出现」，不会中断链路。
+    上游不支持 SSE 时不报错，而是整体取回后一次性 yield —— 前端照旧按流式渲染。
     """
-    conf = settings()
-    payload = {
-        "model": conf["model"],
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens or conf["max_tokens"],
-        "stream": True,
-    }
-    url = guard_model_url(conf["url"], purpose="llm_chat_stream")
-    resp = requests.post(url, json=payload, timeout=timeout or conf["timeout"], stream=True)
+    resp = _post({"messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": True},
+                 purpose="llm_chat_stream", timeout=timeout, stream=True)
     resp.raise_for_status()
 
     ctype = (resp.headers.get("Content-Type") or "").lower()
@@ -144,10 +138,5 @@ def stream(
                 text = delta.get("content")
                 if text:
                     yield str(text)
-                continue
-            # 兼容端侧服务的简化帧：{"text": "..."} / {"done": true}
-            simple = obj.get("text")
-            if simple:
-                yield str(simple)
     finally:
         resp.close()

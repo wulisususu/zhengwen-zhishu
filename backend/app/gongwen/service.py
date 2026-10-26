@@ -30,6 +30,9 @@ DEFAULT_TEMPERATURE = 0.35
 SYSTEM_PROMPT = (
     "你是党政机关公文写作助手，熟悉《党政机关公文处理工作条例》和 GB/T 9704-2012。"
     "严格按用户指定的文种写作，语言庄重、简明、务实。"
+    # 与文稿「生成初稿」（app.gov.generation）同一条规则
+    "只依据用户给出的事由、补充要求和起草依据写作；用户没有给出的数字、金额、比例、日期、时限、名单、"
+    "政策名称和文号一律写作【待补充】，不得编造。"
     "只输出公文正文，不输出标题、不输出主送机关、不输出署名和日期、不输出任何解释或思考过程。"
 )
 
@@ -52,7 +55,8 @@ FALLBACK_ENDING = {
 
 REPAIR_PROMPT = (
     "上一次输出只有标题、缺少正文内容。请保留已有的标题结构，在每个标题下面补充"
-    "一个不少于 50 字的自然段，写清具体要求、责任主体和完成时限。"
+    "一个不少于 50 字的自然段，写清具体要求、责任主体和完成时限；"
+    "用户没有给出的时限、数字和名单写作【待补充】，不得编造。"
     "仍然只输出正文，不要输出任何解释。"
 )
 
@@ -236,7 +240,12 @@ def _too_thin(paras: list[BodyPara]) -> bool:
         return True
     if _body_chars(paras) < 150:
         return True
-    substantive = [p for p in paras if p.level == 0 and not p.text.endswith(("特此通知。", "请批复。", "特此报告。", "特此函告。"))]
+    substantive = [
+        p for p in paras
+        if not p.text.endswith(("特此通知。", "请批复。", "特此报告。", "特此函告。"))
+        # 「（一）小标题。正文……」：小标题后还有句子，也算实质正文
+        and (p.level == 0 or "。" in p.text.rstrip("。"))
+    ]
     return len(substantive) < 2
 
 

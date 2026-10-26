@@ -1,0 +1,5 @@
+# OpenDataLoader PDF spike — NOT part of requirements.txt until the go/no-go review.
+# Install into its own venv:  python3 -m venv .venv-pdf && .venv-pdf/bin/pip install -r requirements-pdf.txt
+# Runtime prerequisite: Java (JRE) 11+ on PATH (the wheel bundles a ~24 MB CLI jar).
+# Do NOT install the [hybrid] extra (docling + easyocr download large local models).
+opendataloader-pdf==2.5.15

@@ -1,10 +1,10 @@
 """Public policy library API for the gov-office frontend. Contract: docs/policy-api.md.
 
-POST /gov/policies/import        admin   URL or uploaded file, synchronous
+POST /gov/policies/import        reviewer (admin or role-entry 审核人)   URL or uploaded file, synchronous
 GET  /gov/policies               login   filter by keyword / doc_number / issuer / status
 POST /gov/policies/search        login   clause search (default status=current)
 POST /gov/citations/batch        login   ids[] -> Citation[] (GovOfficeAdapter.getCitations)
-POST /gov/policies/{id}/verify   admin   human verification of status and metadata
+POST /gov/policies/{id}/verify   reviewer (admin or role-entry 审核人)   human verification of status and metadata
 """
 from typing import Literal
 
@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from app.deps import get_current_user, require_admin
+from app.deps import get_current_user
+from app.gov.service import require_gov_reviewer   # admin or the role-entry 审核人
 from app.errors import ERR_NOT_FOUND, ERR_PARAM, ERR_POLICY, fail, ok
 from app.models import User
 from app.services.policy import errors as policy_errors
@@ -44,7 +45,7 @@ async def import_policy(
     issuer: str | None = Form(None, max_length=200),
     publish_date: str | None = Form(None, max_length=20),
     file: UploadFile | None = File(None),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_gov_reviewer),
     library: PolicyLibraryService = Depends(get_policy_library),
 ):
     data = None
@@ -135,7 +136,7 @@ class VerifyRequest(BaseModel):
 def verify_policy(
     policy_id: int,
     body: VerifyRequest,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_gov_reviewer),
     library: PolicyLibraryService = Depends(get_policy_library),
 ):
     fields = body.model_dump(exclude={"status", "status_note"}, exclude_none=True)

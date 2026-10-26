@@ -82,7 +82,7 @@ export async function downloadLegacyArtifact(options: DownloadLegacyArtifactOpti
 
   if (response.status === 401) {
     await options.onUnauthorized?.();
-    throw new LegacyDownloadError("AUTHENTICATION_REQUIRED", "登录状态已失效，请重新登录");
+    throw new LegacyDownloadError("AUTHENTICATION_REQUIRED", "会话已失效，请重新选择角色");
   }
   if (!response.ok) {
     throw new LegacyDownloadError("DOWNLOAD_HTTP_ERROR", `PPT 下载失败（HTTP ${response.status}）`);

@@ -9,7 +9,8 @@ import { useAuthStore } from "../../../../stores/auth.js";
 import { useRouter } from "vue-router";
 const auth = useAuthStore();
 const router = useRouter();
-function logout() { auth.clearSession(); router.push('/login'); }
+/** No login page: leaving clears the role session and returns to the role entry. */
+function switchRole() { auth.clearSession(); router.push('/entry'); }
 
 /** Collapse the navigation automatically when the viewport is narrower than this. */
 const props = withDefaults(defineProps<{ autoCollapseBelow?: number }>(), { autoCollapseBelow: 0 });
@@ -25,6 +26,8 @@ const pendingCount = computed(() => {
   if (!actor?.roles.includes("reviewer")) return 0;
   return documents.list.filter((d) => d.status === "pending" && d.authorAccount !== actor.account).length;
 });
+const ROLE_SHORT = { drafter: "起草人", reviewer: "审核人" } as const;
+const roleLabel = computed(() => session.actor ? session.actor.roles.map((r) => ROLE_SHORT[r]).join("、") || "无角色" : "读取中…");
 
 onMounted(() => {
   session.load();
@@ -47,9 +50,9 @@ onMounted(() => {
     </aside>
     <main class="gov-shell__main">
       <div v-if="!session.isDemo" class="gov-banner gov-banner--info" style="display:flex;gap:12px;align-items:center;padding:6px 16px;font-size:12px;flex-wrap:wrap">
-        <span>{{ session.actor?.name || '读取真实身份中…' }} · 政策库已接入，自动审校尚未接入</span>
+        <span>当前角色：{{ roleLabel }}（角色入口，非身份认证） · 政策库已接入，自动审校尚未接入</span>
         <RouterLink to="/welcome">旧版功能入口</RouterLink>
-        <button type="button" class="gov-btn gov-btn--text gov-btn--sm" @click="logout">退出登录</button>
+        <button type="button" class="gov-btn gov-btn--text gov-btn--sm" @click="switchRole">切换角色</button>
       </div>
       <div v-if="session.error" class="gov-banner gov-banner--danger" role="alert">{{ session.error }}</div>
       <slot />

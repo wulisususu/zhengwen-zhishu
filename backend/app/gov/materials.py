@@ -60,7 +60,7 @@ async def upload_material(file: UploadFile = Upload(...), user: User = Depends(g
 def download(file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rec = db.get(File, file_id)
     allowed = rec is not None and rec.user_id == user.id
-    if rec is not None and user.is_admin and not allowed:
+    if rec is not None and service.is_reviewer(user) and not allowed:
         allowed = db.query(GovDocumentMaterial).join(GovDocument).filter(GovDocumentMaterial.file_id == file_id, GovDocument.status != "draft").first() is not None
     if not allowed or not rec or not Path(rec.filepath).is_file():
         raise HTTPException(404, "材料不存在或无权下载")

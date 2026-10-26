@@ -168,6 +168,8 @@ def _run_startup_migrations() -> None:
 
         # --- 最小角色控制：users.is_admin（SQLite 无法加 NOT NULL 列，用默认值兜住旧数据）---
         _add_column_if_missing(conn, "users", "is_admin", "is_admin BOOLEAN NOT NULL DEFAULT 0")
+        # 角色入口账号标记（app/gov/entry.py）；必须先于管理员引导，引导时要排除这些账号
+        _add_column_if_missing(conn, "users", "gov_role", "gov_role VARCHAR(16)")
         _bootstrap_admin(conn)
 
 
@@ -190,13 +192,14 @@ def _bootstrap_admin(conn) -> None:
             username = ""
         username = username or str(os.getenv("ADMIN_USERNAME") or "").strip()
         if username:
-            row = conn.exec_driver_sql("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+            row = conn.exec_driver_sql("SELECT id FROM users WHERE username = ? AND gov_role IS NULL", (username,)).fetchone()
             if row is None:
-                logger.warning("security.admin_username=%s 不存在，跳过管理员引导", username)
+                logger.warning("security.admin_username=%s 不存在或是角色入口账号，跳过管理员引导", username)
                 return
             admin_id = row[0]
         else:
-            row = conn.exec_driver_sql("SELECT id FROM users ORDER BY id ASC LIMIT 1").fetchone()
+            # 角色入口账号无密码、任何访问者都能进入，绝不能被引导成管理员
+            row = conn.exec_driver_sql("SELECT id FROM users WHERE gov_role IS NULL ORDER BY id ASC LIMIT 1").fetchone()
             if row is None:
                 return  # 还没有任何用户，等注册后再引导
             admin_id = row[0]

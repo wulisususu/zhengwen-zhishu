@@ -1,6 +1,6 @@
 <template>
   <main class="flex h-dvh flex-col overflow-hidden bg-[#F5F7FB] text-black">
-    <AppHeader title="" subtitle="知识库" @goHome="router.push('/')" @logout="router.push('/login')" />
+    <AppHeader title="" subtitle="知识库" @goHome="router.push('/')" @logout="router.push('/entry')" />
 
     <div class="flex min-h-0 flex-1">
       <aside class="hidden w-[220px] shrink-0 border-r border-[#E6EAF2] bg-[rgba(255,255,255,0.92)] px-3 py-4 shadow-[0_2px_10px_rgba(16,24,40,0.04)] backdrop-blur-sm md:flex md:min-h-0 md:flex-col">

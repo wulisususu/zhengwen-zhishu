@@ -5,6 +5,10 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+# 角色入口账号的保留前缀：注册与管理员建号都不能使用（见 app/gov/entry.py）
+ROLE_ENTRY_PREFIX = "role-entry-"
+
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -12,6 +16,8 @@ class User(Base):
     password_hash = Column(String(256), nullable=False)
     nickname = Column(String(64), default="")
     is_admin = Column(Boolean, default=False, nullable=False, server_default="0")
+    # 角色入口账号（起草人/审核人）专用："drafter" / "reviewer"；普通账号为 NULL。见 app/gov/entry.py
+    gov_role = Column(String(16), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     conversations = relationship("Conversation", back_populates="user")
 

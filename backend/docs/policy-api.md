@@ -79,11 +79,11 @@ T1 字段：`id, source, remote_id, title, doc_number, issuer, publish_date(YYYY
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| POST | `/gov/policies/import` | 管理员 | multipart 表单：`url` 或 `file` 二选一，可选 `source_url`、`title`、`doc_number`、`issuer`、`publish_date`。**同步返回** `{policy, created_new_version, superseded_id, clause_count, needs_review_count}` |
+| POST | `/gov/policies/import` | 审核人（管理员或角色入口的审核人） | multipart 表单：`url` 或 `file` 二选一，可选 `source_url`、`title`、`doc_number`、`issuer`、`publish_date`。**同步返回** `{policy, created_new_version, superseded_id, clause_count, needs_review_count}` |
 | GET | `/gov/policies` | 登录 | 筛选：`keyword`、`doc_number`、`issuer`、`status`（可重复）、`include_history`、`url`、`page`、`page_size` |
 | POST | `/gov/policies/search` | 登录 | `{query, statuses?, limit, include_history}`。**默认只检索 `current`**，其他状态必须显式传入；每条结果都带 `status` |
 | POST | `/gov/citations/batch` | 登录 | `{ids: string[]}` → `{citations: Citation[], missing: string[]}`，按传入顺序返回 |
-| POST | `/gov/policies/{id}/verify` | 管理员 | `{status, status_note?, title?, doc_number?, issuer?, publish_date?, effective_date?, expire_date?}`，记录 `verified_by` 和 `verified_at` |
+| POST | `/gov/policies/{id}/verify` | 审核人（管理员或角色入口的审核人） | `{status, status_note?, title?, doc_number?, issuer?, publish_date?, effective_date?, expire_date?}`，记录 `verified_by` 和 `verified_at` |
 
 条款检索命中示例（`data.hits[]`）：
 

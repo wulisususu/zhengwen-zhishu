@@ -68,3 +68,9 @@ policy_pdf:
   jar_path: ""                        # opendataloader-pdf 2.5.15 隨包CLI jar絕對路徑
   java_bin: java
   timeout_seconds: 60                 # JVM固定-Xmx512m，最多一個；超時回退OCR
+
+# ── 角色入口（不设登录页）：首页直接选「起草人」或「审核人」进入业务流程 ──
+# 这是角色选择，不是身份认证：能访问本服务的人都可以选任一角色。两个角色账号只有公文业务权限，
+# 永远不是管理员；用户管理、系统设置等管理功能不对它们开放。关闭后首页不再提供角色按钮。
+gov_entry:
+  enabled: true

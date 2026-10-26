@@ -2,7 +2,7 @@
   <main class="welcome-page flex h-dvh flex-col overflow-hidden bg-white text-black">
     <div ref="blindsHost" class="welcome-gradient-blinds" aria-hidden="true"></div>
     <div class="welcome-vignette" aria-hidden="true"></div>
-    <AppHeader title="内网 AI 办公盒子" @goHome="goWorkspace" @logout="router.push('/login')" />
+    <AppHeader title="内网 AI 办公盒子" @goHome="goWorkspace" @logout="router.push('/entry')" />
 
     <section class="relative z-10 flex flex-1 flex-col items-center overflow-y-auto px-4 py-10 sm:justify-center sm:py-12">
       <div class="w-full max-w-[1040px]">

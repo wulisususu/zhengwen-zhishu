@@ -1,0 +1,163 @@
+import json
+import uuid
+from datetime import datetime, timezone
+from fastapi import HTTPException
+from sqlalchemy import or_, update
+from sqlalchemy.orm import Session
+from app.models import User, File
+from .models import GovDocument, GovDocumentMaterial, GovReviewRecord
+
+
+def actor(user):
+    return {"origin": "backend", "account": user.username, "name": user.nickname or user.username,
+            "department": "", "roles": ["drafter", "reviewer"] if user.is_admin else ["drafter"], "canFormalIssue": False}
+
+
+def visible_query(db, user):
+    q = db.query(GovDocument)
+    if user.is_admin:
+        return q.filter(or_(GovDocument.owner_user_id == user.id, GovDocument.status != "draft"))
+    return q.filter(GovDocument.owner_user_id == user.id)
+
+
+def get_document(db, user, document_id):
+    doc = visible_query(db, user).filter(GovDocument.id == document_id).first()
+    if not doc:
+        raise HTTPException(404, "文稿不存在或无权访问")
+    return doc
+
+
+def editable(doc, user):
+    if doc.owner_user_id != user.id:
+        raise HTTPException(403, "只能修改自己起草的文稿")
+    if doc.status not in {"draft", "returned"}:
+        raise HTTPException(409, "文稿已锁定，不能修改")
+
+
+def record(db, doc, user, action, note="", tone="neutral"):
+    db.add(GovReviewRecord(id=uuid.uuid4().hex, document_id=doc.id, actor_user_id=user.id,
+                          action=action, note=note, tone=tone))
+
+
+def write_revision(db, doc, version, *, payload=None, status=None):
+    """Compare-and-swap in SQLite, not an unprotected read followed by commit."""
+    if version != doc.version:
+        raise HTTPException(409, "文稿已更新，请刷新后重试")
+    values = {"version": version + 1, "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)}
+    if payload is not None:
+        values["payload_json"] = json.dumps(payload, ensure_ascii=False)
+    if status is not None:
+        values["status"] = status
+    result = db.execute(update(GovDocument).where(GovDocument.id == doc.id, GovDocument.version == version).values(**values), execution_options={"synchronize_session": False})
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(409, "文稿已更新，请刷新后重试")
+    db.flush()
+    db.refresh(doc)
+
+
+def material(file):
+    return {"id": str(file.id), "name": file.filename, "meta": f"{file.filetype} · {file.filesize} 字节 · 已上传，解析状态需单独确认", "downloadUrl": f"/api/v1/gov/materials/{file.id}/download"}
+
+
+def serialize(db, doc):
+    payload = json.loads(doc.payload_json)
+    from .policy_refs import references
+    snapshot = payload.pop("_citationSnapshot", [])
+    refs = references(payload.get("citationIds", []), snapshot=snapshot)
+    owner = db.get(User, doc.owner_user_id)
+    records = db.query(GovReviewRecord).filter_by(document_id=doc.id).order_by(GovReviewRecord.at, GovReviewRecord.id).all()
+    files = db.query(File).join(GovDocumentMaterial, GovDocumentMaterial.file_id == File.id).filter(GovDocumentMaterial.document_id == doc.id).order_by(File.id).all()
+    from . import proofread
+    blocks = proofread.blocks(doc.id, payload)
+    report = payload.pop("_review", None)
+    # A saved report is informational; approval always runs fresh checks.
+    return {**payload, "id": doc.id, "origin": "backend", "status": doc.status, "version": doc.version,
+            "docNumber": {"id": doc.id + "-number", "text": (payload.get("docNumber") or {}).get("text", "")}, "blocks": blocks,
+            "author": owner.nickname or owner.username, "authorAccount": owner.username, "department": "",
+            "createdAt": doc.created_at.isoformat(), "materials": [material(f) for f in files],
+            "policyRefs": refs, "issues": report["issues"] if report else [], "review": report,
+            "resolutions": {}, "lastReviewedAt": report["reviewedAt"] if report else "", "checkStatus": "completed" if report else "not_run",
+            "history": [{"id": r.id, "action": r.action, "actor": (db.get(User, r.actor_user_id).nickname or db.get(User, r.actor_user_id).username), "at": r.at.isoformat(), "tone": r.tone, "note": r.note} for r in records]}
+
+
+def create(db, user, body):
+    from .policy_refs import references
+    payload = body.model_dump()
+    payload["_citationSnapshot"] = references(body.citationIds, strict=True)
+    doc = GovDocument(id=uuid.uuid4().hex, owner_user_id=user.id, status="draft", version=1,
+                      payload_json=json.dumps(payload, ensure_ascii=False))
+    from .proofread import validate_notice
+    validate_notice(doc.id, payload)
+    db.add(doc)
+    db.flush()
+    record(db, doc, user, "创建文稿")
+    db.commit()
+    return serialize(db, doc)
+
+
+def save(db, user, document_id, body):
+    doc = get_document(db, user, document_id)
+    editable(doc, user)
+    payload = json.loads(doc.payload_json)
+    payload.pop("_review", None)
+    snapshot = payload.pop("_citationSnapshot", [])
+    patch = body.model_dump(exclude_unset=True, exclude={"version"})
+    if any(v is None for v in patch.values()):
+        raise HTTPException(422, "文稿字段不能为 null")
+    payload.update(patch)
+    from .schemas import Content
+    from pydantic import ValidationError
+    try:
+        payload = Content.model_validate(payload).model_dump()
+    except ValidationError:
+        raise HTTPException(422, "文稿字段不合法，标题不能为空")
+    payload["_citationSnapshot"] = snapshot
+    from .proofread import validate_notice
+    validate_notice(doc.id, payload)
+    write_revision(db, doc, body.version, payload=payload)
+    record(db, doc, user, "保存草稿")
+    db.commit()
+    return serialize(db, doc)
+
+
+def transition(db, user, document_id, body, action):
+    doc = get_document(db, user, document_id)
+    if action == "submit":
+        editable(doc, user)
+        if not json.loads(doc.payload_json).get("body", "").strip():
+            raise HTTPException(422, "请填写正文后再送审")
+        target, label, note = "pending", "提交审核", "提交人工审核；通知批准前后端将重新运行双层审校"
+    else:
+        if not user.is_admin or doc.owner_user_id == user.id:
+            raise HTTPException(403, "需要非起草人的审核人操作")
+        if doc.status != "pending":
+            raise HTTPException(409, "仅待审核文稿可以审核")
+        if action == "return" and not body.opinion.strip():
+            raise HTTPException(422, "退回修改须填写意见")
+        target, label = ("approved", "审核通过") if action == "approve" else ("returned", "退回修改")
+        note = "人工审核。" + body.opinion.strip()
+    payload = json.loads(doc.payload_json)
+    if doc.version != body.version:
+        raise HTTPException(409, "文稿已更新，请刷新后重试")
+    from contextlib import nullcontext
+    guarded_approval = action == "approve" and payload.get("docType", "notice") == "notice"
+    guard = nullcontext()
+    if guarded_approval:
+        from .proofread import review, policy_guard
+        payload["_review"] = review(doc.id, payload)
+        guard = policy_guard(payload)
+    with guard:
+        if guarded_approval:
+            from .proofread import refresh_policies
+            payload["_review"] = refresh_policies(doc.id, payload, payload["_review"])
+            if not payload["_review"]["gate"]["canApprove"]:
+                write_revision(db, doc, body.version, payload=payload)
+                record(db, doc, user, "批准前审校未通过", "；".join(payload["_review"]["gate"]["reasons"]), "warning")
+                db.commit()
+                raise HTTPException(409, "后端重新审校未通过，请查看问题并退回修改：" + "；".join(payload["_review"]["gate"]["reasons"]))
+            note = "后端重新双层审校通过；" + note
+        write_revision(db, doc, body.version, payload=payload, status=target)
+        record(db, doc, user, label, note, "success" if target == "approved" else "info")
+        db.commit()
+    return serialize(db, doc)

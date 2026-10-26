@@ -1,0 +1,14 @@
+{
+  "code": 200,
+  "msg": "操作成功",
+  "data": null,
+  "searchVO": {
+    "totalCount": 0,
+    "catMap": {
+      "gongwen": { "listVO": [] },
+      "bumenfile": { "listVO": [] },
+      "otherfile": { "listVO": [] },
+      "gongbao": { "listVO": [] }
+    }
+  }
+}

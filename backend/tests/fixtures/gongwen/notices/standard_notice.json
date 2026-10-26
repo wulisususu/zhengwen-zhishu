@@ -1,0 +1,32 @@
+{
+  "docType": "notice",
+  "title": "示例单位办公室关于开展公文格式规范培训工作的通知",
+  "titleLines": ["示例单位办公室关于开展公文格式", "规范培训工作的通知"],
+  "docNumber": {"id": "seg-docno", "text": "示办发〔2026〕8号"},
+  "fields": {"recipient": "各部门、各直属单位", "issuer": "示例单位办公室", "undertaker": "办公室文书科"},
+  "blocks": [
+    {"id": "blk-recipient", "kind": "recipient", "section": "head", "segments": [{"kind": "field", "id": "seg-recipient", "field": "recipient"}]},
+    {"id": "blk-intro", "kind": "paragraph", "section": "intro", "segments": [
+      {"kind": "text", "text": "为贯彻落实"}, {"kind": "text", "id": "seg-cite", "text": "《示例单位公文处理办法》"},
+      {"kind": "text", "text": "，规范公文格式，提高办文质量，现就开展公文格式规范培训有关事项通知如下。"}]},
+    {"id": "blk-s1", "kind": "heading1", "section": "s1", "segments": [{"kind": "text", "text": "一、培训任务"}]},
+    {"id": "blk-s1-p", "kind": "paragraph", "section": "s1", "segments": [{"kind": "text", "text": "本次培训共 3 项任务："}]},
+    {"id": "blk-s1-1", "kind": "heading2", "section": "s1", "segments": [{"kind": "text", "text": "（一）讲解公文版心与行字数要求"}]},
+    {"id": "blk-s1-2", "kind": "heading2", "section": "s1", "segments": [{"kind": "text", "text": "（二）讲解层次序数与成文日期写法"}]},
+    {"id": "blk-s1-3", "kind": "heading2", "section": "s1", "segments": [{"kind": "text", "text": "（三）组织常见格式差错案例研讨"}]},
+    {"id": "blk-s2", "kind": "heading1", "section": "s2", "segments": [{"kind": "text", "text": "二、参训人员"}]},
+    {"id": "blk-s2-p", "kind": "paragraph", "section": "s2", "segments": [{"kind": "text", "text": "各部门负责公文处理工作的同志，名额分配如下："}]},
+    {"id": "blk-s2-t", "kind": "table", "section": "s2", "table": {"caption": "表1　参训名额", "head": ["部门", "名额（人）"],
+      "rows": [["综合处", "12"], ["业务处", "8"], ["财务处", "5"], ["合计", "25"]]}},
+    {"id": "blk-s3", "kind": "heading1", "section": "s3", "segments": [{"kind": "text", "text": "三、有关要求"}]},
+    {"id": "blk-s3-p", "kind": "paragraph", "section": "s3", "segments": [
+      {"kind": "text", "text": "各单位于 2026年10月30日前将参训人员名单报送"}, {"kind": "field", "id": "seg-undertaker", "field": "undertaker"},
+      {"kind": "text", "text": "；培训具体时间、地点另行通知。"}]},
+    {"id": "blk-attach", "kind": "attachment", "section": "attach", "segments": [{"kind": "text", "text": "参训人员名单"}]},
+    {"id": "blk-sign", "kind": "signature", "section": "sign", "segments": [{"kind": "field", "id": "seg-issuer", "field": "issuer"}]}
+  ],
+  "signDate": "2026年10月26日",
+  "note": "（联系人：×××，联系电话：×××-××××××××）",
+  "policyRefs": [{"id": "ref-1", "title": "示例单位公文处理办法", "clause": "第十条", "status": "current"}],
+  "banji": {"copyTo": ["示例单位领导班子成员"], "printer": "示例单位办公室", "printDate": "2026年10月26日"}
+}

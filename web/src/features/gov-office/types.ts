@@ -34,6 +34,8 @@ export interface Actor {
 export type PolicyStatus = "current" | "abolished" | "unverified";
 
 export interface Citation {
+  pageNumber?: number;
+  sourceAnchor?: string;
   id: string;
   policyTitle: string;
   docNumber: string;
@@ -48,7 +50,19 @@ export interface Citation {
   text: { before: string; highlight: string; after: string };
   previousClause?: string;
   nextClause?: string;
+  sourceUrl?: string;
+  policyId?: number;
+  version?: number;
 }
+
+export interface PolicyDocument {
+  id: number; title: string; url: string; doc_number?: string; issuer?: string;
+  publish_date?: string; verified_status: PolicyStatus; version: number;
+  is_current: boolean; status_note?: string; superseded_by?: number;
+}
+export interface PolicyClause { id: number; article_number?: string; heading?: string; content: string; sequence: number; needs_review: boolean; page_number?: number; source_anchor?: string; }
+export interface PolicyDetail { policy: PolicyDocument; clauses: PolicyClause[]; }
+export interface PolicyHit { citation_id: string; policy_id: number; policy_title: string; clause: string; status: PolicyStatus; excerpt: { before: string; highlight: string; after: string }; }
 
 export type AnswerSegment =
   | { kind: "text"; text: string }
@@ -87,6 +101,7 @@ export interface QaSession {
 }
 
 export interface PolicyStats {
+  available?: boolean;
   origin: DataOrigin;
   total: number;
   current: number;
@@ -109,26 +124,45 @@ export type DocSegment =
   | { kind: "text"; id?: string; text: string }
   | { kind: "field"; id: string; field: FieldKey };
 
-export type BlockKind = "recipient" | "paragraph" | "heading1" | "heading2" | "attachment" | "signature";
+export type BlockKind = "recipient" | "paragraph" | "heading1" | "heading2" | "heading3" | "heading4" | "attachment" | "signature" | "table";
+
+export interface NoticeTable { caption: string; head: string[]; rows: string[][]; }
+export interface NoticeMetadata { docNumber: string; printer: string; printDate: string; copyTo: string; note: string; titleLines: string; tables: NoticeTable[]; }
+export interface NoticeReview {
+  formatCheck: { status: "pass" | "hit" | "unavailable"; message?: string; errorCode?: string; toolVersion?: string };
+  gate: { canApprove: boolean; canExportFormal?: boolean; reasons: string[] };
+  issueDetails?: Record<string, { layer?: string; anchorPrecision?: string; candidates?: string[] }>;
+  policyVerification?: { message: string };
+}
 
 export interface DocBlock {
   id: string;
   kind: BlockKind;
   section: string;
   segments: DocSegment[];
+  table?: NoticeTable;
 }
 
 export interface Material {
   id: string;
   name: string;
   meta: string;
+  downloadUrl?: string;
 }
 
 export interface PolicyRef {
+  pageNumber?: number;
+  sourceAnchor?: string;
   id: string;
   title: string;
   clause: string;
   status: PolicyStatus;
+  sourceUrl?: string;
+  policyId?: number;
+  version?: number;
+  statusNote?: string;
+  excerpt?: string;
+  unresolved?: boolean;
 }
 
 export type IssueSeverity = "critical" | "warning" | "hint";
@@ -173,6 +207,13 @@ export interface ReviewRecord {
 }
 
 export interface OfficialDocument {
+  banji?: { copyTo: string[]; printer: string; printDate: string } | null;
+  note?: string;
+  titleLines?: string[] | null;
+  tables?: NoticeTable[];
+  review?: NoticeReview | null;
+  body?: string;
+  checkStatus?: "not_run" | "completed";
   id: string;
   origin: DataOrigin;
   title: string;
@@ -208,4 +249,18 @@ export interface ExportResult {
   kind: "internal_draft" | "formal";
   watermark?: string;
   message: string;
+  filename?: string;
+}
+
+export interface DraftChanges {
+  docNumber?: { text: string };
+  banji?: { copyTo: string[]; printer: string; printDate: string };
+  note?: string;
+  titleLines?: string[];
+  tables?: NoticeTable[];
+  title?: string;
+  docType?: DocTypeId;
+  body?: string;
+  fields?: Record<FieldKey, string>;
+  signDate?: string;
 }

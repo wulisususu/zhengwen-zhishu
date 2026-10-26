@@ -5,7 +5,6 @@ import App from './App.vue'
 import WelcomePage from './views/WelcomePage.vue'
 import WorkspacePage from './views/WorkspacePage.vue'
 import ChatPage from './views/ChatPage.vue'
-import PrototypeChatPage from './views/PrototypeChatPage.vue'
 import DocumentPage from './views/DocumentPage.vue'
 import PptHostPage from './views/PptHostPage.vue'
 import LoginPage from './views/LoginPage.vue'
@@ -15,6 +14,10 @@ import SettingsPage from './views/SettingsPage.vue'
 import { hasSessionToken } from './stores/auth.js'
 import { govOfficeRoutes } from './features/gov-office/routes'
 import './style.css'
+import { setGovOfficeAdapter } from './features/gov-office/adapters'
+import { useGovDocumentsStore } from './features/gov-office/stores/govDocuments'
+import { useGovSessionStore, resetGovSessionLoading } from './features/gov-office/stores/govSession'
+import { usePolicyQaStore } from './features/gov-office/stores/policyQa'
 
 function createPptProjectId() {
   return globalThis.crypto?.randomUUID?.()
@@ -22,7 +25,8 @@ function createPptProjectId() {
 }
 
 const routes = [
-  { path: '/', component: WelcomePage },
+  { path: '/', redirect: '/gov' },
+  { path: '/welcome', component: WelcomePage },
   { path: '/workspace', component: WorkspacePage },
   { path: '/knowledge', component: WorkspacePage },
   { path: '/chat', component: ChatPage },
@@ -45,19 +49,25 @@ const router = createRouter({
   routes,
 })
 
-const publicPaths = new Set(['/', '/login'])
+const publicPaths = new Set(['/welcome', '/login'])
 
 router.beforeEach((to) => {
   if (!publicPaths.has(to.path) && !hasSessionToken()) {
     return { path: '/login', query: { next: to.fullPath } }
   }
   if (to.path === '/login' && hasSessionToken()) {
-    return typeof to.query.next === 'string' ? to.query.next : '/chat'
+    return typeof to.query.next === 'string' ? to.query.next : '/gov'
   }
 })
 
 if (typeof window !== 'undefined') {
+  const resetGov = () => {
+    setGovOfficeAdapter(null); resetGovSessionLoading();
+    useGovDocumentsStore().$reset(); useGovSessionStore().$reset(); usePolicyQaStore().$reset();
+  }
+  window.addEventListener('mqw-auth-changed', resetGov)
   window.addEventListener('mqw-auth-expired', () => {
+    resetGov()
     const current = router.currentRoute.value
     if (current.path === '/login') return
     router.replace({ path: '/login', query: { expired: '1', next: current.fullPath } })

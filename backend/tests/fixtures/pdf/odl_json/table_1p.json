@@ -1,0 +1,424 @@
+{
+  "file name" : "table_1p.pdf",
+  "number of pages" : 1,
+  "author" : "(anonymous)",
+  "title" : "示例政策（演示）",
+  "creation date" : "D:20261025121615-07'00'",
+  "modification date" : "D:20261025121615-07'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 1,
+    "level" : "Doctitle",
+    "page number" : 1,
+    "bounding box" : [ 147.472, 708.436, 453.472, 728.848 ],
+    "heading level" : 1,
+    "font" : "STSong-Light",
+    "font size" : 18.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "关于印发重点任务分工的通知（演示）"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 1,
+    "bounding box" : [ 109.37, 675.96, 457.37, 689.568 ],
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "各有关单位：现将重点任务分工表印发给你们，请认真抓好落实。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 3,
+    "level" : "Subtitle",
+    "page number" : 1,
+    "bounding box" : [ 85.37, 632.113, 225.37, 647.989 ],
+    "heading level" : 2,
+    "font" : "STSong-Light",
+    "font size" : 14.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "附件：重点任务分工表"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 1,
+    "bounding box" : [ 81.805, 517.269, 519.14, 622.069 ],
+    "number of rows" : 4,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "id" : 5,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TH",
+        "id" : 6,
+        "page number" : 1,
+        "bounding box" : [ 82.205, 599.669, 121.89, 621.669 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "is_header" : true,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 1,
+          "bounding box" : [ 88.205, 605.502, 109.205, 617.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "序号"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TH",
+        "id" : 8,
+        "page number" : 1,
+        "bounding box" : [ 121.89, 599.669, 280.63, 621.669 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "is_header" : true,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 1,
+          "bounding box" : [ 127.89, 605.502, 169.89, 617.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "事项名称"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TH",
+        "id" : 10,
+        "page number" : 1,
+        "bounding box" : [ 280.63, 599.669, 422.362, 621.669 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "is_header" : true,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 1,
+          "bounding box" : [ 286.63, 605.502, 328.63, 617.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "责任单位"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TH",
+        "id" : 12,
+        "page number" : 1,
+        "bounding box" : [ 422.362, 599.669, 518.74, 621.669 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "is_header" : true,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 1,
+          "bounding box" : [ 428.362, 605.502, 470.362, 617.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "完成时限"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "id" : 14,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 15,
+        "page number" : 1,
+        "bounding box" : [ 82.205, 577.669, 121.89, 599.669 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 16,
+          "page number" : 1,
+          "bounding box" : [ 88.205, 583.502, 93.056, 595.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 17,
+        "page number" : 1,
+        "bounding box" : [ 121.89, 577.669, 280.63, 599.669 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 18,
+          "page number" : 1,
+          "bounding box" : [ 127.89, 583.502, 232.89, 595.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "编制政务数据资源目录"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 19,
+        "page number" : 1,
+        "bounding box" : [ 280.63, 577.669, 422.362, 599.669 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 20,
+          "page number" : 1,
+          "bounding box" : [ 286.63, 583.502, 391.63, 595.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "示例市数据局（演示）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 21,
+        "page number" : 1,
+        "bounding box" : [ 422.362, 577.669, 518.74, 599.669 ],
+        "row number" : 2,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 22,
+          "page number" : 1,
+          "bounding box" : [ 428.362, 583.502, 493.819, 595.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2025年6月30日"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "id" : 23,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 24,
+        "page number" : 1,
+        "bounding box" : [ 82.205, 555.669, 121.89, 577.669 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 25,
+          "page number" : 1,
+          "bounding box" : [ 88.205, 561.502, 93.056, 573.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 26,
+        "page number" : 1,
+        "bounding box" : [ 121.89, 555.669, 280.63, 577.669 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 27,
+          "page number" : 1,
+          "bounding box" : [ 127.89, 561.502, 232.89, 573.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "完成共享平台安全加固"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 28,
+        "page number" : 1,
+        "bounding box" : [ 280.63, 555.669, 422.362, 577.669 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 29,
+          "page number" : 1,
+          "bounding box" : [ 286.63, 561.502, 391.63, 573.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "示例市网信办（演示）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 30,
+        "page number" : 1,
+        "bounding box" : [ 422.362, 555.669, 518.74, 577.669 ],
+        "row number" : 3,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 31,
+          "page number" : 1,
+          "bounding box" : [ 428.362, 561.502, 493.819, 573.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2025年9月30日"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "id" : 32,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 33,
+        "page number" : 1,
+        "bounding box" : [ 82.205, 517.669, 121.89, 555.669 ],
+        "row number" : 4,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 34,
+          "page number" : 1,
+          "bounding box" : [ 88.205, 531.502, 93.056, 543.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 35,
+        "page number" : 1,
+        "bounding box" : [ 121.89, 517.669, 280.63, 555.669 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 36,
+          "page number" : 1,
+          "bounding box" : [ 127.89, 531.502, 232.89, 543.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "开展数据质量专项检查"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 37,
+        "page number" : 1,
+        "bounding box" : [ 280.63, 517.669, 422.362, 555.669 ],
+        "row number" : 4,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 38,
+          "page number" : 1,
+          "bounding box" : [ 286.63, 523.502, 412.63, 551.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "各区政务服务管理部门（演 示）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "id" : 39,
+        "page number" : 1,
+        "bounding box" : [ 422.362, 517.669, 518.74, 555.669 ],
+        "row number" : 4,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 40,
+          "page number" : 1,
+          "bounding box" : [ 428.362, 531.502, 498.67, 543.409 ],
+          "font" : "STSong-Light",
+          "font size" : 10.5,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2025年12月31日"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 41,
+    "page number" : 1,
+    "bounding box" : [ 109.37, 485.613, 277.37, 499.221 ],
+    "linked content id" : 4,
+    "font" : "STSong-Light",
+    "font size" : 12.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "示例市人民政府办公室（演示）"
+  } ]
+}

@@ -7,7 +7,7 @@ export const govOfficeRoutes: RouteRecordRaw[] = [
   { path: "/gov/draft/:id?", component: () => import("./pages/DraftWorkbenchPage.vue") },
   { path: "/gov/proofread", component: () => import("./pages/ProofreadPage.vue") },
   { path: "/gov/review-center", component: () => import("./pages/ReviewCenterPage.vue") },
-  { path: "/gov/library", component: () => import("./pages/PlannedModulePage.vue"), meta: { module: "library" } },
+  { path: "/gov/library", component: () => import("./pages/PolicyQaPage.vue"), meta: { module: "library" } },
   { path: "/gov/summary", component: () => import("./pages/PlannedModulePage.vue"), meta: { module: "summary" } },
   { path: "/gov/audit-log", component: () => import("./pages/PlannedModulePage.vue"), meta: { module: "audit-log" } },
 ];

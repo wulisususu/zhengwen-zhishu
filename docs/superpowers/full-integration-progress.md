@@ -35,3 +35,7 @@ Final: Ruling: 批准完成後政策才改變不自動撤銷歷史批准 — 使
 Final: Ruling: 沒有既有Graphify圖，直接讀程式完成審查 — 不為驗收增加建圖流程 — 代價是未提供關係圖。
 
 Task 5: verification complete; main merge and deployment in progress under user's explicit authorization. WPS是實際KWPS COM輸出，10頁逐頁目視與A4/每頁草稿標記均通過；保留一項HTML預覽Minor。
+
+Public verification follow-up: 初次公網發現背景載入覆寫早期編輯；Vue完整頁面測試RED→GREEN，7d1e0e8修復。前端16 host + 249 Vitest通過，typecheck/build通過。0cf7c6d合main並部署，刻意延遲真實HTTP回應的公網實測通過；2問題可定位，修正後0 critical，刷新與DOCX成功，0頁面錯誤。
+
+Task 5: complete. WPS追加公網實物2頁，合計5份12頁。Windows與板端main同步；原分支及既有工作區保留，未push。生產臨時帳號/文稿已清理，使用者168/會話1008/消息2475/文件606/任務393維持原值。release 20261026-0cf7c6d；備份20261026-before-full-054423Z。最終驗收文件與復原bundle隨本輪收尾保存。

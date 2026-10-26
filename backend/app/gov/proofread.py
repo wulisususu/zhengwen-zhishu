@@ -66,8 +66,8 @@ def review(document_id, payload):
     details = result.get("issueDetails", {})
     result["issues"] = [i for i in result["issues"] if details.get(i["id"], {}).get("code") != "POLICY_REF_UNVERIFIED"]
     for i, ref in enumerate(refs):
-        if ref["status"] != "current" or ref.get("unresolved"):
-            invalid = ref["status"] == "abolished" or bool(ref.get("unresolved"))
+        if ref["status"] != "current" or ref.get("unresolved") or ref.get("isCurrentVersion") is False:
+            invalid = ref["status"] == "abolished" or bool(ref.get("unresolved")) or ref.get("isCurrentVersion") is False
             issue = {"id": f"policy-status-{i}", "severity": "critical" if invalid else "warning", "source": "rule",
                      "title": "政策依据不可用" if invalid else "政策依据尚未核验",
                      "description": f"《{ref['title']}》：{ref.get('statusNote') or ('已废止' if invalid else '需人工核验有效性')}。",

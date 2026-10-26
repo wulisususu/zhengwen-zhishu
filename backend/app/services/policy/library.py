@@ -184,10 +184,32 @@ class PolicyLibraryService:
         merged = {**({"title": doc.title} if doc.title else {}), **meta}
         if not merged.get("title"):
             merged["title"] = (req.filename or "上传文件").rsplit(".", 1)[0]
-        return self._save(key, merged, doc.text, doc.reliable, "file_import")
+        result = self._save(key, merged, doc.text, doc.reliable, "file_import", extraction=doc.meta)
+        if "pdf_pages" in doc.meta and not result.get("error"):
+            result["extraction"] = {k: v for k, v in doc.meta.items() if k != "pdf_pages"}
+            result["extraction"]["page_count"] = len(doc.meta["pdf_pages"])
+        return result
 
-    def _save(self, key: str, meta: dict, text: str, reliable: bool, origin: str) -> dict:
+    def _save(self, key: str, meta: dict, text: str, reliable: bool, origin: str, extraction=None) -> dict:
         drafts = segment(text, reliable=reliable)
+        if extraction and extraction.get("pdf_pages"):
+            cursor = 0
+            boundaries = []
+            offset = 0
+            for page in extraction["pdf_pages"]:
+                boundaries.append((offset, page["page"]))
+                offset += len(page["text"]) + 1
+            for draft in drafts:
+                first_line = draft.content.splitlines()[0]
+                position = text.find(first_line, cursor)
+                if position < 0:
+                    draft.needs_review = True
+                    position = cursor
+                start_page = next((p for start, p in reversed(boundaries) if start <= position), 1)
+                end_page = next((p for start, p in reversed(boundaries) if start <= position + len(draft.content) - 1), start_page)
+                draft.page_number = start_page
+                draft.source_anchor = f"PDF第{start_page}页" + (f"至第{end_page}页" if end_page != start_page else "") + f" / {draft.source_anchor} / sha256:{extraction['pdf_sha256']}"
+                cursor = position + len(first_line)
         if not drafts:
             return {"error": _err(errors.EMPTY_CONTENT, "未识别到正文段落，未写入任何内容。")}
         outcome = self.store.save_import(url=key, meta=meta, content=text, clauses=drafts, origin=origin)
@@ -314,6 +336,9 @@ class PolicyLibraryService:
             "sourceUrl": p.url,
             "policyId": p.id,
             "version": p.version,
+            "pageNumber": c.page_number,
+            "sourceAnchor": c.source_anchor,
+            "isCurrentVersion": bool(p.is_current),
         }
         note = self._status_note(hit)
         if note:

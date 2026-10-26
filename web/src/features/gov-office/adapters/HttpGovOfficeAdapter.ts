@@ -86,7 +86,7 @@ export class HttpGovOfficeAdapter implements GovOfficeAdapter {
   searchPolicies(query: string, statuses: PolicyStatus[] = ["current"]) { return json<{ hits: PolicyHit[] }>("/policies/search", "POST", { query, statuses, limit: 30 }); }
   getPolicy(id: number) { return json<PolicyDetail>(`/policies/${id}`); }
   selectCitations(id: string, citationIds: string[]) { return this.change(id, "/citations", { citationIds }); }
-  importPolicy(form: FormData) { return json<{ policy: PolicyDocument }>("/policies/import", "POST", form); }
+  importPolicy(form: FormData) { return json<{ policy: PolicyDocument; extraction?: { page_count: number; parser: string; fallback: boolean; warnings: string[] } }>("/policies/import", "POST", form); }
   verifyPolicy(id: number, status: PolicyStatus, note: string) { return json<{ policy: PolicyDocument }>(`/policies/${id}/verify`, "POST", { status, status_note: note }); }
   async askPolicyQuestion(_id: string, _question: string, _options: AskOptions): Promise<QaTurn> { throw new GovOfficeError("政策检索服务未接入", "unavailable"); }
   async listDocuments(query: DocumentQuery = {}) {

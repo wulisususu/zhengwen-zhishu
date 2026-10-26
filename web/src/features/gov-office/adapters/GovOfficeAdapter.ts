@@ -47,7 +47,7 @@ export interface GovOfficeAdapter {
   searchPolicies?(query: string, statuses?: PolicyStatus[]): Promise<{ hits: PolicyHit[] }>;
   getPolicy?(id: number): Promise<PolicyDetail>;
   selectCitations?(id: string, citationIds: string[]): Promise<OfficialDocument>;
-  importPolicy?(form: FormData): Promise<{ policy: PolicyDocument }>;
+  importPolicy?(form: FormData): Promise<{ policy: PolicyDocument; extraction?: { page_count: number; parser: string; fallback: boolean; warnings: string[] } }>;
   verifyPolicy?(id: number, status: PolicyStatus, note: string): Promise<{ policy: PolicyDocument }>;
   askPolicyQuestion(sessionId: string, question: string, options: AskOptions): Promise<QaTurn>;
 

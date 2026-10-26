@@ -63,6 +63,7 @@ async function importPolicy() {
     if (importTitle.value.trim()) form.append("title", importTitle.value.trim());
     const result = await api.importPolicy(form);
     notice.value = "政策已入库；新版本状态为未核验，须人工核对后方可标记现行。";
+    if (result.extraction) notice.value += ` PDF 共 ${result.extraction.page_count} 页，${result.extraction.fallback ? '已使用原 OCR 回退链路' : '文字层解析完成'}。${result.extraction.warnings.join('；')}`;
     await search(); await open(result.policy.id);
   } catch (e) { error.value = message(e); }
   finally { writing.value = false; }
@@ -130,6 +131,7 @@ onMounted(async () => {
         <p v-else class="gov-muted">文件上传来源（内容哈希定位）：{{ detail.policy.url }}</p>
         <p v-if="!detail.clauses.length">尚无全文条款；管理员需导入政策正文。检索摘要不作为全文。</p>
         <section v-for="clause in detail.clauses" :key="clause.id" class="policy-clause">
+          <p v-if="clause.page_number" class="gov-muted">PDF 第 {{ clause.page_number }} 页 · {{ clause.source_anchor }}</p>
           <p class="policy-text">{{ clause.content }}</p><p v-if="clause.needs_review" class="gov-muted">条款切分待人工复核</p>
           <button :data-testid="`select-clause-${clause.id}`" type="button" class="gov-btn" :disabled="!selectable || writing" @click="select(`clause:${clause.id}`)">加入文稿</button>
         </section>
@@ -147,8 +149,8 @@ onMounted(async () => {
       <form class="policy-import" @submit.prevent="importPolicy">
         <label class="gov-label">政策原文网址<input v-model="importUrl" class="gov-input" aria-label="政策原文网址" type="url" placeholder="https://www.gov.cn/…；内网模式可上传文件" /></label>
         <label class="gov-label">政策标题（可选）<input v-model="importTitle" class="gov-input" aria-label="导入政策标题" maxlength="300" /></label>
-        <label class="gov-label">上传政策文件<input type="file" aria-label="上传政策文件" accept=".txt,.md,.html,.htm,.docx" @change="chooseFile" /></label>
-        <p class="gov-muted">支持 TXT、Markdown、HTML、DOCX，最多 10 MB。PDF 解析尚未接入；内网模式不联网抓取，文件可离线导入。</p>
+        <label class="gov-label">上传政策文件<input type="file" aria-label="上传政策文件" accept=".txt,.md,.html,.htm,.docx,.pdf" @change="chooseFile" /></label>
+        <p class="gov-muted">支持 TXT、Markdown、HTML、DOCX、PDF，最多 10 MB。文字 PDF 保留页码；扫描件使用原 OCR 链路。导入后需人工核验，内网模式可离线导入。</p>
         <button type="submit" class="gov-btn" :disabled="writing || (!importSource && !importUrl.trim())">{{ writing ? '处理中…' : '导入政策' }}</button>
       </form>
     </details>

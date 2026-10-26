@@ -23,7 +23,7 @@ def _reference(c):
     return {"id": c["id"], "title": c["policyTitle"], "clause": c["clause"],
              "status": c["status"], "statusNote": c.get("statusNote", ""),
              "sourceUrl": c["sourceUrl"], "policyId": c["policyId"], "version": c["version"],
-             "excerpt": c["excerpt"]}
+             "excerpt": c["excerpt"], "pageNumber": c.get("pageNumber"), "sourceAnchor": c.get("sourceAnchor"), "isCurrentVersion": c.get("isCurrentVersion", True)}
 
 
 def references(ids, *, strict=False, snapshot=None):

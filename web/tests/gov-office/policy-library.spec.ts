@@ -1,6 +1,6 @@
 import { mount, flushPromises } from "@vue/test-utils";
 import { beforeEach, expect, it, vi } from "vitest";
-const api = vi.hoisted(() => ({ listPolicies: vi.fn(), searchPolicies: vi.fn(), getPolicy: vi.fn(), getCurrentActor: vi.fn(), listDocuments: vi.fn() }));
+const api = vi.hoisted(() => ({ listPolicies: vi.fn(), searchPolicies: vi.fn(), getPolicy: vi.fn(), getCurrentActor: vi.fn(), listDocuments: vi.fn(), importPolicy: vi.fn() }));
 vi.mock("../../src/features/gov-office/adapters", () => ({ getGovOfficeAdapter: () => api }));
 import PolicyLibraryPanel from "../../src/features/gov-office/components/policy/PolicyLibraryPanel.vue";
 const policy = { id: 1, title: "数据管理办法", url: "https://www.gov.cn/zhengce/policy.htm", verified_status: "unverified", version: 1 };
@@ -45,4 +45,18 @@ it("ignores an older query that completes after a newer query", async () => {
   await w.get('[data-testid="policy-search"]').trigger("submit"); await flushPromises();
   finishOld({ items: [{ ...policy, title: "过期搜索" }], total: 1 }); await flushPromises();
   expect(w.text()).toContain("最新政策"); expect(w.text()).not.toContain("过期搜索");
+});
+
+it("accepts PDF imports and shows OCR fallback and source-page warnings", async () => {
+  api.getCurrentActor.mockResolvedValue({ roles: ["reviewer"], account: "reviewer" });
+  api.importPolicy.mockResolvedValue({ policy, extraction: { page_count: 2, parser: "poppler_pdf_hybrid", fallback: true, warnings: ["逐页人工复核"] } });
+  api.getPolicy.mockResolvedValue({ policy, clauses: [{ id: 7, sequence: 1, content: "原文", needs_review: true, page_number: 2, source_anchor: "PDF第2页 / sha256:example" }] });
+  const w = mount(PolicyLibraryPanel); await flushPromises();
+  const input = w.get('[aria-label="上传政策文件"]');
+  expect(input.attributes("accept")).toContain(".pdf");
+  Object.defineProperty(input.element, "files", { value: [new File(["%PDF"], "policy.pdf", { type: "application/pdf" })] });
+  await input.trigger("change");
+  await w.get("form.policy-import").trigger("submit"); await flushPromises();
+  expect(w.text()).toContain("已使用原 OCR 回退链路");
+  expect(w.text()).toContain("PDF 第 2 页");
 });

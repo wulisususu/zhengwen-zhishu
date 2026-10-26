@@ -144,6 +144,9 @@ def _html_charset(data: bytes) -> str | None:
 def extract_file(filename: str, data: bytes) -> ExtractedDocument:
     name = (filename or "").lower()
     ext = name[name.rfind("."):] if "." in name else ""
+    if ext == ".pdf":
+        from app.services.policy.pdf import extract_pdf
+        return extract_pdf(data)
     if ext in TEXT_EXTENSIONS:
         text = decode_bytes(data)
         lines = [line.strip() for line in text.splitlines()]
@@ -183,4 +186,4 @@ def extract_file(filename: str, data: bytes) -> ExtractedDocument:
                         parts.append(text)
         # Table text is retained, but flattening loses layout; require human review.
         return ExtractedDocument(text="\n".join(parts), reliable=not has_tables)
-    raise PolicyError(errors.UNSUPPORTED_FILE, "仅支持 .txt / .md / .html / .docx；PDF 暂不支持，请先转换。")
+    raise PolicyError(errors.UNSUPPORTED_FILE, "仅支持 .txt / .md / .html / .docx / .pdf。")

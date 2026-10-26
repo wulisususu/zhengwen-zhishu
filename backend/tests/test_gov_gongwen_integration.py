@@ -109,12 +109,13 @@ def test_real_notice_review_has_both_layers_and_real_anchors(app_client):
         assert any("内部草稿" in z.read(n).decode() for n in z.namelist() if n.startswith("word/header"))
 
 
-def test_policy_verification_is_resolved_server_side(app_client, monkeypatch):
+@pytest.mark.parametrize("status,is_current", [("abolished", True), ("current", False)])
+def test_policy_verification_is_resolved_server_side(app_client, monkeypatch, status, is_current):
     from app.gov import proofread
     client, tokens, _ = app_client
     monkeypatch.setattr(proofread, "run_review", lambda draft: report())
-    monkeypatch.setattr(proofread, "policy_references", lambda payload: [{"id": "clause:1@0-2", "title": "测试政策", "clause": "第一条", "status": "abolished", "sourceUrl": "https://www.gov.cn/test", "version": 1}])
+    monkeypatch.setattr(proofread, "policy_references", lambda payload: [{"id": "clause:1@0-2", "title": "测试政策", "clause": "第一条", "status": status, "isCurrentVersion": is_current, "sourceUrl": "https://www.gov.cn/test", "version": 1}])
     doc = notice(client, tokens["writer"])
     checked = action(client, tokens["writer"], doc, "check").json()["data"]
-    assert checked["review"]["policyVerification"]["refs"][0]["status"] == "abolished"
+    assert checked["review"]["policyVerification"]["refs"][0]["status"] == status
     assert any(i["severity"] == "critical" and "政策" in i["title"] for i in checked["issues"])

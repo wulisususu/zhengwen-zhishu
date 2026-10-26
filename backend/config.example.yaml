@@ -60,3 +60,11 @@ gongwen:
   fix_timeout_seconds: 30
   max_upload_mb: 10                    # 上传 .docx 大小上限
   max_concurrent: 2                    # 同时运行的 Node 进程上限
+
+# 政策PDF匯入的獨立開關。先完成目標設備驗證，再設 opendataloader。
+# 不改一般文件解析及原有OCR鏈路；掃描/混合頁或失敗會回退原鏈路。
+policy_pdf:
+  engine: legacy
+  jar_path: ""                        # opendataloader-pdf 2.5.15 隨包CLI jar絕對路徑
+  java_bin: java
+  timeout_seconds: 60                 # JVM固定-Xmx512m，最多一個；超時回退OCR

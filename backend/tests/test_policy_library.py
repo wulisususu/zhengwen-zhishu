@@ -145,10 +145,10 @@ def test_import_requires_exactly_one_source(tmp_path):
     assert lib.import_policy(both)["error"]["code"] == errors.INVALID_QUERY
 
 
-def test_pdf_upload_is_unsupported_not_guessed(tmp_path):
+def test_corrupt_pdf_upload_is_rejected_without_guessed_content(tmp_path):
     lib, _ = make(tmp_path)
     result = lib.import_policy(ImportRequest(filename="a.pdf", data=b"%PDF-1.7"))
-    assert result["error"]["code"] == errors.UNSUPPORTED_FILE
+    assert result["error"]["code"] == errors.EXTRACT_FAILED
     assert lib.store.count(include_history=True) == 0
 
 
@@ -264,7 +264,7 @@ def test_citations_batch_returns_frontend_shape_in_requested_order(tmp_path):
 
     first = got[0]
     assert FRONTEND_CITATION_KEYS <= set(first)
-    assert set(first) <= FRONTEND_CITATION_KEYS | {"statusNote", "previousClause", "nextClause", "sourceUrl", "policyId", "version"}
+    assert set(first) <= FRONTEND_CITATION_KEYS | {"statusNote", "previousClause", "nextClause", "sourceUrl", "policyId", "version", "pageNumber", "sourceAnchor", "isCurrentVersion"}
     assert first["status"] == "current"
     assert first["docNumber"] == "示政规〔2025〕9号"
     assert first["issuer"] == "示例市政务服务管理局（演示机关）"

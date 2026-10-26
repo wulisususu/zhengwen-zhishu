@@ -17,12 +17,16 @@ def blocks(document_id, payload):
             continue
         number = parse_number(text.strip())
         kind = f"heading{number[0]}" if number else "paragraph"
+        visible = text.lstrip() if number else text
         result.append({"id": f"{document_id}-p{i}", "kind": kind, "section": "正文", "segments": [
-            {"kind": "text", "id": f"{document_id}-s{i}", "text": text}]})
+            {"kind": "text", "id": f"{document_id}-s{i}", "text": visible}]})
     for i, table in enumerate(payload.get("tables", [])):
         result.append({"id": f"{document_id}-t{i}", "kind": "table", "section": "正文", "segments": [], "table": table})
     result.append({"id": document_id + "-signature", "kind": "signature", "section": "落款", "segments": [
         {"kind": "field", "id": document_id + "-issuer-field", "field": "issuer"}]})
+    if payload.get("fields", {}).get("undertaker", "").strip():
+        result.append({"id": document_id + "-undertaker", "kind": "paragraph", "section": "承办", "segments": [
+            {"kind": "text", "text": "承办："}, {"kind": "field", "id": document_id + "-undertaker-field", "field": "undertaker"}]})
     return result
 
 
@@ -63,8 +67,15 @@ def review(document_id, payload):
     from app.services.gongwen.schema import PolicyRefIn
     draft.policyRefs = [PolicyRefIn(id=f"policy-{i}", title=r["title"][:200], clause=r["clause"][:100], status="unverified") for i, r in enumerate(refs)]
     result = run_review(draft)
+    return refresh_policies(document_id, payload, result)
+
+
+def refresh_policies(document_id, payload, result):
+    # Resolve after the slow Node work. Approval calls this again while holding
+    # a SQLite reserved write lock until the document transaction commits.
+    refs = policy_references(payload)
     details = result.get("issueDetails", {})
-    result["issues"] = [i for i in result["issues"] if details.get(i["id"], {}).get("code") != "POLICY_REF_UNVERIFIED"]
+    result["issues"] = [i for i in result["issues"] if details.get(i["id"], {}).get("code") not in {"POLICY_REF_UNVERIFIED", "POLICY_STATUS"}]
     for i, ref in enumerate(refs):
         if ref["status"] != "current" or ref.get("unresolved") or ref.get("isCurrentVersion") is False:
             invalid = ref["status"] == "abolished" or bool(ref.get("unresolved")) or ref.get("isCurrentVersion") is False
@@ -85,6 +96,14 @@ def review(document_id, payload):
     result["summary"] = {s: sum(i["severity"] == s for i in result["issues"]) for s in ("critical", "warning", "hint")}
     result["gate"] = evaluate_gate(result["issues"], result["formatCheck"]["status"] in {"pass", "hit"})
     return {**result, "contentDigest": digest(payload)}
+
+
+def policy_guard(payload):
+    from contextlib import nullcontext
+    if not payload.get("citationIds"):
+        return nullcontext()
+    from app.services.policy.library import get_policy_library
+    return get_policy_library().store.approval_guard()
 
 
 def check(db, user, document_id, version):

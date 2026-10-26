@@ -201,6 +201,18 @@ class PolicyStore:
     # ---------- infrastructure ----------
 
     @contextmanager
+    def approval_guard(self):
+        """Prevent policy writes through the final document approval commit.
+
+        BEGIN IMMEDIATE also protects against writers in other processes and
+        works in both rollback-journal and WAL mode. Only the final recheck and
+        short document commit are guarded, never the slow Node subprocess.
+        """
+        with self._write_lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            yield
+
+    @contextmanager
     def _connect(self):
         conn = self._memory_conn or sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row

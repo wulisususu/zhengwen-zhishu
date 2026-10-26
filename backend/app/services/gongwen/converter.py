@@ -132,11 +132,12 @@ def build_spec(draft: NoticeDraft, draft_mark: str | None = None) -> tuple[dict,
     if draft.note.strip():
         comps.append({"type": "fuzhu", "text": draft.note.strip()})
     banji = draft.banji
-    if banji and banji.printer.strip() and banji.printDate.strip():
-        comps.append({"type": "banji", "copyTo": [c for c in banji.copyTo if c.strip()],
-                      "issuer": banji.printer.strip(), "date": banji.printDate.strip()})
+    if (banji and banji.printer.strip() and banji.printDate.strip()) or draft_mark is not None:
+        comps.append({"type": "banji", "copyTo": [c for c in banji.copyTo if c.strip()] if banji else [],
+                      "issuer": banji.printer.strip() if banji and banji.printer.strip() else PLACEHOLDER.format("印发机关"),
+                      "date": banji.printDate.strip() if banji and banji.printDate.strip() else PLACEHOLDER.format("印发日期")})
         index.append(IndexEntry("", "none", "banji", "版记",
-                                "\n".join([*banji.copyTo, banji.printer, banji.printDate])))
+                                "\n".join([*banji.copyTo, banji.printer, banji.printDate]) if banji else ""))
     if not any(b.kind == "signature" for b in draft.blocks):
         index.append(IndexEntry("", "none", "sign", "落款", f"{issuer}\n{draft.signDate}"))
     index.append(IndexEntry("", "none", "head", "标题", title))

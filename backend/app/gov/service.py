@@ -140,16 +140,24 @@ def transition(db, user, document_id, body, action):
     payload = json.loads(doc.payload_json)
     if doc.version != body.version:
         raise HTTPException(409, "文稿已更新，请刷新后重试")
-    if action == "approve" and payload.get("docType", "notice") == "notice":
-        from .proofread import review
+    from contextlib import nullcontext
+    guarded_approval = action == "approve" and payload.get("docType", "notice") == "notice"
+    guard = nullcontext()
+    if guarded_approval:
+        from .proofread import review, policy_guard
         payload["_review"] = review(doc.id, payload)
-        if not payload["_review"]["gate"]["canApprove"]:
-            write_revision(db, doc, body.version, payload=payload)
-            record(db, doc, user, "批准前审校未通过", "；".join(payload["_review"]["gate"]["reasons"]), "warning")
-            db.commit()
-            raise HTTPException(409, "后端重新审校未通过，请查看问题并退回修改：" + "；".join(payload["_review"]["gate"]["reasons"]))
-        note = "后端重新双层审校通过；" + note
-    write_revision(db, doc, body.version, payload=payload, status=target)
-    record(db, doc, user, label, note, "success" if target == "approved" else "info")
-    db.commit()
+        guard = policy_guard(payload)
+    with guard:
+        if guarded_approval:
+            from .proofread import refresh_policies
+            payload["_review"] = refresh_policies(doc.id, payload, payload["_review"])
+            if not payload["_review"]["gate"]["canApprove"]:
+                write_revision(db, doc, body.version, payload=payload)
+                record(db, doc, user, "批准前审校未通过", "；".join(payload["_review"]["gate"]["reasons"]), "warning")
+                db.commit()
+                raise HTTPException(409, "后端重新审校未通过，请查看问题并退回修改：" + "；".join(payload["_review"]["gate"]["reasons"]))
+            note = "后端重新双层审校通过；" + note
+        write_revision(db, doc, body.version, payload=payload, status=target)
+        record(db, doc, user, label, note, "success" if target == "approved" else "info")
+        db.commit()
     return serialize(db, doc)

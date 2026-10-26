@@ -3,14 +3,44 @@ from pathlib import Path
 import hashlib
 import re
 import tempfile
+import subprocess
 from app.services.opendataloader_pdf_adapter import AdapterConfig, parse_pdf
 from app.services.policy import errors
 from app.services.policy.errors import PolicyError
 
 
 def legacy_extract(path):
-    from app.services.file_parse_service import _extract_pdf
-    return _extract_pdf(path)
+    from app.services import file_parse_service as legacy
+    markdown, metadata, ocr = legacy._extract_pdf(path)
+    if metadata.get("source") == "poppler_pdf_hybrid":
+        # The legacy Markdown compacts blank pages and may glue page headings
+        # together. Re-read its original text source, retaining form feeds.
+        raw = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True, text=True, timeout=60, encoding="utf-8")
+        if raw.returncode != 0:
+            raise RuntimeError("无法核对原始PDF物理页号")
+        parts = raw.stdout.split("\f")
+        if parts and not parts[-1].strip():
+            parts.pop()
+        count = metadata.get("page_count", len(parts))
+        if len(parts) != count:
+            raise RuntimeError("PDF物理页数无法核对")
+        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        images = set(metadata.get("image_pages", []))
+        pages = []
+        for number, text in enumerate(parts, start=1):
+            if number in images:
+                # MiniCPM image summaries have strict 96/128-token budgets.
+                # Policy import requires full-page transcription, so reuse the
+                # original renderer/CPU OCR without a model-summary token cap.
+                image = legacy._render_pdf_page(path, digest, number)
+                full_text = legacy._run_cpu_ocr(image)
+                if not full_text.strip():
+                    raise RuntimeError("扫描页没有完整OCR结果")
+                text = full_text
+            pages.append({"page": number, "text": text.strip(), "blocks": []})
+        metadata = {**metadata, "_policy_pages": pages, "policy_ocr": "full_page_cpu" if images else "text_layer",
+                    "visual_pages": sorted(images)}
+    return markdown, metadata, ocr
 
 
 def normalize_cjk(text):
@@ -20,6 +50,8 @@ def normalize_cjk(text):
 
 
 def _legacy_pages(markdown, metadata):
+    if "_policy_pages" in metadata:
+        return metadata["_policy_pages"]
     matches = list(re.finditer(r"(?m)^(?:## Page\s+(\d+)[^\n]*|### 第(\d+)页图片分析)\s*\n", markdown))
     if not matches:
         if metadata.get("page_count", 1) > 1:

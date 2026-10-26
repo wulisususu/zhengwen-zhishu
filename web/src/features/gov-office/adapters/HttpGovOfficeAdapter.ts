@@ -114,9 +114,9 @@ export class HttpGovOfficeAdapter implements GovOfficeAdapter {
   returnForRevision(id: string, opinion: string) { return this.change(id, "/return", { opinion }); }
   rerunReview(id: string) { return this.change(id, "/check"); }
   generateDraft(id: string, prompt: string) { return this.change(id, "/generate", { prompt }); }
-  async applySuggestion(_id: string, _issue: string): Promise<OfficialDocument> { throw new GovOfficeError("自动审校未接入", "unavailable"); }
-  async resolveIssue(_id: string, _issue: string, _resolution: IssueResolution): Promise<OfficialDocument> { throw new GovOfficeError("自动审校未接入", "unavailable"); }
-  async clearResolution(_id: string, _issue: string): Promise<OfficialDocument> { throw new GovOfficeError("自动审校未接入", "unavailable"); }
+  async applySuggestion(_id: string, _issue: string): Promise<OfficialDocument> { throw new GovOfficeError("请手动修改文稿并重新审校", "unavailable"); }
+  async resolveIssue(_id: string, _issue: string, _resolution: IssueResolution): Promise<OfficialDocument> { throw new GovOfficeError("后端未开放忽略或例外审批，请修改后重新审校", "unavailable"); }
+  async clearResolution(_id: string, _issue: string): Promise<OfficialDocument> { throw new GovOfficeError("请修改后重新审校，以后端检查结果为准", "unavailable"); }
   async exportDocument(id: string, kind: ExportResult["kind"]): Promise<ExportResult> {
     const token = getSessionToken();
     if (kind === "formal") throw new GovOfficeError("正式发文权限尚未配置", "forbidden");

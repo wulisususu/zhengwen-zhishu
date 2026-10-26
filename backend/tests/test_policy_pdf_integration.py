@@ -75,3 +75,36 @@ def test_import_persists_pdf_page_and_hash_in_source_anchor(pdf_module, tmp_path
 def test_pdf_requires_real_pdf_signature():
     with pytest.raises(PolicyError):
         extract_file("pretend.pdf", b"not pdf")
+
+
+def test_legacy_mixed_pages_keep_original_page_numbers_despite_merged_markdown(pdf_module, monkeypatch, tmp_path):
+    import subprocess
+    from app.services import file_parse_service as legacy
+    from types import SimpleNamespace
+    path = tmp_path / "mixed.pdf"; path.write_bytes(DATA)
+    # The old renderer can append a page heading with no newline and renumbers
+    # nonempty text pages. Recover original text-layer pages and cached OCR.
+    monkeypatch.setattr(legacy, "_extract_pdf", lambda p: ("## Page 1\n第二页文字## Page 1 图片分析（MiniCPM-V）扫描文字", {"source": "poppler_pdf_hybrid", "page_count": 2, "image_pages": [1], "visual_pages": [1]}, []))
+    monkeypatch.setattr(legacy, "_cached_pdf_page_visual_by_sha", lambda sha, page: "第一条 扫描文字" if page == 1 else None)
+    monkeypatch.setattr(legacy, "_render_pdf_page", lambda *a: "image.png")
+    monkeypatch.setattr(legacy, "_run_cpu_ocr", lambda *a: "第一条 扫描文字")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout="\f第二条 原始第二页文字。\f"))
+    markdown, metadata, _ = pdf_module.legacy_extract(str(path))
+    pages = pdf_module._legacy_pages(markdown, metadata)
+    assert [p["page"] for p in pages] == [1, 2]
+    assert "扫描文字" in pages[0]["text"] and "第二页文字" in pages[1]["text"]
+
+
+def test_policy_scan_uses_full_page_transcription_instead_of_image_summary(pdf_module, monkeypatch, tmp_path):
+    import subprocess
+    from types import SimpleNamespace
+    from app.services import file_parse_service as legacy
+    path=tmp_path/'scan.pdf';path.write_bytes(DATA)
+    monkeypatch.setattr(legacy,'_extract_pdf',lambda p: ('一段96tokens图片摘要',{'source':'poppler_pdf_hybrid','page_count':1,'image_pages':[1],'visual_pages':[1]},[]))
+    monkeypatch.setattr(subprocess,'run',lambda *a,**k: SimpleNamespace(returncode=0,stdout='\f'))
+    monkeypatch.setattr(legacy,'_render_pdf_page',lambda *a:'full-page.png')
+    text='\n'.join(f'第{i}条 完整条款正文。' for i in range(1,61))
+    monkeypatch.setattr(legacy,'_run_cpu_ocr',lambda image: text)
+    markdown,metadata,_=pdf_module.legacy_extract(str(path))
+    pages=pdf_module._legacy_pages(markdown,metadata)
+    assert '第60条' in pages[0]['text'] and '96tokens' not in pages[0]['text']

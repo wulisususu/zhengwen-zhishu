@@ -58,6 +58,8 @@ def notice_docx(draft, payload: dict) -> bytes:
             raise HTTPException(503, "通知生成失败：" + exc.message) from None
         doc = Document(target)
     if payload.get("policyRefs"):
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        appendix_start = len(doc.paragraphs)
         doc.add_page_break()
         doc.add_paragraph("政策依据与审校记录（内部附件）")
         labels = {"current": "现行", "abolished": "已废止", "unverified": "未核验"}
@@ -67,9 +69,14 @@ def notice_docx(draft, payload: dict) -> bytes:
                 doc.add_paragraph("核验提示：" + ref["statusNote"])
             if ref.get("excerpt"):
                 doc.add_paragraph(ref["excerpt"])
+            if ref.get("pageNumber"):
+                doc.add_paragraph(f"原文定位：PDF第 {ref['pageNumber']} 页")
             doc.add_paragraph("来源：" + ref.get("sourceUrl", ""))
-    report = payload.get("_review", {})
-    doc.add_paragraph("内部草稿；本次审校发现严重问题 %s 项；格式机检：%s。须人工核验。" % (report.get("summary", {}).get("critical", "未知"), report.get("formatCheck", {}).get("status", "未完成")))
+        for paragraph in doc.paragraphs[appendix_start:]:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    # The visible header marks every page as an internal draft. Detailed review
+    # findings stay in the workbench; a trailing audit paragraph pushes a short
+    # notice onto an otherwise empty page after the bottom-anchored banji.
     out = BytesIO()
     doc.save(out)
     return out.getvalue()

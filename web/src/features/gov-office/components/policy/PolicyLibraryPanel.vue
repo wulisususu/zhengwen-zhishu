@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { ExternalLink } from "lucide-vue-next";
 import { getGovOfficeAdapter } from "../../adapters";
 import type { OfficialDocument, PolicyDetail, PolicyDocument, PolicyHit, PolicyStatus } from "../../types";
 import { POLICY_STATUS_LABELS } from "../../domain/docTypes";
@@ -123,12 +124,21 @@ onMounted(async () => {
         <p v-if="keyword.trim() && !loading && !hits.length">所选状态中未检出条款；可调整关键词或勾选未核验政策。</p>
       </div>
       <article v-if="detail" class="policy-detail" aria-label="政策原文条款">
-        <h2>{{ detail.policy.title }}</h2>
-        <p>{{ POLICY_STATUS_LABELS[detail.policy.verified_status] }} · 第 {{ detail.policy.version }} 版 · {{ detail.policy.publish_date || '发布日期未录入' }}</p>
+        <header class="policy-detail__header">
+          <div class="policy-detail__heading">
+            <h2>{{ detail.policy.title }}</h2>
+            <p class="gov-muted">{{ POLICY_STATUS_LABELS[detail.policy.verified_status] }} · 第 {{ detail.policy.version }} 版 · {{ detail.policy.publish_date || '发布日期未录入' }}</p>
+          </div>
+          <div v-if="sourceLink(detail.policy.url)" class="policy-detail__source">
+            <a class="gov-btn gov-btn--primary policy-source-button" :href="sourceLink(detail.policy.url)" target="_blank" rel="noopener noreferrer">
+              <ExternalLink :size="18" aria-hidden="true" />打开官方原文
+            </a>
+            <span class="gov-muted">在新窗口打开，核对原始文件</span>
+          </div>
+        </header>
         <p v-if="detail.policy.is_current === false" class="gov-banner gov-banner--danger">历史版本：已被替代，仅供历史对照；请查看最新版本并重新核验。</p>
         <p v-if="detail.policy.status_note">核验说明：{{ detail.policy.status_note }}</p>
-        <a v-if="sourceLink(detail.policy.url)" :href="sourceLink(detail.policy.url)" target="_blank" rel="noopener noreferrer">查看原始来源</a>
-        <p v-else class="gov-muted">文件上传来源（内容哈希定位）：{{ detail.policy.url }}</p>
+        <p v-if="!sourceLink(detail.policy.url)" class="gov-muted">文件上传来源（内容哈希定位）：{{ detail.policy.url }}</p>
         <p v-if="!detail.clauses.length">尚无全文条款；管理员需导入政策正文。检索摘要不作为全文。</p>
         <section v-for="clause in detail.clauses" :key="clause.id" class="policy-clause">
           <p v-if="clause.page_number" class="gov-muted">PDF 第 {{ clause.page_number }} 页 · {{ clause.source_anchor }}</p>
@@ -163,6 +173,12 @@ onMounted(async () => {
 .policy-columns { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.5fr); gap: 24px; align-items: start; }
 .policy-list { display: flex; flex-direction: column; gap: 10px; }.policy-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; text-align: left; border: 1px solid var(--gov-border); border-radius: 8px; background: var(--gov-surface); color: inherit; overflow-wrap: anywhere; }
 .policy-detail { min-width: 0; }.policy-clause { border-bottom: 1px solid var(--gov-border); padding: 14px 0; }.policy-text { white-space: pre-wrap; line-height: 1.8; overflow-wrap: anywhere; }
+.policy-detail__header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; padding: 16px; margin-bottom: 12px; border: 1px solid var(--gov-border); border-radius: 8px; background: var(--gov-surface); }
+.policy-detail__heading { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.policy-detail__heading h2 { margin-bottom: 8px; line-height: 1.6; }
+.policy-detail__source { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.policy-detail__source > span { font-size: 12px; }
+.policy-source-button { min-height: 42px; min-width: 160px; padding: 0 18px; text-decoration: none; font-weight: 600; }
 .policy-import,.policy-verify { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; }h2 { font-size: 16px; }h3 { font-size: 14px; }p { line-height: 1.6; }
 @media(max-width: 900px) { .policy-columns { grid-template-columns: 1fr; } }
 </style>

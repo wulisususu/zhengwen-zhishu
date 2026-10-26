@@ -17,7 +17,7 @@ it("shows real source and exact clause and emits its stable ID for a draft", asy
   await flushPromises();
   await w.get('[data-testid="policy-open-1"]').trigger("click"); await flushPromises();
   expect(w.text()).toContain("第一条 数据应分类管理。");
-  expect(w.get('a[href="https://www.gov.cn/zhengce/policy.htm"]').text()).toContain("来源");
+  expect(w.get('a[href="https://www.gov.cn/zhengce/policy.htm"]').text()).toContain("打开官方原文");
   await w.get('[data-testid="select-clause-7"]').trigger("click");
   expect(w.emitted("select")?.[0]).toEqual(["clause:7"]);
   expect(w.text()).toContain("未核验");

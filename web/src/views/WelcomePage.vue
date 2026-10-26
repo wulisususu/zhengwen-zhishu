@@ -1,367 +1,118 @@
 <template>
-  <main class="welcome-page flex h-dvh flex-col overflow-hidden bg-white text-black">
-    <div ref="blindsHost" class="welcome-gradient-blinds" aria-hidden="true"></div>
-    <div class="welcome-vignette" aria-hidden="true"></div>
-    <AppHeader title="内网 AI 办公盒子" @goHome="goWorkspace" @logout="router.push('/entry')" />
+  <main class="gov-home flex h-dvh flex-col overflow-hidden bg-white text-black">
+    <div class="gov-home-bg" aria-hidden="true"></div>
 
-    <section class="relative z-10 flex flex-1 flex-col items-center overflow-y-auto px-4 py-10 sm:justify-center sm:py-12">
-      <div class="w-full max-w-[1040px]">
-        <div class="mb-8">
-          <h1 class="text-[32px] font-semibold tracking-[-0.03em] leading-[42px] sm:text-[42px] sm:leading-[54px] text-[#111827]">内网AI办公盒子</h1>
-          <p class="mt-2 text-[18px] leading-7 text-[#667085]">智能写作 · 高效办公</p>
+    <AppHeader title="政务办公智能体" subtitle="公文起草 · 政策解读" @goHome="router.push('/')" @logout="router.push('/entry')" />
+
+    <section class="relative z-10 flex flex-1 flex-col items-center overflow-y-auto px-5 py-8 sm:justify-center sm:py-10">
+      <div class="w-full max-w-[1080px]">
+
+        <div class="mb-7">
+          <div class="gov-badge">
+            <span class="gov-badge-dot"></span>
+            云端政务模型 API · 全程留痕
+          </div>
+          <h1 class="mt-4 text-[30px] font-semibold leading-[40px] tracking-[-0.02em] text-[#111827] sm:text-[38px] sm:leading-[48px]">
+            政务办公智能体
+          </h1>
+          <p class="mt-2.5 text-[16px] leading-7 text-[#475467] sm:text-[17px]">
+            公文起草 · 政策解读 · 文稿撰写 · 提炼总结
+          </p>
+          <p class="mt-1.5 text-[13.5px] leading-6 text-[#98A2B3]">
+            公文生成与政策问答调用云端政务模型 API，内容会发送至该服务；生成内容须人工核实，每一次生成全程留痕，可核可溯。
+          </p>
         </div>
 
-        <div class="flex flex-wrap justify-center gap-4">
-          <button @click="goWorkspace('chat')"
-            class="group flex w-[210px] items-center gap-4 rounded-[16px] border border-[#E6EAF2] bg-white px-5 py-4 text-left shadow-[0_1px_3px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#C7D2FE] hover:shadow-[0_4px_12px_rgba(16,24,40,0.10)]">
-            <span class="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EEF2FF]">
-              <MessageSquare class="size-5 text-[#5E6AD2]" :stroke-width="2" />
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <button v-for="item in businesses" :key="item.key" @click="goScene(item.key)" class="gov-card group">
+            <span class="gov-card-icon">
+              <component :is="item.icon" class="size-[19px] text-[#2563A8]" :stroke-width="2" />
             </span>
-            <span class="min-w-0">
-              <span class="block text-[16px] font-semibold leading-6 text-[#111827]">聊天</span>
-              <span class="mt-0.5 block text-[13px] leading-5 text-[#98A2B3]">通用问答与自由沟通</span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-[15px] font-semibold leading-6 text-[#111827]">{{ item.title }}</span>
+              <span class="mt-1 block text-[12.5px] leading-[1.55] text-[#98A2B3]">{{ item.desc }}</span>
             </span>
-          </button>
-          <button @click="goWorkspace('document')"
-            class="group flex w-[210px] items-center gap-4 rounded-[16px] border border-[#E6EAF2] bg-white px-5 py-4 text-left shadow-[0_1px_3px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#C7D2FE] hover:shadow-[0_4px_12px_rgba(16,24,40,0.10)]">
-            <span class="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EEF2FF]">
-              <FileText class="size-5 text-[#5E6AD2]" :stroke-width="2" />
-            </span>
-            <span class="min-w-0">
-              <span class="block text-[16px] font-semibold leading-6 text-[#111827]">文档生成</span>
-              <span class="mt-0.5 block text-[13px] leading-5 text-[#98A2B3]">智能写作与文档处理</span>
-            </span>
-          </button>
-          <button @click="goWorkspace('knowledge')"
-            class="group flex w-[210px] items-center gap-4 rounded-[16px] border border-[#E6EAF2] bg-white px-5 py-4 text-left shadow-[0_1px_3px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#C7D2FE] hover:shadow-[0_4px_12px_rgba(16,24,40,0.10)]">
-            <span class="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EEF2FF]">
-              <BookOpen class="size-5 text-[#5E6AD2]" :stroke-width="2" />
-            </span>
-            <span class="min-w-0">
-              <span class="block text-[16px] font-semibold leading-6 text-[#111827]">知识库</span>
-              <span class="mt-0.5 block text-[13px] leading-5 text-[#98A2B3]">资料检索与问答</span>
-            </span>
-          </button>
-          <button @click="goWorkspace('ppt')"
-            class="group flex w-[210px] items-center gap-4 rounded-[16px] border border-[#E6EAF2] bg-white px-5 py-4 text-left shadow-[0_1px_3px_rgba(16,24,40,0.06)] transition-all duration-150 hover:border-[#C7D2FE] hover:shadow-[0_4px_12px_rgba(16,24,40,0.10)]">
-            <span class="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EEF2FF]">
-              <Presentation class="size-5 text-[#5E6AD2]" :stroke-width="2" />
-            </span>
-            <span class="min-w-0">
-              <span class="block text-[16px] font-semibold leading-6 text-[#111827]">PPT 生成</span>
-              <span class="mt-0.5 block text-[13px] leading-5 text-[#98A2B3]">生成、质检与下载演示文稿</span>
-            </span>
+            <ArrowRight class="gov-card-arrow size-4 shrink-0 text-[#C7CFDB]" :stroke-width="2" />
           </button>
         </div>
 
+        <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-[#98A2B3]">
+          <span class="font-medium text-[#667085]">另可直达</span>
+          <button v-for="link in quickLinks" :key="link.path" @click="router.push(link.path)"
+            class="transition-colors hover:text-[#2563A8]">{{ link.label }}</button>
+        </div>
 
-        <form @submit.prevent="submitRequest"
-          class="mt-5 rounded-[16px] border border-[#E6EAF2] bg-[rgba(255,255,255,0.92)] p-5 shadow-[0_8px_24px_rgba(16,24,40,0.06)]">
+        <form @submit.prevent="submitRequest" class="gov-composer">
           <div class="flex flex-col gap-3 sm:flex-row">
-            <label class="relative flex h-11 items-center rounded-[14px] border border-[#E4E7EC] bg-[linear-gradient(180deg,#FFFFFF_0%,#FCFCFE_100%)] px-3.5 focus-within:border-[#C7D2FE] focus-within:ring-4 focus-within:ring-[#5E6AD2]/10 sm:w-[174px]">
-              <span class="shrink-0 text-[14px] leading-6 text-[#667085]">类型：</span>
-              <select v-model="requestType" class="h-full min-w-0 flex-1 appearance-none bg-transparent pr-7 text-[14px] leading-6 outline-none">
-                <option value="word">word</option><option value="excel">excel</option><option value="ppt">ppt</option>
+            <label class="gov-select">
+              <span class="shrink-0 text-[13.5px] leading-6 text-[#667085]">类型</span>
+              <select v-model="requestType" class="h-full min-w-0 flex-1 appearance-none bg-transparent pr-6 text-[13.5px] leading-6 outline-none">
+                <option value="word">公文 / 文稿</option>
+                <option value="ppt">汇报 PPT</option>
               </select>
-              <ChevronRight class="pointer-events-none absolute right-3 top-1/2 size-4 rotate-90 text-black/40" :stroke-width="2" />
+              <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-[#98A2B3]" :stroke-width="2" />
             </label>
-            <textarea v-model="requestText" placeholder="输入需求..."
-              class="min-h-[92px] flex-1 resize-none rounded-[14px] border border-[#E4E7EC] bg-[linear-gradient(180deg,#FFFFFF_0%,#FCFCFE_100%)] px-3.5 py-2.5 text-[15px] leading-6 outline-none placeholder:text-[#98A2B3] focus:border-[#C7D2FE] focus:ring-4 focus:ring-[#5E6AD2]/10" />
+            <textarea v-model="requestText" rows="2"
+              placeholder="一句话说明需求，例如：以市政务服务管理局名义，起草一份关于加强窗口作风建设的通知"
+              class="min-h-[76px] flex-1 resize-none rounded-[12px] border border-[#E4E7EC] bg-white px-3.5 py-2.5 text-[14.5px] leading-6 outline-none placeholder:text-[#98A2B3] focus:border-[#8FB3DB] focus:ring-4 focus:ring-[#2563A8]/10" />
           </div>
           <div class="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" class="flex h-10 items-center gap-2 rounded-[12px] border border-[#E4E7EC] bg-white px-3.5 text-[14px] font-medium text-[#475467] shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-150 hover:bg-[#F8FAFC]">
-              <Upload class="size-4" :stroke-width="2" />上传文件
+            <button type="button" class="gov-ghost-btn" @click="router.push('/chat?scene=summary')">
+              <Upload class="size-4" :stroke-width="2" />上传文件提炼
             </button>
-            <button type="button" class="ml-auto flex size-10 items-center justify-center rounded-[12px] border border-[#E4E7EC] bg-white text-[#667085] shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-150 hover:bg-[#F8FAFC]">
-              <Mic class="size-4" :stroke-width="2" />
-            </button>
-            <button type="submit" class="flex h-10 items-center gap-2 rounded-[12px] bg-[#111827] px-4 text-[14px] font-medium text-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-150 hover:bg-[#0B1220]">
-              <Send class="size-4" :stroke-width="2" />发送
+            <button type="submit" class="gov-primary-btn ml-auto">
+              <Send class="size-4" :stroke-width="2" />开始起草
             </button>
           </div>
         </form>
-        <p class="mt-3 text-[13px] leading-5 text-[#98A2B3]">或拖拽/粘贴文件至此上传</p>
+
+        <p class="mt-3 text-[12.5px] leading-5 text-[#A8B2C1]">
+          本系统输出为拟稿参考，须经核稿、签发流程后方可正式行文。
+        </p>
       </div>
     </section>
   </main>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { MessageSquare, FileText, BookOpen, Presentation, ChevronRight, Upload, Mic, Send } from 'lucide-vue-next'
+import {
+  ArrowRight, ChevronDown, Upload, Send,
+  FileSignature, BookMarked, PenLine, ListChecks,
+} from 'lucide-vue-next'
 import AppHeader from '../components/AppHeader.vue'
 
 const router = useRouter()
 const requestType = ref('word')
 const requestText = ref('')
-const blindsHost = ref(null)
-let cleanupBlinds = null
 
+const businesses = [
+  { key: 'gongwen', title: '公文起草', desc: '通知·请示·报告·函·纪要', icon: FileSignature },
+  { key: 'policy', title: '政策解读', desc: '条款级解读，逐句回溯原文', icon: BookMarked },
+  { key: 'manuscript', title: '文稿撰写', desc: '讲话稿·汇报材料·工作总结', icon: PenLine },
+  { key: 'summary', title: '提炼总结', desc: '纪要·调研·待办清单', icon: ListChecks },
+]
 
-const perf = {
-  reduceMotion: typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  noHover: typeof window !== 'undefined' && !window.matchMedia('(hover: hover)').matches,
-  isMobile: typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches,
-  isLowCore: typeof navigator !== 'undefined' && (navigator.hardwareConcurrency || 8) < 4,
+const quickLinks = [
+  { label: '通用对话', path: '/chat' },
+  { label: '知识库', path: '/knowledge' },
+  { label: '汇报演示', path: '/ppt' },
+  { label: '智能体中心', path: '/agents' },
+  { label: '系统设置', path: '/settings' },
+]
+
+// 四项政务业务的落点：公文/文稿进文档生成，政策解读进知识库，提炼总结进通用对话（可直接传附件）
+const SCENE_ROUTE = {
+  gongwen: '/gongwen',
+  manuscript: '/document?scene=manuscript',
+  policy: '/policy',
+  summary: '/chat?scene=summary',
 }
 
-const hexToRGB = (hex) => {
-  const c = hex.replace('#', '').padEnd(6, '0')
-  return [
-    parseInt(c.slice(0, 2), 16) / 255,
-    parseInt(c.slice(2, 4), 16) / 255,
-    parseInt(c.slice(4, 6), 16) / 255,
-  ]
+function goScene(key) {
+  router.push(SCENE_ROUTE[key] || '/document')
 }
-
-const MAX_COLORS = 8
-
-const prepStops = (stops) => {
-  const base = (stops && stops.length ? stops : ['#5EEAD4', '#FB923C']).slice(0, MAX_COLORS)
-  if (base.length === 1) base.push(base[0])
-  while (base.length < MAX_COLORS) base.push(base[base.length - 1])
-  const arr = base.map(hexToRGB)
-  const count = Math.max(2, Math.min(MAX_COLORS, stops?.length ?? 2))
-  return { arr, count }
-}
-
-async function setupGradientBlinds(container) {
-  if (!container || perf.reduceMotion || perf.isLowCore) return null
-
-  const { Renderer, Program, Mesh, Triangle } = await import(
-    /* @vite-ignore */ 'https://esm.sh/ogl@1.0.11'
-  )
-
-  const params = {
-    gradientColors: ['#5EEAD4', '#8B5CF6', '#FB923C', '#5EEAD4'],
-    angle: 25,
-    noise: 0.18,
-    blindCount: 14,
-    blindMinWidth: 80,
-    mouseDampening: 0.04,
-    mirrorGradient: true,
-    spotlightRadius: 0.55,
-    spotlightSoftness: 1,
-    spotlightOpacity: 0.9,
-    distortAmount: 1.6,
-    shineDirection: 'left',
-    mixBlendMode: 'normal',
-  }
-
-  let renderer
-  let gl
-  let program
-  let mesh
-  let canvas
-  let raf = 0
-  let mouseTarget = [0, 0]
-  let lastTime = 0
-  let firstResize = true
-  let running = true
-
-  const vertex = `
-    attribute vec2 position;
-    attribute vec2 uv;
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = vec4(position, 0.0, 1.0); }
-  `
-
-  const fragment = `
-    #ifdef GL_ES
-    precision mediump float;
-    #endif
-    uniform vec3 iResolution; uniform vec2 iMouse; uniform float iTime;
-    uniform float uAngle; uniform float uNoise; uniform float uBlindCount;
-    uniform float uSpotlightRadius; uniform float uSpotlightSoftness; uniform float uSpotlightOpacity;
-    uniform float uMirror; uniform float uDistort; uniform float uShineFlip;
-    uniform vec3 uColor0; uniform vec3 uColor1; uniform vec3 uColor2; uniform vec3 uColor3;
-    uniform vec3 uColor4; uniform vec3 uColor5; uniform vec3 uColor6; uniform vec3 uColor7;
-    uniform int uColorCount;
-    varying vec2 vUv;
-
-    float rand(vec2 co){ return fract(sin(dot(co, vec2(12.9898,78.233))) * 43758.5453); }
-    vec2 rotate2D(vec2 p, float a){ float c = cos(a); float s = sin(a); return mat2(c, -s, s, c) * p; }
-
-    vec3 getGradientColor(float t){
-      float tt = clamp(t, 0.0, 1.0);
-      int count = uColorCount; if (count < 2) count = 2;
-      float scaled = tt * float(count - 1);
-      float seg = floor(scaled); float f = fract(scaled);
-      if (seg < 1.0) return mix(uColor0, uColor1, f);
-      if (seg < 2.0 && count > 2) return mix(uColor1, uColor2, f);
-      if (seg < 3.0 && count > 3) return mix(uColor2, uColor3, f);
-      if (seg < 4.0 && count > 4) return mix(uColor3, uColor4, f);
-      if (seg < 5.0 && count > 5) return mix(uColor4, uColor5, f);
-      if (seg < 6.0 && count > 6) return mix(uColor5, uColor6, f);
-      if (seg < 7.0 && count > 7) return mix(uColor6, uColor7, f);
-      if (count > 7) return uColor7; if (count > 6) return uColor6;
-      if (count > 5) return uColor5; if (count > 4) return uColor4;
-      if (count > 3) return uColor3; if (count > 2) return uColor2;
-      return uColor1;
-    }
-
-    void mainImage(out vec4 fragColor, in vec2 fragCoord){
-      vec2 uv0 = fragCoord.xy / iResolution.xy;
-      float aspect = iResolution.x / iResolution.y;
-      vec2 p = uv0 * 2.0 - 1.0; p.x *= aspect;
-      vec2 pr = rotate2D(p, uAngle); pr.x /= aspect;
-      vec2 uv = pr * 0.5 + 0.5;
-
-      vec2 uvMod = uv;
-      if (uDistort > 0.0) {
-        float a = uvMod.y * 6.0; float b = uvMod.x * 6.0;
-        float w = 0.01 * uDistort;
-        uvMod.x += sin(a) * w; uvMod.y += cos(b) * w;
-      }
-      float t = uvMod.x;
-      if (uMirror > 0.5) t = 1.0 - abs(1.0 - 2.0 * fract(t));
-      vec3 base = getGradientColor(t);
-
-      vec2 offset = vec2(iMouse.x/iResolution.x, iMouse.y/iResolution.y);
-      float d = length(uv0 - offset);
-      float r = max(uSpotlightRadius, 1e-4);
-      float dn = d / r;
-      float spot = (1.0 - 2.0 * pow(dn, uSpotlightSoftness)) * uSpotlightOpacity;
-      vec3 cir = vec3(spot);
-      float stripe = fract(uvMod.x * max(uBlindCount, 1.0));
-      if (uShineFlip > 0.5) stripe = 1.0 - stripe;
-      vec3 ran = vec3(stripe);
-
-      vec3 col = mix(vec3(1.0), cir + base - ran, 0.55);
-      col += (rand(gl_FragCoord.xy + iTime) - 0.5) * uNoise;
-      fragColor = vec4(col, 1.0);
-    }
-
-    void main() { vec4 color; mainImage(color, vUv * iResolution.xy); gl_FragColor = color; }
-  `
-
-  const dprCap = perf.isMobile || perf.isLowCore ? 1 : 1.5
-  renderer = new Renderer({
-    dpr: Math.min(window.devicePixelRatio || 1, dprCap),
-    alpha: true,
-    antialias: !perf.isMobile,
-  })
-
-  gl = renderer.gl
-  canvas = gl.canvas
-  canvas.style.width = '100%'
-  canvas.style.height = '100%'
-  canvas.style.display = 'block'
-  canvas.style.mixBlendMode = params.mixBlendMode
-  container.appendChild(canvas)
-
-  const { arr, count } = prepStops(params.gradientColors)
-  const uniforms = {
-    iResolution: { value: [gl.drawingBufferWidth, gl.drawingBufferHeight, 1] },
-    iMouse: { value: [0, 0] },
-    iTime: { value: 0 },
-    uAngle: { value: (params.angle * Math.PI) / 180 },
-    uNoise: { value: params.noise },
-    uBlindCount: { value: Math.max(1, params.blindCount) },
-    uSpotlightRadius: { value: params.spotlightRadius },
-    uSpotlightSoftness: { value: params.spotlightSoftness },
-    uSpotlightOpacity: { value: params.spotlightOpacity },
-    uMirror: { value: params.mirrorGradient ? 1 : 0 },
-    uDistort: { value: params.distortAmount },
-    uShineFlip: { value: params.shineDirection === 'right' ? 1 : 0 },
-    uColor0: { value: arr[0] }, uColor1: { value: arr[1] },
-    uColor2: { value: arr[2] }, uColor3: { value: arr[3] },
-    uColor4: { value: arr[4] }, uColor5: { value: arr[5] },
-    uColor6: { value: arr[6] }, uColor7: { value: arr[7] },
-    uColorCount: { value: count },
-  }
-
-  program = new Program(gl, { vertex, fragment, uniforms })
-  mesh = new Mesh(gl, { geometry: new Triangle(gl), program })
-
-  const resize = () => {
-    const rect = container.getBoundingClientRect()
-    if (!rect.width || !rect.height) return
-    renderer.setSize(rect.width, rect.height)
-    uniforms.iResolution.value = [gl.drawingBufferWidth, gl.drawingBufferHeight, 1]
-    if (params.blindMinWidth > 0) {
-      const maxByMinWidth = Math.max(1, Math.floor(rect.width / params.blindMinWidth))
-      uniforms.uBlindCount.value = Math.max(1, Math.min(params.blindCount, maxByMinWidth))
-    }
-    if (firstResize) {
-      firstResize = false
-      uniforms.iMouse.value = [gl.drawingBufferWidth / 2, gl.drawingBufferHeight / 2]
-      mouseTarget = [...uniforms.iMouse.value]
-    }
-  }
-
-  resize()
-  const ro = new ResizeObserver(resize)
-  ro.observe(container)
-
-  let pmRaf = 0
-  const onPointerMove = (event) => {
-    if (pmRaf) return
-    pmRaf = requestAnimationFrame(() => {
-      const rect = canvas.getBoundingClientRect()
-      const scale = renderer.dpr || 1
-      mouseTarget = [
-        (event.clientX - rect.left) * scale,
-        (rect.height - (event.clientY - rect.top)) * scale,
-      ]
-      pmRaf = 0
-    })
-  }
-
-  const host = container.parentElement || container
-  host.addEventListener('pointermove', onPointerMove, { passive: true })
-
-  const io = new IntersectionObserver(([entry]) => {
-    running = entry.isIntersecting
-  }, { threshold: 0 })
-  io.observe(container)
-
-  const loop = (time) => {
-    raf = requestAnimationFrame(loop)
-    if (!running) return
-    uniforms.iTime.value = time * 0.001
-    if (params.mouseDampening > 0) {
-      if (!lastTime) lastTime = time
-      const dt = (time - lastTime) / 1000
-      lastTime = time
-      const factor = Math.min(1, 1 - Math.exp(-dt / Math.max(1e-4, params.mouseDampening)))
-      const cur = uniforms.iMouse.value
-      cur[0] += (mouseTarget[0] - cur[0]) * factor
-      cur[1] += (mouseTarget[1] - cur[1]) * factor
-    } else {
-      uniforms.iMouse.value = mouseTarget
-    }
-    renderer.render({ scene: mesh })
-  }
-
-  raf = requestAnimationFrame(loop)
-  requestAnimationFrame(() => container.classList.add('is-ready'))
-
-  return () => {
-    cancelAnimationFrame(raf)
-    host.removeEventListener('pointermove', onPointerMove)
-    ro.disconnect()
-    io.disconnect()
-    if (canvas.parentElement === container) container.removeChild(canvas)
-  }
-}
-
-function goWorkspace(mode) {
-  if (mode === 'chat') router.push('/chat')
-  else if (mode === 'document') router.push('/document')
-  else if (mode === 'ppt') router.push('/ppt')
-  else if (mode === 'knowledge') router.push('/knowledge')
-  else router.push({ path: '/workspace', query: { mode } })
-}
-
-onMounted(async () => {
-  cleanupBlinds = await setupGradientBlinds(blindsHost.value)
-})
-
-onBeforeUnmount(() => {
-  cleanupBlinds?.()
-})
 
 function submitRequest() {
   const text = requestText.value.trim()
@@ -374,52 +125,163 @@ function submitRequest() {
 </script>
 
 <style scoped>
-.welcome-page {
+.gov-home {
   position: relative;
   isolation: isolate;
 }
 
-.welcome-gradient-blinds {
+/* 纯 CSS 背景：无外部依赖，断网可用 */
+.gov-home-bg {
   position: absolute;
   inset: 0;
-  z-index: -2;
-  opacity: 0;
-  transition: opacity 1.2s ease-out;
+  z-index: -1;
+  background:
+    radial-gradient(1200px 520px at 50% -120px, #E7F0FA 0%, rgba(231, 240, 250, 0) 70%),
+    linear-gradient(180deg, #FAFCFF 0%, #F3F7FC 52%, #EEF3F9 100%);
 }
 
-.welcome-gradient-blinds.is-ready {
-  opacity: 1;
-}
-
-.welcome-gradient-blinds canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.welcome-gradient-blinds::before {
+.gov-home-bg::after {
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(60% 50% at 30% 30%, rgba(94, 234, 212, 0.16), transparent 65%),
-    radial-gradient(50% 42% at 75% 55%, rgba(251, 146, 60, 0.12), transparent 60%),
-    radial-gradient(45% 40% at 50% 90%, rgba(168, 139, 250, 0.10), transparent 60%);
-  z-index: -1;
+  background-image:
+    linear-gradient(to right, rgba(23, 63, 107, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 63, 107, 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 78% 62% at 50% 34%, #000 0%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 78% 62% at 50% 34%, #000 0%, transparent 78%);
 }
 
-.welcome-gradient-blinds.is-ready::before {
-  opacity: 0;
-  transition: opacity 0.8s;
+.gov-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 4px 9px;
+  border-radius: 999px;
+  border: 1px solid #D8E4F2;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #2563A8;
+  letter-spacing: 0.01em;
 }
 
-.welcome-vignette {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 80% 60% at 50% 110%, rgba(255, 255, 255, 0.98) 0%, transparent 60%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, transparent 20%, transparent 70%, rgba(255, 255, 255, 0.96) 100%);
+.gov-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #2C6B4F;
+  box-shadow: 0 0 0 3px rgba(44, 107, 79, 0.14);
+}
+
+.gov-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 15px;
+  border-radius: 14px;
+  border: 1px solid #E4EAF2;
+  background: rgba(255, 255, 255, 0.9);
+  text-align: left;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.gov-card:hover {
+  border-color: #B9D0E8;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(23, 63, 107, 0.10);
+}
+
+.gov-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: #EDF3FA;
+  border: 1px solid #DCE7F4;
+}
+
+.gov-card-arrow {
+  margin-top: 2px;
+  transition: color .16s ease, transform .16s ease;
+}
+
+.gov-card:hover .gov-card-arrow {
+  color: #2563A8;
+  transform: translateX(2px);
+}
+
+.gov-composer {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid #E1E8F1;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 20px rgba(23, 63, 107, 0.06);
+}
+
+.gov-select {
+  position: relative;
+  display: flex;
+  height: 44px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid #E4E7EC;
+  padding: 0 12px;
+}
+
+.gov-select:focus-within {
+  border-color: #8FB3DB;
+  box-shadow: 0 0 0 4px rgba(37, 99, 168, 0.10);
+}
+
+.gov-ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 13px;
+  border-radius: 10px;
+  border: 1px solid #E4E7EC;
+  background: #fff;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #475467;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.gov-ghost-btn:hover {
+  background: #F8FAFC;
+  border-color: #D0D5DD;
+}
+
+.gov-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 10px;
+  background: #173F6B;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.10);
+  transition: background .15s ease;
+}
+
+.gov-primary-btn:hover {
+  background: #1E5288;
+}
+
+@media (max-width: 640px) {
+  .gov-composer {
+    padding: 13px;
+  }
 }
 </style>

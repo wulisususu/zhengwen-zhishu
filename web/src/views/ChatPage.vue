@@ -1,6 +1,6 @@
 <template>
   <main class="flex h-dvh flex-col overflow-hidden bg-[#e2e9f1] text-black">
-    <AppHeader title="" subtitle="中科信创（南京）" :show-logout="false" @goHome="router.push('/')" />
+    <AppHeader title="" subtitle="政务办公智能体" :show-logout="false" @goHome="router.push('/')" />
 
     <div class="flex min-h-0 flex-1 p-3 gap-3">
       <aside class="hidden w-[232px] shrink-0 rounded-[12px] border border-[#dce6f1] bg-white px-4 py-3 md:flex md:min-h-0 md:flex-col">

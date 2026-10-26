@@ -96,11 +96,14 @@ def export(document_id: str, body: ExportRequest, user: User = Depends(get_curre
     payload = json.loads(doc.payload_json)
     from .policy_refs import references
     payload["policyRefs"] = references(payload.get("citationIds", []), snapshot=payload.get("_citationSnapshot", []))
+    from .export import GONGWEN_DOC_TYPES, gongwen_docx
     if payload.get("docType", "notice") == "notice":
         from .proofread import notice, review
         from .export import notice_docx
         payload["_review"] = review(doc.id, payload)
         content = notice_docx(notice(doc.id, payload), payload)
+    elif payload.get("docType") in GONGWEN_DOC_TYPES:
+        content = gongwen_docx(payload)
     else:
         content = internal_docx(payload)
     service.record(db, doc, user, "导出内部草稿", "带内部草稿标识，不能作为正式文件使用")

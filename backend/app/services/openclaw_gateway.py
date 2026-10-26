@@ -66,16 +66,6 @@ def _openclaw_cfg() -> dict[str, Any]:
             or cfg.get("chat_agent_id")
             or "main"
         ).strip() or "main",
-        "pediatric_medical_qa_model": str(
-            os.getenv("OPENCLAW_PEDIATRIC_MEDICAL_QA_MODEL")
-            or cfg.get("pediatric_medical_qa_model")
-            or "openclaw/children-qa"
-        ).strip() or "openclaw/children-qa",
-        "pediatric_medical_qa_agent_id": str(
-            os.getenv("OPENCLAW_PEDIATRIC_MEDICAL_QA_AGENT_ID")
-            or cfg.get("pediatric_medical_qa_agent_id")
-            or "children-qa"
-        ).strip() or "children-qa",
         "document_model": str(
             os.getenv("OPENCLAW_DOCUMENT_MODEL")
             or cfg.get("document_model")
@@ -116,15 +106,6 @@ def is_openclaw_knowledge_enabled() -> bool:
 
 
 def get_openclaw_knowledge_runtime() -> dict[str, Any]:
-    return _openclaw_cfg()
-
-
-def is_openclaw_pediatric_medical_qa_enabled() -> bool:
-    cfg = _openclaw_cfg()
-    return bool(cfg["enabled"] and cfg["gateway_token"])
-
-
-def get_openclaw_pediatric_medical_qa_runtime() -> dict[str, Any]:
     return _openclaw_cfg()
 
 
@@ -301,108 +282,6 @@ def build_knowledge_input(
     ])
     return "\n".join(lines).strip()
 
-
-def build_pediatric_medical_qa_input(
-    content: str,
-    history_messages: list[dict[str, str]] | None = None,
-) -> str:
-    lines = [
-        "你正在处理少儿问诊智能体的一轮对话。",
-        "必须严格遵循 pediatric-medical-qa skill；安全边界、红旗症状、回答结构全部以该 skill 为准。",
-        "后端只负责路由到 OpenClaw agent；不要改写成文档、知识库、语音或工具流程。",
-        "如果用户问题不是儿童、婴幼儿、新生儿、青少年健康相关，请温和说明该智能体主要用于少儿健康问答，并建议回到普通聊天。",
-        "不要输出思考过程，不要给确定诊断，不要给处方药或按体重剂量。",
-        "",
-        "最近对话：",
-    ]
-    for item in history_messages or []:
-        role = str(item.get("role") or "").strip() or "user"
-        text = str(item.get("content") or "").strip()
-        if not text:
-            continue
-        lines.append(f"{role}: {text[:1200]}")
-    lines.extend([
-        "",
-        "当前用户消息：",
-        (content or "").strip(),
-    ])
-    return "\n".join(lines).strip()
-
-
-
-# --- Direct 8002 caller for pediatric QA (bypasses OpenClaw overhead) ---
-_PEDIATRIC_SYSTEM_PROMPT = (
-    '你是一个面向家长的少儿健康问答助手。回答儿童、婴幼儿、青少年健康问题。\n'
-    '规则：不能线上确诊，不能替代儿科医生，不能开处方药/抗生素/激素。不给具体用药剂量，只提醒遵医嘱。\n'
-    '红旗症状先建议立即就医：3个月以下发热>=38度、呼吸困难/嘴唇发紫、抽搐/意识异常、明显脱水、便血呕血、按压不褪色皮疹、误服药物/异物、严重过敏。\n'
-    '无红旗时回答：风险级别、可能原因、家庭护理、何时就医。\n'
-    '结尾加：以上不能替代儿科医生面诊，如果孩子状态变差请及时就医。\n'
-    '用短句，温和可执行，不吓唬家长。不确定就说不确定。\n'
-    '如果用户问题不是儿童健康相关，温和说明该智能体主要用于少儿健康问答。'
-)
-
-def get_pediatric_qa_direct_url() -> str:
-    openclaw_section = (get_config().get('openclaw') or {}) if isinstance(get_config(), dict) else {}
-    return str(openclaw_section.get('pediatric_qa_direct_url') or 'http://127.0.0.1:8002').rstrip('/')
-
-def iter_direct_pediatric_qa_events(
-    user_message: str,
-    history_messages: list[dict[str, str]] | None = None,
-    timeout_seconds: int = 180,
-    max_tokens: int = 800,
-):
-    """KB search -> 0.6B pipeline (non-streaming)."""
-    # Step 1: KB search
-    kb_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4IiwiZXhwIjoxNzgxMzQzMTk2fQ.y_NGQQQ7O6kanazlP0nRP98w8nvna0Z5qqRbhiToBJk"
-    kb_data = json.dumps({"query": user_message, "top_k": 3}).encode()
-    kb_req = request.Request(
-        "http://127.0.0.1:8000/api/v1/knowledge/search",
-        data=kb_data,
-        headers={"Authorization": "Bearer " + kb_token, "Content-Type": "application/json"}
-    )
-    try:
-        kb_resp = json.loads(request.urlopen(kb_req, timeout=10).read())
-        kb_results = kb_resp.get("data", {}).get("results", [])
-    except Exception:
-        kb_results = []
-
-    # Step 2: Build messages
-    if kb_results:
-        ctx = "\n---\n".join(r["chunk_text"][:600] for r in kb_results)
-        user_content = f"知识库参考:\n{ctx}\n\n问题: {user_message}"
-    else:
-        user_content = user_message
-
-    messages = [{"role": "system", "content": _PEDIATRIC_SYSTEM_PROMPT}]
-    for item in (history_messages or [])[-2:]:
-        role = str(item.get("role") or "user").strip()
-        text = str(item.get("content") or "").strip()
-        if text:
-            messages.append({"role": role, "content": text[:500]})
-    messages.append({"role": "user", "content": user_content})
-
-    # Step 3: Call 0.6B (non-streaming)
-    base_url = get_pediatric_qa_direct_url()
-    payload = {
-        "model": "Qwen3-0.6B-Q4_K_M.gguf",
-        "messages": messages,
-        "stream": False,
-        "max_tokens": max_tokens,
-        "temperature": 0.3,
-    }
-    req = request.Request(
-        f"{base_url}/v1/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    resp = json.loads(request.urlopen(req, timeout=timeout_seconds).read())
-    answer = (resp.get("choices") or [{}])[0].get("message", {}).get("content") or ""
-
-    # Yield the full answer
-    if answer:
-        for ch in answer:
-            yield ch
 
 def build_document_input(
     content: str,

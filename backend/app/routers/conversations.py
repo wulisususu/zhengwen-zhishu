@@ -41,8 +41,6 @@ from app.services.openclaw_gateway import (
     build_document_chunk_input,
     build_document_prompt_budget,
     build_chat_input,
-    build_pediatric_medical_qa_input,
-    iter_direct_pediatric_qa_events,
     build_document_input,
     build_document_outline_input,
     extract_openclaw_completed_text,
@@ -68,11 +66,9 @@ from app.services.openclaw_gateway import (
     get_openclaw_chat_runtime,
     get_openclaw_document_runtime,
     get_openclaw_knowledge_runtime,
-    get_openclaw_pediatric_medical_qa_runtime,
     is_openclaw_chat_enabled,
     is_openclaw_knowledge_enabled,
     is_openclaw_document_enabled,
-    is_openclaw_pediatric_medical_qa_enabled,
     iter_openclaw_agent_events,
     invoke_openclaw_tool,
     merge_openclaw_text_delta,
@@ -99,7 +95,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TITLES = {"", "new", "New", "NEW", "\u65b0\u5bf9\u8bdd", "\u5f53\u524d\u5bf9\u8bdd"}
-_VALID_WORKFLOWS = {"chat", "document", "knowledge", "pediatric_medical_qa"}
+_VALID_WORKFLOWS = {"chat", "document", "knowledge"}
 _ATTACHMENT_WAIT_SECONDS = 150
 _ATTACHMENT_POLL_SECONDS = 2.0
 _CHAT_HISTORY_LIMIT = 8
@@ -2124,31 +2120,6 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
                 note = "还有部分附件未完成解析，下面先基于已解析附件回答。\n\n"
                 full_text += note
                 yield "data: " + _json.dumps(_workflow_event(workflow_type, intent_type, {"type": "token", "content": note}), ensure_ascii=False) + NL
-            if workflow_type == "pediatric_medical_qa":
-                history_payload = [
-                    {"role": (message.role or "").strip() or "user", "content": message.content or ""}
-                    for message in history_messages
-                    if (message.content or "").strip()
-                ]
-                try:
-                    for delta in iter_direct_pediatric_qa_events(
-                        user_message=content,
-                        history_messages=history_payload,
-                    ):
-                        if delta:
-                            full_text += delta
-                            yield "data: " + _json.dumps(_workflow_event(workflow_type, intent_type, {"type": "token", "content": delta}), ensure_ascii=False) + NL
-                except Exception:
-                    logger.exception("Pediatric medical QA direct 8002 stream failed for conversation %s", conv_id)
-                    full_text = "少儿问诊智能体暂时不可用，请稍后重试；如果孩子情况紧急或状态变差，请及时就医。"
-                    yield "data: " + _json.dumps(_workflow_event(workflow_type, intent_type, {"type": "token", "content": full_text}), ensure_ascii=False) + NL
-                if not full_text.strip():
-                    full_text = "少儿问诊智能体本次没有返回有效回答，请稍后重试；如果孩子情况紧急或状态变差，请及时就医。"
-                    yield "data: " + _json.dumps(_workflow_event(workflow_type, intent_type, {"type": "token", "content": full_text}), ensure_ascii=False) + NL
-                reply = _save_assistant_reply(db, conv, full_text, intent_type=intent_type)
-                yield "data: " + _json.dumps(_workflow_event(workflow_type, intent_type, {"type": "done", "id": reply.id, "content": full_text, "created_at": reply.created_at.isoformat() if reply.created_at else None, "status": "done", "conversation": ConversationOut.model_validate(conv).model_dump(mode="json")}), ensure_ascii=False) + NL
-                yield _sse_event(_json, "[DONE]")
-                return
             stream_source = generate_stream_with_context(content, local_context, max_tokens=6144) if local_context else generate_stream(chat_prompt, max_tokens=4096)
             for event in stream_source:
                 for line in event.strip().split("\n"):
@@ -2183,24 +2154,6 @@ def send_message(conv_id: int, body: dict, user: User = Depends(get_current_user
 
     from app.services.llm_client import ensure_context_answer, generate, generate_with_context
     reply_text = ""
-    if workflow_type == "pediatric_medical_qa":
-        history_payload = [
-            {"role": (message.role or "").strip() or "user", "content": message.content or ""}
-            for message in history_messages
-            if (message.content or "").strip()
-        ]
-        pediatric_text = ""
-        try:
-            for delta in iter_direct_pediatric_qa_events(
-                user_message=content,
-                history_messages=history_payload,
-            ):
-                if delta:
-                    pediatric_text += delta
-        except Exception:
-            logger.exception("Pediatric medical QA direct 8002 call failed for conversation %s", conv_id)
-            pediatric_text = "少儿问诊智能体暂时不可用，请稍后重试；如果孩子情况紧急或状态变差，请及时就医。"
-        reply_text = pediatric_text.strip() or "少儿问诊智能体本次没有返回有效回答，请稍后重试；如果孩子情况紧急或状态变差，请及时就医。"
 
 # Chat requests are now handled exclusively by PI Agent path (L747).
 # Non-chat workflows fall through to generate() below.

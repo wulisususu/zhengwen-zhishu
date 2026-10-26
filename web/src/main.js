@@ -6,10 +6,11 @@ import WelcomePage from './views/WelcomePage.vue'
 import WorkspacePage from './views/WorkspacePage.vue'
 import ChatPage from './views/ChatPage.vue'
 import DocumentPage from './views/DocumentPage.vue'
+import GongwenPage from './views/GongwenPage.vue'
+import PolicyPage from './views/PolicyPage.vue'
 import PptHostPage from './views/PptHostPage.vue'
 import RoleEntryPage from './features/gov-office/pages/RoleEntryPage.vue'
 import AgentDirectoryPage from './views/AgentDirectoryPage.vue'
-import PediatricQAPage from './views/PediatricQAPage.vue'
 import SettingsPage from './views/SettingsPage.vue'
 import { hasSessionToken } from './stores/auth.js'
 import { ENTRY_PATH, entryGuard } from './roleEntryGuard.js'
@@ -34,11 +35,11 @@ const routes = [
   { path: '/chat/:id', component: ChatPage },
   { path: '/document', component: DocumentPage },
   { path: '/document/:id', component: DocumentPage },
+  { path: '/gongwen', component: GongwenPage },
+  { path: '/policy', component: PolicyPage },
   { path: '/ppt', redirect: () => `/ppt/${createPptProjectId()}` },
   { path: '/ppt/:projectId', component: PptHostPage },
   { path: '/agents', component: AgentDirectoryPage },
-  { path: '/agents/pediatric-medical-qa', component: PediatricQAPage },
-  { path: '/agents/pediatric-medical-qa/:id', component: PediatricQAPage },
   { path: '/settings', component: SettingsPage },
   // 不设登录页：进入时选择「起草人」或「审核人」；旧的 /login 链接统一转到角色入口
   { path: ENTRY_PATH, component: RoleEntryPage },

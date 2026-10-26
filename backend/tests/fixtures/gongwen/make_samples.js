@@ -17,7 +17,7 @@ const path = require("path");
 const KIT = path.resolve(process.argv[2] || path.join(__dirname, "../../../third_party/gongwen-kit"));
 const G = require(path.join(KIT, "lib/gongwen-core")).form("wen");
 const { Document } = G.require_docx();
-const { externalStyles, numbering, sectionProps, writeDoc, letterhead, title, zhusong, p, luokuan, banji } = G;
+const { externalStyles, numbering, sectionProps, writeDoc, letterhead, title, zhusong, luokuan, banji } = G;
 
 const AGENCY = "示例单位办公室";
 const DATE = "2026年10月26日";
@@ -28,9 +28,13 @@ function build({
   thirdHeading = "三、有关要求",
   signDate = DATE,
   banjiOn = true,
+  docNo = { dept: "示办发", year: 2026, seq: 8 },
+  subs = [],        // [[原文, 替换]]：对正文段落逐个做字面替换，用来埋写法类错误
+  extra = [],       // 插在「（三）」段之后的构件（如表格）
 } = {}) {
+  const p = (text) => G.p(subs.reduce((t, [from, to]) => t.split(from).join(to), text));
   const children = [
-    ...(letterheadOn ? letterhead({ agency: AGENCY, docNo: { dept: "示办发", year: 2026, seq: 8 } }) : []),
+    ...(letterheadOn ? letterhead({ agency: AGENCY, docNo }) : []),
     ...title(["示例单位办公室关于开展公文格式", "规范培训工作的通知"]),
     zhusong("各部门、各直属单位"),
     p("为规范公文格式，提高办文质量，现就开展公文格式规范培训有关事项通知如下。"),
@@ -39,6 +43,7 @@ function build({
     p("（一）讲解公文版心与行字数要求"),
     p("（二）讲解层次序数与成文日期写法"),
     p("（三）组织常见格式差错案例研讨"),
+    ...extra,
     p("二、参训人员"),
     p("各部门负责公文处理工作的同志，每单位 1 至 2 人。"),
     p(thirdHeading),
@@ -69,10 +74,12 @@ const SAMPLES = {
   "probe_01b_count_yixia.docx": { countSentence: "本次培训包括以下五项任务：" },
 };
 
-(async () => {
+module.exports = { KIT, G, build, writeDoc };
+
+if (require.main === module) (async () => {
   for (const [name, opts] of Object.entries(SAMPLES)) {
     // strict:false —— 必错样本本来就该命中，不让 writeDoc 因此置非零退出码
-    await writeDoc(build(opts), path.join(__dirname, name), { strict: false, quiet: true });
+    await writeDoc(build(opts), path.join(process.env.OUT_DIR || __dirname, name), { strict: false, quiet: true });
   }
   process.exitCode = 0;
 })();

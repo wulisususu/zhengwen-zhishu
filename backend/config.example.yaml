@@ -32,3 +32,13 @@ internal:
   service_token: ""
 openclaw:
   gateway_token: ""
+
+# ── 公文生成与审校（gongwen-kit，Node >= 18）。安装见 backend/third_party/README.md ──
+gongwen:
+  kit_path: third_party/gongwen-kit   # 相对 backend/ 或绝对路径；离线包解压后指向解压目录
+  node_bin: node                       # Node 可执行文件，不在 PATH 时写绝对路径
+  check_timeout_seconds: 20            # x86 实测单份 0.5 s；板端未测，留足余量
+  render_timeout_seconds: 30           # 生成（含 gongwen-kit 自带的出稿自检）x86 实测约 1 s
+  fix_timeout_seconds: 30
+  max_upload_mb: 10                    # 上传 .docx 大小上限
+  max_concurrent: 2                    # 同时运行的 Node 进程上限

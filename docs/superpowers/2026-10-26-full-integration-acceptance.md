@@ -16,15 +16,20 @@
 |---|---|
 | RK3588完整相關後端回歸 | **403 passed / 2 skipped / 5 xfailed，168.90秒** |
 | Windows新API及回歸 | 49 passed；最後DOCX/政策/批准關聯套件23 passed |
-| 前端完整npm test | 宿主16項、Vitest **248項通過** |
+| 前端完整npm test | 宿主16項、Vitest **249項通過**，包括延遲載入保護 |
 | 型別檢查及生產build | exit 0；保留既有大chunk提示 |
 | 真實瀏覽器完整app.main | 72次真實gov HTTP請求，0頁面錯誤；實際模型生成109字 |
 | 真實業務流程 | 登入→新建→上傳→模型生成→保存→雙層檢查→定位→錯稿導出→送審→退回→修改要素/序號/表格→引用PDF政策→刷新→重檢→重提→他人批准→DOCX下載；跨用戶拒絕 |
 | WPS實機 | 四類樣張10頁；實際KWPS COM路徑D:/WPS Office/12.1.0.25225/office6，A4與每頁內部草稿標記全部存在，逐頁目視未見文字/表格裁切或重疊 |
+| 部署後公網複驗 | 刻意延遲真實GET回應，早期輸入完整保留；2項真實錯誤顯示/定位，修正後critical=0，刷新與11903-byte DOCX下載成功，0頁面錯誤 |
 
 2 skipped是Windows專用Node環境/程序終止測試，在Windows已實跑通過；5 xfailed是原gongwen-kit獨立檢查的已知漏檢，不是雙層規則的漏檢。403項覆蓋全部T1政策套件、T2/T3及原文稿/權限/文件解析/DOCX回歸，不冒稱整個歷史PPT及其他舊模組套件全部通過。Windows整個舊後端套件先前仍受python-pptx/docxtpl等可選依賴收集限制。
 
 WPS樣張包括：正常通知與政策附件3頁、長正文及20行表格4頁、要素待補通知1頁、帶錯通知2頁。所有頁面已實際從WPS輸出PDF並轉PNG檢查；來源附錄改左對齊，短通知不再因額外審校說明多出一頁。WPS輸出包含FangSong/SimSun/SimHei及WPS字體子集；此驗收不宣稱所有電腦字體相同，也不等同正式發文合規認證。
+
+另將公網實際下載的通知以WPS開啟、輸出並逐頁檢查2頁（含末頁版記），A4、草稿標記、正文、承辦、落款及版記完整。合計檢查5份12頁。
+
+公網初次複驗曾發現：新建後的背景載入覆寫了未保存欄位，導致後端如實報缺項。已以Vue完整頁面測試重現RED，再修復同稿未保存編輯保護及保存成功同步，提交`7d1e0e8`。修後公網測試刻意延後真實HTTP回應，驗證欄位不再遺失；兩輪臨時帳號/文稿均按精確ID清理，生產使用者與既有資料計數恢復原值。
 
 ## RK3588性能
 
@@ -61,5 +66,7 @@ WPS樣張包括：正常通知與政策附件3頁、長正文及20行表格4頁�
 Windows倉庫D:/innet-agent-ai-box，整合工作區D:/vps_claude/integration-worktrees/basic。原T1/T2/T3與feat/basic-integration分支保留，開發VPS原會話與工作區未重置。程式分批提交6e833b3（T2）、8a59ed0（T3），最終修復提交可由本報告相鄰Git歷史查閱。
 
 驗收產物位於D:/vps_claude/artifacts/20261026-stage2/：性能、回退、完整測試日誌、真實瀏覽器截圖、WPS樣張與逐頁PNG。實際合main/部署版本、資料計數及備份路徑以部署後`deployment-final.json`及板端`mqw/deploy/full-integration-20261026.json`為準。
+
+Windows及板端main已合入功能，公網運行程式版本`0cf7c6d`（包含`7d1e0e8`）。服務入口：`http://124.223.176.99:3000/gov`；板端release為`/home/youyeetoo/mqw/releases/20261026-0cf7c6d`。本次切換前備份：`/home/youyeetoo/mqw/backups/20261026-before-full-054423Z`；完整整合前備份：`20261026-before-full-053707Z`。最後驗收文件另提交並同步main，無須重啟相同程式；程式版本與文件同步後的repository_revision分開記錄。
 
 部署須先SQLite backup及私人配置備份，再原子切換backend/web軟連結。回退切回20261026-0a695d7版本與先前配置，重啟mqw-backend/frontend；保留當前業務及政策資料庫，不以舊備份覆蓋上線後新增資料。

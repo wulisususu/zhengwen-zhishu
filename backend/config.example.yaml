@@ -26,6 +26,24 @@ model:
 security:
   admin_username: ""
 
+# ── 政策检索（T1）。以下均为可调参数，按部署环境修改 ──
+# 只有 model.mode = cloud_allowed 时才会访问外部数据源；intranet / offline 下只查本地库（source=local_only）
+policy:
+  enabled: true                       # false = 只查本地库，不联网
+  base_url: https://sousuo.www.gov.cn/search-gov/data   # 国务院政策文件库检索接口；留空 = 不联网
+  timeout_seconds: 15                 # 单次请求超时（秒）
+  retry: 2                            # 仅超时 / 5xx 时重试，最多 2 次
+  min_interval_seconds: 1.0           # 两次请求最小间隔（秒），不得小于 1
+  cache_ttl_seconds: 300              # 同一检索 5 分钟内走内存缓存
+  max_pages: 20                       # 同步翻页上限（硬上限 20）
+  db_path: data/policy.db             # 公开政策库 SQLite（与用户私有知识库分库存放）
+  fetch:                              # 导入原文 URL 时的抓取限制（SSRF 防护）
+    allowed_hosts: [sousuo.www.gov.cn, www.gov.cn]
+    extra_allowed_hosts: []           # 部门站点必须在此显式加入，例如 [www.miit.gov.cn]
+    timeout_seconds: 15               # 上限 15
+    max_bytes: 10485760               # 响应体上限 10 MB
+    max_redirects: 2                  # 重定向上限 2 跳，每跳重新校验域名与 IP
+
 llm:
   cloud_api_key: ""
 internal:

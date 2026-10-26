@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_config
 from app.database import init_db
 from app.errors import AppError
-from app.routers import health, auth, users, conversations, chat, files, knowledge, asr, tts, settings, system, documents, internal
+from app.routers import health, auth, users, conversations, chat, files, knowledge, asr, tts, settings, system, documents, internal, policy, gov_policy
 from app.minicpm_pipeline.router import router as minicpm_documents_router
 from app.docs_pipeline import router as docs_pipeline_router
 from app.PPT_master import router as ppt_master_router
@@ -35,6 +35,8 @@ app.include_router(settings.router,      prefix=API)
 app.include_router(system.router,        prefix=API)
 app.include_router(documents.router,     prefix=API)
 app.include_router(internal.router,      prefix=API)
+app.include_router(policy.router,        prefix=API)
+app.include_router(gov_policy.router,    prefix=API)
 app.include_router(minicpm_documents_router, prefix=API)
 app.include_router(docs_pipeline_router, prefix=API)
 app.include_router(ppt_master_router,   prefix=API)

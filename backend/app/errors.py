@@ -24,3 +24,4 @@ ERR_NOT_FOUND = 40400
 ERR_PARAM = 40000
 ERR_INTERNAL = 50000
 ERR_ASR = 50100
+ERR_POLICY = 50200  # policy retrieval; detail in data.error.code (see docs/policy-api.md)

@@ -5,10 +5,8 @@
     关键词与条款编号的区分度已经足够；再叠一层 embedding 只会让「为什么召回这条」
     变得不可解释。这里用 BM25 + 查询词覆盖率，分数可拆解、可展示、可调阈值。
 
-检索范围（对应原型的三档）：
-    current —— 仅现行有效
-    all     —— 全部（含已废止、待核实）
-    policy  —— 仅指定政策
+检索范围（current / all / policy）由 corpus.load 决定：语料只来自既有政策库（T1），
+本模块只负责打分排序。
 """
 from __future__ import annotations
 
@@ -16,10 +14,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from sqlalchemy.orm import Session
-
-from .models import BASIS_STATUSES, PolicyClause, PolicyDocument
-from .parser import normalize_search_text
+from typing import Any
 
 #: 打分权重（可调）
 W_BM25 = 0.50
@@ -40,10 +35,15 @@ BM25_B = 0.75
 DEFAULT_THRESHOLD = 0.60
 
 
+def normalize_search_text(text: str) -> str:
+    """检索用归一化：去标点与空白，只保留中文、字母、数字。"""
+    return re.sub(r"[^\u4e00-\u9fa5a-zA-Z0-9]", "", (text or "").lower())
+
+
 @dataclass
 class Candidate:
-    policy: PolicyDocument
-    clause: PolicyClause
+    policy: Any   # corpus.PolicyView
+    clause: Any   # corpus.ClauseView
     score: float
     bm25: float
     coverage: float
@@ -55,6 +55,7 @@ class Candidate:
             "index": index,
             "policy_id": self.policy.id,
             "clause_id": self.clause.id,
+            "citation_id": self.clause.citation_id,
             "policy_title": self.policy.title,
             "doc_no": self.policy.doc_no,
             "issuer": self.policy.issuer,
@@ -131,7 +132,7 @@ def _answer_type_match(dimensions: set[str], content: str) -> float:
     return 0.0
 
 
-def _clause_tokens(clause: PolicyClause) -> list[str]:
+def _clause_tokens(clause) -> list[str]:
     base = clause.search_text or normalize_search_text(clause.content)
     text = f"{clause.clause_no}{clause.chapter}{base}"
     return tokenize(text)
@@ -171,27 +172,8 @@ def _bm25_scores(query_tokens: list[str], docs_tokens: list[list[str]]) -> tuple
     return scores, idf
 
 
-def search(
-    db: Session,
-    query: str,
-    *,
-    scope: str = "current",
-    policy_ids: list[int] | None = None,
-    top_k: int = 12,
-    threshold: float = DEFAULT_THRESHOLD,
-) -> list[Candidate]:
-    """返回按分数降序的条款候选（不过滤阈值，阈值判断交给调用方）。"""
-    q = db.query(PolicyClause, PolicyDocument).join(
-        PolicyDocument, PolicyClause.policy_id == PolicyDocument.id
-    )
-
-    if scope == "policy" and policy_ids:
-        q = q.filter(PolicyClause.policy_id.in_(policy_ids))
-    elif scope == "current":
-        q = q.filter(PolicyDocument.status.in_(BASIS_STATUSES))
-    # scope == "all" → 不加状态过滤
-
-    rows = q.all()
+def search(rows: list[tuple[Any, Any]], query: str, *, top_k: int = 12) -> list[Candidate]:
+    """对 corpus.load 给出的 (条款, 政策) 打分，返回按分数降序的候选（阈值判断交给调用方）。"""
     if not rows:
         return []
 

@@ -466,6 +466,20 @@ class PolicyStore:
             rows = conn.execute(sql, (*params, limit)).fetchall()
         return [ClauseHit(self._clause(r, "c_"), self._doc(r)) for r in rows]
 
+    def corpus_clauses(self, policy_ids: list[int] | None = None) -> list[ClauseHit]:
+        """All clauses of current-version policies (or of the given policy ids, any version),
+        with their policy row. Read-only; used by the policy QA ranking (app/policy/corpus.py)."""
+        where, params = [], []
+        if policy_ids:
+            where.append(f"p.id IN ({', '.join('?' for _ in policy_ids)})")
+            params += [int(i) for i in policy_ids]
+        else:
+            where.append("p.is_current = 1")
+        sql = f"{self._joined_select()} WHERE {' AND '.join(where)} ORDER BY p.id, c.sequence"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [ClauseHit(self._clause(r, "c_"), self._doc(r)) for r in rows]
+
     def clauses_by_ids(self, ids: list[int]) -> dict[int, ClauseHit]:
         if not ids:
             return {}

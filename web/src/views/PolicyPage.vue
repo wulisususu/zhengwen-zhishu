@@ -7,14 +7,14 @@
       <aside class="hidden w-[300px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#dce6f1] bg-white md:flex">
         <div class="flex items-center gap-2 border-b border-[#EEF2F7] px-3.5 py-2.5">
           <span class="text-[14px] font-semibold text-[#344054]">政策库</span>
-          <span class="text-[12px] text-[#98A2B3]">{{ docs.length }} 件 / {{ stats.clauses || 0 }} 条</span>
-          <button type="button" class="gov-icon-btn ml-auto" @click="showUpload = !showUpload">
+          <span class="text-[12px] text-[#98A2B3]">{{ docs.length }} 件 · 待核实 {{ stats.unverified || 0 }}</span>
+          <button v-if="isReviewer" type="button" class="gov-icon-btn ml-auto" aria-label="导入政策" @click="showUpload = !showUpload">
             <Plus class="size-4" :stroke-width="2" />
           </button>
         </div>
 
         <!-- 上传表单 -->
-        <div v-if="showUpload" class="border-b border-[#EEF2F7] bg-[#F8FBFF] px-3.5 py-3">
+        <div v-if="showUpload && isReviewer" class="border-b border-[#EEF2F7] bg-[#F8FBFF] px-3.5 py-3">
           <div class="mb-2 flex items-center gap-1 rounded-[8px] bg-[#EDF3FA] p-0.5">
             <button type="button" :class="['gov-tab', mode === 'file' ? 'gov-tab--on' : '']"
               @click="mode = 'file'">上传文件</button>
@@ -29,7 +29,7 @@
               <span class="truncate">{{ file ? file.name : '选择政策原文（PDF/DOCX/TXT）' }}</span>
             </button>
             <p class="mt-1.5 text-[11px] leading-4 text-[#A8B2C1]">
-              扫描件 / 截图打印件会自动 OCR，识别结果需人工核对
+              PDF 逐页解析，扫描页走 OCR；有页面识别不完整时整份不入库
             </p>
           </template>
 
@@ -45,15 +45,14 @@
           <div class="mt-2 grid grid-cols-2 gap-2">
             <input v-model="meta.doc_no" class="gov-input" placeholder="文号" />
             <input v-model="meta.issuer" class="gov-input" placeholder="发文机关" />
-            <input v-model="meta.effective_date" class="gov-input" placeholder="生效日期" />
-            <input v-model="meta.expire_date" class="gov-input" placeholder="失效日期" />
+            <input v-model="meta.publish_date" class="gov-input col-span-2" placeholder="发布日期（YYYY-MM-DD）" />
           </div>
           <button type="button" class="gov-primary mt-2 w-full"
             :disabled="(mode === 'file' ? !file : !pasteText.trim()) || uploading" @click="submit">
             <Loader2 v-if="uploading" class="size-4 animate-spin" :stroke-width="2" />
-            {{ uploading ? '解析入库中…' : (mode === 'file' ? '上传并解析' : '解析入库') }}
+            {{ uploading ? '解析入库中…' : '导入（待核实）' }}
           </button>
-          <p class="mt-1.5 text-[11.5px] leading-4 text-[#A8B2C1]">按「第X条」切分，保留页码与原文校验值</p>
+          <p class="mt-1.5 text-[11.5px] leading-4 text-[#A8B2C1]">导入后状态为「待核实」，须在政策库核验并补录生效、失效日期后才可作为现行依据</p>
         </div>
 
         <!-- 结果提示：不用 alert，避免挡住页面也避免把失败显示成成功 -->
@@ -77,7 +76,7 @@
               <span :class="['gov-status', statusClass(d.status)]">{{ d.status }}</span>
             </div>
             <div class="mt-1 truncate text-[11.5px] text-[#98A2B3]">
-              {{ d.doc_no || '无文号' }} · {{ d.clause_count }} 条
+              {{ d.doc_no || '无文号' }} · 第 {{ d.version }} 版
             </div>
             <div v-if="focusPolicy === d.id" class="mt-1.5 space-y-0.5 text-[11.5px] text-[#667085]">
               <div>机关：{{ d.issuer || '—' }}</div>
@@ -232,7 +231,7 @@
               </div>
 
               <div class="mt-3 flex flex-wrap gap-2">
-                <button type="button" class="gov-ghost" @click="showUpload = true">前往政策库补充</button>
+                <button type="button" class="gov-ghost" @click="isReviewer ? (showUpload = true) : router.push('/gov/library')">{{ isReviewer ? '导入相关政策' : '前往政策库' }}</button>
                 <button type="button" class="gov-ghost" @click="question = ''">换个问法</button>
               </div>
             </div>
@@ -319,7 +318,8 @@ const pasteText = ref('')
 const notice = ref(null)
 const file = ref(null)
 const fileInput = ref(null)
-const meta = reactive({ title: '', doc_no: '', issuer: '', effective_date: '', expire_date: '' })
+const meta = reactive({ title: '', doc_no: '', issuer: '', publish_date: '' })
+const isReviewer = ref(false)
 
 const scope = ref('current')
 const excludeDeprecated = ref(true)
@@ -395,14 +395,33 @@ function onFileChange(e) {
   if (f && !meta.title && /[\u4e00-\u9fa5]/.test(base)) meta.title = base
 }
 
+// 政策只存于既有政策库（/gov/policies）；状态以人工核验为准，再按生效 / 失效日期纠偏，与后端一致
+function policyLabel(p) {
+  if (p.verified_status === 'abolished') return '已废止'
+  if (p.verified_status !== 'current') return '待核实'
+  const today = new Date().toISOString().slice(0, 10)
+  if (p.expire_date && p.expire_date < today) return '已废止'
+  if (p.effective_date && p.effective_date > today) return '尚未生效'
+  return '现行有效'
+}
+
+function policyRow(p) {
+  return {
+    id: p.id, title: p.title, doc_no: p.doc_number || '', issuer: p.issuer || '', version: p.version,
+    status: policyLabel(p), effective_date: p.effective_date || '', expire_date: p.expire_date || '',
+  }
+}
+
 async function loadDocs() {
   try {
-    const [{ data: list }, { data: st }] = await Promise.all([
-      api.get('/policy/documents', { params: { limit: 100 } }),
-      api.get('/policy/stats'),
+    const [{ data: list }, { data: st }, { data: actor }] = await Promise.all([
+      api.get('/gov/policies', { params: { page_size: 50 } }),
+      api.get('/gov/policies/stats'),
+      api.get('/gov/actor'),
     ])
-    docs.value = list.data.items || []
+    docs.value = (list.data?.items || []).map(policyRow)
     stats.value = st.data || {}
+    isReviewer.value = (actor.data?.roles || []).includes('reviewer')
   } catch {
     /* 未登录或服务未就绪时不打断页面 */
   }
@@ -411,7 +430,7 @@ async function loadDocs() {
 function showError(prefix, err) {
   const res = err?.response?.data
   const detail = res?.data
-  let text = `${prefix}：${res?.message || err.message || '未知错误'}`
+  let text = `${prefix}：${res?.message || res?.detail || err.message || '未知错误'}`
   if (detail?.preview) {
     text += `\n识别到的开头：${detail.preview}`
   }
@@ -431,40 +450,25 @@ async function submit() {
 
 async function uploadText() {
   const text = pasteText.value.trim()
-  if (!text || uploading.value) return
-  uploading.value = true
-  notice.value = null
-  try {
-    const { data } = await api.post('/policy/documents/text', { ...meta, text })
-    if (data?.code !== 0) {
-      notice.value = { type: 'error', text: `入库失败：${data?.message || '未知错误'}` }
-      return
-    }
-    const body = data.data || {}
-    await loadDocs()
-    resetForm()
-    showUpload.value = false
-    notice.value = {
-      type: 'ok',
-      text: `已入库：《${body.document?.title || ''}》，切分 ${body.document?.clause_count || 0} 条`
-        + ((body.parse_warnings || []).length ? `\n提示：${body.parse_warnings.join('；')}` : ''),
-    }
-  } catch (err) {
-    showError('入库失败', err)
-  } finally {
-    uploading.value = false
-  }
+  if (!text) return
+  return importPolicy(new File([text], '粘贴正文.txt', { type: 'text/plain' }))
 }
 
 async function upload() {
-  if (!file.value || uploading.value) return
+  if (!file.value) return
+  return importPolicy(file.value)
+}
+
+async function importPolicy(blob) {
+  if (uploading.value) return
   uploading.value = true
   notice.value = null
   try {
     const form = new FormData()
-    form.append('file', file.value)
-    Object.entries(meta).forEach(([k, v]) => form.append(k, v ?? ''))
-    const { data } = await api.post('/policy/documents', form)
+    form.append('file', blob)
+    const fields = { title: meta.title, doc_number: meta.doc_no, issuer: meta.issuer, publish_date: meta.publish_date }
+    Object.entries(fields).forEach(([k, v]) => { if (v && v.trim()) form.append(k, v.trim()) })
+    const { data } = await api.post('/gov/policies/import', form)
     // 业务错误码走的是 HTTP 200，必须显式判断，否则失败会被当成成功
     if (data?.code !== 0) {
       notice.value = { type: 'error', text: `上传失败：${data?.message || '未知错误'}` }
@@ -474,11 +478,11 @@ async function upload() {
     await loadDocs()
     resetForm()
     showUpload.value = false
-    const tip = [`已入库：《${body.document?.title || ''}》，切分 ${body.document?.clause_count || 0} 条`]
-    if (body.ocr_used) tip.push('该文件无文字层，已用 OCR 识别，请核对条款编号与数字')
-    if ((body.parse_warnings || []).length) tip.push('解析提示：' + body.parse_warnings.join('；'))
-    const issues = body.lifecycle_issues || []
-    if (issues.length) tip.push('元数据体检：' + issues.map((i) => i.message).join('；'))
+    const tip = [`已导入：《${body.policy?.title || ''}》，切分 ${body.clause_count || 0} 条，状态：待核实`]
+    tip.push('请在政策库（/gov/library）核验并补录生效、失效日期，核验前不能作为现行依据')
+    if (body.needs_review_count) tip.push(`其中 ${body.needs_review_count} 条切分需人工复核`)
+    const warnings = body.extraction?.warnings || []
+    if (warnings.length) tip.push('解析提示：' + warnings.join('；'))
     notice.value = { type: 'ok', text: tip.join('\n') }
   } catch (err) {
     showError('上传失败', err)
@@ -645,6 +649,7 @@ function toDraftFromCite() {
   const c = activeCite.value
   if (!c) return
   sessionStorage.setItem('mqw-gongwen-references', JSON.stringify([{
+    citation_id: c.citation_id,
     policy_title: c.policy_title,
     doc_no: c.doc_no,
     clause_no: c.clause_no,
@@ -656,6 +661,7 @@ function toDraftFromCite() {
 function toDraft(turn) {
   const cites = turn?.data?.citations || []
   const refs = cites.map((c) => ({
+    citation_id: c.citation_id,
     policy_title: c.policy_title,
     doc_no: c.doc_no,
     clause_no: c.clause_no,

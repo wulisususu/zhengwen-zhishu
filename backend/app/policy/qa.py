@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.services import llm_chat
 
-from . import retrieval
+from . import corpus, retrieval
 from .lifecycle import display_date, is_basis_eligible
 from .models import PolicyQaLog, STATUS_PENDING, STATUS_REPEALED
 from .retrieval import Candidate, DEFAULT_THRESHOLD, build_excerpt
@@ -83,7 +83,14 @@ def _citation_payload(cand: Candidate, index: int) -> dict:
     return {
         "index": index,
         "clause_id": cand.clause.id,
+        # 与 /gov/citations/batch、文稿 citationIds 同一格式，问答引用可直接带入起草
+        "citation_id": cand.clause.citation_id,
         "policy_id": cand.policy.id,
+        "policy_version": cand.policy.version,
+        "verified_status": cand.policy.verified_status,
+        "status_note": cand.policy.status_note,
+        "source_anchor": cand.clause.source_anchor,
+        "needs_review": cand.clause.needs_review,
         "policy_title": cand.policy.title,
         "doc_no": cand.policy.doc_no,
         "issuer": cand.policy.issuer,
@@ -213,6 +220,7 @@ def _prepare(
     db: Session,
     question: str,
     *,
+    store,
     scope: str,
     policy_ids: list[int] | None,
     include_deprecated: bool,
@@ -226,7 +234,8 @@ def _prepare(
     检索与「给不给答」的判断都在这里完成，生成部分才能被同步、
     流式两种实现共用，避免两条链路各写一套规则后慢慢跑偏。
     """
-    candidates = retrieval.search(db, question, scope=scope, policy_ids=policy_ids, top_k=top_k)
+    rows = corpus.load(store, scope=scope, policy_ids=policy_ids)
+    candidates = retrieval.search(rows, question, top_k=top_k)
     above = [c for c in candidates if c.score >= threshold]
 
     # ---- 覆盖度闸门：问题里的实义词在库中几乎找不到 → 属于库外问题 ----
@@ -302,7 +311,7 @@ def _prepare(
         if dep_all:
             reason_parts.append(f"其中 {len(dep_all)} 条来自已废止文件，不能作为现行依据。")
         if pend_all:
-            reason_parts.append(f"另有 {len(pend_all)} 条状态待核实。")
+            reason_parts.append(f"另有 {len(pend_all)} 条来自尚未人工核验的政策，核验前不能作为现行依据。")
         reason_parts.append("为避免误导，系统不生成结论。")
         meta["excluded_deprecated"] = len(dep_all) if not used_deprecated else 0
 
@@ -419,7 +428,7 @@ def _assemble(ctx: dict[str, Any], question: str, conclusion: str, generated_by:
             "doc_no": cand.policy.doc_no,
             "clause_no": cand.clause.clause_no,
             "content": cand.clause.content,
-            "reason": cand.policy.superseded_by or "该文件已废止",
+            "reason": cand.policy.status_note or "该文件已废止",
             "page": cand.clause.page,
         })
     if deprecated_notes:
@@ -429,7 +438,7 @@ def _assemble(ctx: dict[str, Any], question: str, conclusion: str, generated_by:
     manual_confirm: list[str] = []
     for cand in pending[:3]:
         manual_confirm.append(
-            f"《{cand.policy.title}》{cand.clause.clause_no} 的有效状态尚未确认，引用前请人工核实。"
+            f"《{cand.policy.title}》{cand.clause.clause_no} 尚未经人工核验，不能作为现行依据，请先在政策库核验。"
         )
     if any(c["status"] == STATUS_REPEALED for c in citations):
         manual_confirm.append("结论中引用了已废止条款（因显式允许），正式行文前必须替换为现行规定。")
@@ -467,6 +476,7 @@ def answer(
     db: Session,
     question: str,
     *,
+    store,
     scope: str = "current",
     policy_ids: list[int] | None = None,
     include_deprecated: bool = False,
@@ -480,7 +490,7 @@ def answer(
         raise ValueError("问题不能为空")
 
     ctx, early = _prepare(
-        db, question, scope=scope, policy_ids=policy_ids,
+        db, question, store=store, scope=scope, policy_ids=policy_ids,
         include_deprecated=include_deprecated, threshold=threshold, top_k=top_k,
         max_evidence=max_evidence, user_id=user_id,
     )
@@ -514,6 +524,7 @@ def answer_stream(
     db: Session,
     question: str,
     *,
+    store,
     scope: str = "current",
     policy_ids: list[int] | None = None,
     include_deprecated: bool = False,
@@ -537,7 +548,7 @@ def answer_stream(
     yield {"type": "stage", "stage": "retrieve", "text": "正在检索政策库"}
 
     ctx, early = _prepare(
-        db, question, scope=scope, policy_ids=policy_ids,
+        db, question, store=store, scope=scope, policy_ids=policy_ids,
         include_deprecated=include_deprecated, threshold=threshold, top_k=top_k,
         max_evidence=max_evidence, user_id=user_id,
     )

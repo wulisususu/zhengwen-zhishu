@@ -112,7 +112,7 @@ try {
   assert.deepEqual(created.citationIds, final.citations.map((c) => c.citation_id));
   await drafter.waitForURL(base + `/gov/draft/${created.id}`);
   assert.ok((await drafter.getByLabel("正文编辑", { exact: true }).inputValue()).length > 100);
-  await drafter.getByRole("complementary", { name: "材料与政策依据" }).getByText("示例市小微企业首次贷款贴息管理办法", { exact: false }).first().waitFor();
+  await drafter.getByRole("complementary", { name: "起草要素与材料" }).getByText("示例市小微企业首次贷款贴息管理办法", { exact: false }).first().waitFor();
   await drafter.screenshot({ path: join(output, "notice-from-gongwen.png"), fullPage: true });
 
   // ---------- 4. save / submit / return / resubmit / approval by the other role ----------

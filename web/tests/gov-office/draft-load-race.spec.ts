@@ -31,7 +31,7 @@ it("keeps early edits when the initial document refresh finishes, then accepts t
     A4Preview: true, OfficialDocumentView: true, IssuePanel: true,
   } } });
   await flushPromises();
-  await w.findAll('button').find(b => b.text().includes("材料与依据"))!.trigger("click");
+  await w.findAll('button').find(b => b.text().includes("要素与材料"))!.trigger("click");
   await w.get('[aria-label="成文日期"]').setValue("2026年10月26日");
   await w.get('[aria-label="发文字号"]').setValue("办发〔2026〕10号");
   await w.get('#gov-field-issuer').setValue("测试办公室");

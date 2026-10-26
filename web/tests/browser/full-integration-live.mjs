@@ -59,7 +59,7 @@ try{
  await mutate(admin,'/return',()=>admin.getByRole('button',{name:'退回修改',exact:true}).click());
  await writer.reload();await writer.getByLabel('正文编辑',{exact:true}).fill('一、工作安排\n请各单位按要求报送会务需求。\n二、责任分工\n综合处负责汇总，办公室负责复核。');
  await writer.getByLabel('成文日期',{exact:true}).fill('2026年10月26日');await writer.getByLabel('印发机关',{exact:true}).fill('测试办公室');await writer.getByLabel('印发日期',{exact:true}).fill('2026年10月26日');
- await writer.getByRole('button',{name:'添加表格',exact:true}).click();await writer.getByLabel('表格1标题',{exact:true}).fill('会务分工');
+ await writer.getByText('抄送、附注与表格',{exact:false}).click();await writer.getByRole('button',{name:'添加表格',exact:true}).click();await writer.getByLabel('表格1标题',{exact:true}).fill('会务分工');
  await writer.getByLabel('表格1第1行第1列',{exact:true}).fill('会务准备');await writer.getByLabel('表格1第1行第2列',{exact:true}).fill('1');
  const corrected=await mutate(writer,id,()=>writer.getByRole('button',{name:'保存草稿',exact:true}).click());assert.equal(corrected.checkStatus,'not_run');
  await writer.getByRole('button',{name:'添加政策依据',exact:true}).click();const picker=writer.getByRole('dialog',{name:'选择政策依据',exact:true});

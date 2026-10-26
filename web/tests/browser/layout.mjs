@@ -100,7 +100,7 @@ export async function runLayout(page, { check, base, shotDir }) {
   await page.goto(base + "/gov/draft", { waitUntil: "networkidle" });
   await checkDialog(page, check, "导出", () => page.getByRole("button", { name: "导出", exact: true }).click());
   await checkDialog(page, check, "提交审核", () => page.getByRole("button", { name: "提交审核", exact: true }).click());
-  const materialsToggle = page.getByRole("button", { name: "材料与依据" });
+  const materialsToggle = page.getByRole("button", { name: "要素与材料" });
   if (await materialsToggle.count()) await materialsToggle.click();
   await checkDialog(page, check, "添加材料", () => page.getByRole("button", { name: "添加材料" }).click());
   await checkDialog(page, check, "申请例外", () =>

@@ -40,10 +40,8 @@ function isEmpty(field: FieldKey) {
         @input="emit('update', f.key, ($event.target as HTMLInputElement).value)"
       />
     </label>
-    <dl class="gov-fields__meta">
-      <dt>发文字号</dt><dd>{{ doc.docNumber.text || "—" }}</dd>
-      <dt>成文日期</dt><dd>{{ doc.signDate || "—" }}</dd>
-    </dl>
+    <!-- 成文日期、发文字号等可编辑要素（页面传入），不再另列只读的已保存值 -->
+    <slot />
     <p class="gov-muted" style="margin: 0; line-height: 18px">必填要素为空时，正文以【待补充】标记显示，不由模型编造。</p>
   </section>
 </template>
@@ -51,7 +49,4 @@ function isEmpty(field: FieldKey) {
 <style scoped>
 .gov-fields { display: flex; flex-direction: column; gap: 10px; }
 .gov-fields__req { color: var(--gov-red); }
-.gov-fields__meta { margin: 0; display: grid; grid-template-columns: 72px minmax(0, 1fr); row-gap: 6px; font-size: 13px; }
-.gov-fields__meta dt { color: var(--gov-text-3); }
-.gov-fields__meta dd { margin: 0; }
 </style>

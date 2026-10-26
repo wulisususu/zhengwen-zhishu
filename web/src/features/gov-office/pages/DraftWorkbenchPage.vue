@@ -39,7 +39,8 @@ const doc = computed(() => store.byId[docId.value]);
 const actor = computed(() => session.actor);
 const typeConfig = computed(() => (doc.value ? docTypeConfig(doc.value.docType) : DOC_TYPES[0]));
 
-const view = ref<"body" | "outline">("body");
+// Real documents open in the editor; the demo has no inline editor, so it opens on the preview.
+const view = ref<"edit" | "preview" | "outline">(session.isDemo ? "preview" : "edit");
 const zoom = ref<"fit" | number>("fit");
 const leftOpen = ref(true);
 const rightOpen = ref(true);
@@ -114,9 +115,21 @@ async function createDraft() {
   if (created) await router.replace(`/gov/draft/${created.id}`);
 }
 
+/**
+ * Preview and outline render the backend's doc.blocks, not the editor text, so unsaved edits are
+ * saved first; if saving fails the editor stays open with the edits intact.
+ */
+async function showView(next: "edit" | "preview" | "outline") {
+  if (next !== "edit" && dirty.value && !(await save())) return false;
+  view.value = next;
+  return true;
+}
+
 async function locate(anchor: string) {
   focusAnchor.value = anchor;
-  if (view.value !== "body") view.value = "body";
+  if (view.value !== "preview" && !(await showView("preview"))) return;
+  // The preview may have just been mounted by the view switch.
+  await nextTick();
   await preview.value?.scrollToAnchor(anchor);
 }
 
@@ -232,7 +245,7 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
         <button type="button" class="gov-btn" :aria-pressed="leftOpen" @click="leftOpen = !leftOpen">
           <PanelLeftClose v-if="leftOpen" :size="16" aria-hidden="true" />
           <PanelLeftOpen v-else :size="16" aria-hidden="true" />
-          {{ leftOpen ? "收起材料栏" : "材料与依据" }}
+          {{ leftOpen ? "收起要素栏" : "要素与材料" }}
         </button>
         <label class="gov-draft__inline">
           文种
@@ -242,10 +255,11 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
         </label>
         <span id="gov-doctype-note" class="gov-muted">模板：{{ typeConfig.template }}</span>
         <div class="gov-seg" role="group" aria-label="视图切换">
-          <button type="button" :class="{ 'is-active': view === 'outline' }" :aria-pressed="view === 'outline'" @click="view = 'outline'">提纲</button>
-          <button type="button" :class="{ 'is-active': view === 'body' }" :aria-pressed="view === 'body'" @click="view = 'body'">正文</button>
+          <button v-if="!session.isDemo" type="button" :class="{ 'is-active': view === 'edit' }" :aria-pressed="view === 'edit'" @click="showView('edit')">编辑</button>
+          <button type="button" :class="{ 'is-active': view === 'preview' }" :aria-pressed="view === 'preview'" :disabled="busy" @click="showView('preview')">预览</button>
+          <button type="button" :class="{ 'is-active': view === 'outline' }" :aria-pressed="view === 'outline'" :disabled="busy" @click="showView('outline')">提纲</button>
         </div>
-        <label v-if="view === 'body'" class="gov-draft__inline">
+        <label v-if="view === 'preview'" class="gov-draft__inline">
           缩放
           <select v-model="zoom" class="gov-select">
             <option v-for="z in zoomOptions" :key="String(z.value)" :value="z.value">{{ z.label }}</option>
@@ -262,25 +276,29 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
       <div v-if="lockText" class="gov-draft__lockbar gov-banner gov-banner--info">{{ lockText }}</div>
       <StoreMessages />
 
-      <fieldset v-if="!session.isDemo" :disabled="!editable || busy" class="gov-draft__editor">
-        <label class="gov-label">文稿标题<input v-model="editTitle" class="gov-input" aria-label="文稿标题" maxlength="256" @input="dirty = true" /></label>
-        <label class="gov-label">成文日期<input v-model="editDate" class="gov-input" aria-label="成文日期" placeholder="2026年10月26日" @input="dirty = true" /></label>
-        <NoticeMetadataForm v-if="doc.docType === 'notice'" v-model="editMetadata" @update:model-value="dirty = true" />
-        <label class="gov-label gov-draft__body-editor">正文编辑<textarea v-model="editBody" class="gov-textarea" aria-label="正文编辑" rows="5" @input="dirty = true" /></label>
-        <span class="gov-muted">{{ dirty ? '有修改未保存；保存后更新预览' : '当前内容已保存' }} · 第 {{ doc.version }} 版</span>
-        <label class="gov-label">生成要求<input v-model="generationPrompt" class="gov-input" aria-label="生成要求" placeholder="可选；仅使用已知信息生成初稿" /></label>
-        <button type="button" class="gov-btn" @click="generate">{{ busy ? '处理中…' : '使用模型生成初稿' }}</button>
-      </fieldset>
-
       <div class="gov-draft__work">
-        <aside v-if="leftOpen" class="gov-draft__left" aria-label="材料与政策依据">
-          <DraftFieldsForm ref="fieldsForm" :doc="session.isDemo ? doc : { ...doc, fields: editFields }" :editable="editable && !busy" @update="updateField" />
+        <aside v-if="leftOpen" class="gov-draft__left" aria-label="起草要素与材料">
+          <DraftFieldsForm ref="fieldsForm" :doc="session.isDemo ? doc : { ...doc, fields: editFields }" :editable="editable && !busy" @update="updateField">
+            <fieldset v-if="!session.isDemo" :disabled="!editable || busy" class="gov-draft__meta">
+              <label class="gov-label">成文日期<input v-model="editDate" class="gov-input" aria-label="成文日期" placeholder="2026年10月26日" @input="dirty = true" /></label>
+              <NoticeMetadataForm v-if="doc.docType === 'notice'" v-model="editMetadata" @update:model-value="dirty = true" />
+            </fieldset>
+          </DraftFieldsForm>
           <MaterialList :materials="doc.materials" :editable="editable && !busy" @add="dialog = 'material'" @remove="removeMaterial" />
           <PolicyRefList :refs="doc.policyRefs" :live="!session.isDemo" :editable="editable && !busy" @add="showPolicy()" @view="showPolicy" @remove="changeCitations($event, true)" />
         </aside>
 
-        <section class="gov-draft__center" aria-label="公文预览">
-          <A4Preview v-if="view === 'body'" ref="preview" :zoom="zoom" :watermark="watermark" :corner-note="doc.origin === 'demo' ? '演示文稿 · 内容虚构' : ''">
+        <section class="gov-draft__center" :aria-label="view === 'edit' ? '正文编辑区' : '公文预览'">
+          <fieldset v-if="view === 'edit'" :disabled="!editable || busy" class="gov-draft__editor">
+            <label class="gov-label">文稿标题<input v-model="editTitle" class="gov-input" aria-label="文稿标题" maxlength="256" @input="dirty = true" /></label>
+            <label class="gov-label gov-draft__body-editor">正文编辑<textarea v-model="editBody" class="gov-textarea" aria-label="正文编辑" @input="dirty = true" /></label>
+            <div class="gov-draft__generate">
+              <label class="gov-label">生成要求<input v-model="generationPrompt" class="gov-input" aria-label="生成要求" placeholder="可选；仅使用已知信息生成初稿" /></label>
+              <button type="button" class="gov-btn" @click="generate">{{ busy ? '处理中…' : '使用模型生成初稿' }}</button>
+            </div>
+            <span class="gov-muted">{{ dirty ? '有修改未保存；切换到预览或提纲时先保存' : '当前内容已保存' }} · 第 {{ doc.version }} 版</span>
+          </fieldset>
+          <A4Preview v-else-if="view === 'preview'" ref="preview" :zoom="zoom" :watermark="watermark" :corner-note="doc.origin === 'demo' ? '演示文稿 · 内容虚构' : ''">
             <OfficialDocumentView :doc="doc" :marks="marks" :focus-anchor="focusAnchor" />
           </A4Preview>
           <div v-else class="gov-draft__outline-scroll">
@@ -341,8 +359,13 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
 .gov-policy-overlay { position: fixed; inset: 0; z-index: 100; background: #10243f66; display: grid; place-items: center; padding: 20px; }
 .gov-policy-dialog { width: min(1100px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background: var(--gov-surface); border-radius: 12px; }
 .gov-policy-dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--gov-border); }
-.gov-draft__editor { border: 0; border-bottom: 1px solid var(--gov-border); margin: 0; padding: 12px 24px; display: flex; flex-wrap: wrap; align-items: end; gap: 12px; max-height: 280px; overflow: auto; }
-.gov-draft__body-editor { flex: 1 0 100%; }
+/* Editor fills the centre column; the body textarea takes all height left by the title and generation row. */
+.gov-draft__editor { border: 0; margin: 0; min-width: 0; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; background: var(--gov-surface); }
+.gov-draft__body-editor { flex: 1 1 auto; min-height: 0; }
+.gov-draft__body-editor textarea { flex: 1 1 auto; min-height: 240px; }
+.gov-draft__generate { flex: 0 0 auto; display: flex; align-items: end; gap: 12px; }
+.gov-draft__generate .gov-label { flex: 1 1 auto; }
+.gov-draft__meta { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .gov-draft__lock { color: var(--gov-text-3); flex: 0 0 auto; }
 .gov-draft__toolbar {
   flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px;

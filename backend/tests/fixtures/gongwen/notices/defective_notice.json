@@ -1,0 +1,23 @@
+{
+  "docType": "notice",
+  "title": "示例单位办公室关于开展政务数据安全自查工作的通知",
+  "docNumber": {"id": "seg-docno", "text": "示数办[2025]7号"},
+  "fields": {"recipient": "", "issuer": "示例单位办公室", "undertaker": ""},
+  "blocks": [
+    {"id": "blk-recipient", "kind": "recipient", "section": "head", "segments": [{"kind": "field", "id": "seg-recipient", "field": "recipient"}]},
+    {"id": "blk-intro", "kind": "paragraph", "section": "intro", "segments": [
+      {"kind": "text", "text": "为贯彻落实《示例市政务数据安全管理办法》第九条有关要求,现就开展自查工作通知如下。"}]},
+    {"id": "blk-s1", "kind": "heading1", "section": "s1", "segments": [{"kind": "text", "text": "一、自查范围"}]},
+    {"id": "blk-s1-p", "kind": "paragraph", "section": "s1", "segments": [{"kind": "text", "text": "全市各级政务部门共 4 项重点内容："}]},
+    {"id": "blk-s1-1", "kind": "heading2", "section": "s1", "segments": [{"kind": "text", "text": "（一）数据分类分级制度落实情况"}]},
+    {"id": "blk-s1-2", "kind": "heading2", "section": "s1", "segments": [{"kind": "text", "text": "（二）数据共享交换审批记录"}]},
+    {"id": "blk-s2", "kind": "heading1", "section": "s2", "segments": [{"kind": "text", "text": "二、时间安排"}]},
+    {"id": "blk-s2-p", "kind": "paragraph", "section": "s2", "segments": [{"kind": "text", "text": "各单位应于2025年11月05日前报送自查报告。"}]},
+    {"id": "blk-s4", "kind": "heading1", "section": "s4", "segments": [{"kind": "text", "text": "四、工作要求"}]},
+    {"id": "blk-s4-p", "kind": "paragraph", "section": "s4", "segments": [
+      {"kind": "text", "text": "自查报告报送至"}, {"kind": "field", "id": "seg-undertaker", "field": "undertaker"}, {"kind": "text", "text": "。"}]},
+    {"id": "blk-sign", "kind": "signature", "section": "sign", "segments": [{"kind": "field", "id": "seg-issuer", "field": "issuer"}]}
+  ],
+  "signDate": "2025-10-25",
+  "policyRefs": []
+}

@@ -1,0 +1,63 @@
+{
+ "origin": "backend",
+ "reviewedAt": "2026-10-26T02:41:34+00:00",
+ "issues": [
+  {
+   "id": "own-policy_ref_unverified-e90b78cf69",
+   "severity": "hint",
+   "source": "rule",
+   "title": "政策有效性未经政策库核验",
+   "description": "本文涉及 1 项政策依据，政策库尚未接入，其有效性未经核验。",
+   "locationLabel": "开头段",
+   "anchor": "seg-cite",
+   "section": "intro"
+  }
+ ],
+ "issueDetails": {
+  "own-policy_ref_unverified-e90b78cf69": {
+   "code": "POLICY_REF_UNVERIFIED",
+   "layer": "own",
+   "anchorPrecision": "segment"
+  }
+ },
+ "formatCheck": {
+  "status": "pass",
+  "toolVersion": "0.4.4",
+  "sha256": "1cc0da5c68db68ec4b60ba3119dee573620b9c256771a3f9eb6edfcccb08efc3",
+  "seconds": 0.548,
+  "hitCount": 0,
+  "blockingCount": 0,
+  "hintCount": 0
+ },
+ "summary": {
+  "critical": 0,
+  "warning": 0,
+  "hint": 1
+ },
+ "gate": {
+  "canSubmit": true,
+  "canExportInternalDraft": true,
+  "canApprove": true,
+  "canExportFormal": false,
+  "blockingIssueIds": [],
+  "reasons": [],
+  "formalExportReasons": [
+   "正式导出需要审批记录与正式发文权限，后端审批流程尚未接入"
+  ]
+ },
+ "docType": "notice",
+ "policyVerification": {
+  "status": "not_available",
+  "message": "政策库尚未接入，政策有效性（现行/废止）未经后端核验；前端提供的状态不作为核验结果。",
+  "refs": [
+   {
+    "id": "ref-1",
+    "title": "示例单位公文处理办法",
+    "verified": false
+   }
+  ],
+  "citedTitles": [
+   "示例单位公文处理办法"
+  ]
+ }
+}

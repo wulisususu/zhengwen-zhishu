@@ -39,3 +39,28 @@
 |---|---|
 | `baseline_control.docx` | 必错样本的基线，应零命中，证明命中只来自埋的错 |
 | `probe_01b_count_yixia.docx` | 与 bad_01 同一个计数错，但句式换成 check-num 能识别的「以下五项任务」 |
+
+## 复测语料（2026-10-25）
+
+### `claimed/`：上游声称支持的写法类错误
+
+`make_claimed_samples.js` 生成，复用 `make_samples.js` 的基线，每份只埋一处。10 类错误 × 2 种写法，
+逐份埋错位置与期望规则名见 `claimed/expected.json`（`tests/spike/gongwen_s1_bench.py --dir tests/fixtures/gongwen/claimed` 计分）。
+`c08b` 与 `c08a` 是同一张合计错表，只是去掉了 `tblHeader`，模拟 python-docx／手工表格。
+
+### `innet/`：InNet_box 两条 DOCX 链路的产物与对照
+
+| 文件 | 来源 |
+|---|---|
+| `innet_01_markdown_to_docx.docx` | `markdown_to_docx`（markdown-first 主链路），`make_innet_samples.py` 生成 |
+| `innet_02_render_docx.docx` | `document_agent._render_docx`（content_json 链路），用 ast 取原函数执行，不 import 整个模块 |
+| `*-修订.docx`、`*.fix-report.txt` | 对上面两份跑 `gongwen fix` 的输出副本与报告（原件不变） |
+| `kit_notice.docx` | `make_kit_notice.js`：gongwen-kit 标准构件出的同内容通知，用于与 python-docx 产物对比 |
+
+## `notices/`：结构化通知（接口测试与样张用）
+
+| 文件 | 内容 |
+|---|---|
+| `standard_notice.json` | 要素齐全的标准通知（含表格、附件、附注、政策依据、版记），两层审校都应通过，只留「政策有效性未核验」提示 |
+| `defective_notice.json` | 按前端 Mock 文档改写的缺陷草稿：主送为空、承办为空、成文日期 `2025-10-25`、无版记、一二四跳号、共 4 项只列 2 项、`[2025]`、`05日`、半角逗号、引用未关联 |
+

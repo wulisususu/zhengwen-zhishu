@@ -10,7 +10,7 @@
 | 运行要求 | Node >= 18（验证机 v22.23.4，npm 10.9.9） |
 | 生产依赖 | docx、jszip、sax（纯 JavaScript，无安装脚本、无模型下载） |
 | 离线包 | `gongwen-kit-v0.4.4-offline.tgz`，**2,114,109 字节（2.0 MiB）**，解压后 11 MB，530 个条目 |
-| 状态 | **S1 未达标（no-go），未接入后端**。见 `backend/docs/spike/gongwen-kit.md` |
+| 状态 | 已接入：通知生成、格式机检、外来 Word 可选修复（`backend/docs/gongwen-api.md`）。S1 与复测结论见 `backend/docs/spike/gongwen-kit.md` |
 
 目录 `gongwen-kit/` 已在 `.gitignore` 里，不进本仓库；需要时按下面任一方式放到这里。
 它不是 Python 依赖，不要写进 `backend/requirements.txt`。

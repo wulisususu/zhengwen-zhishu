@@ -1,0 +1,258 @@
+{
+ "origin": "backend",
+ "reviewedAt": "2026-10-26T02:41:36+00:00",
+ "issues": [
+  {
+   "id": "own-elem_recipient-2b40731029",
+   "severity": "critical",
+   "source": "rule",
+   "title": "缺少主送机关",
+   "description": "通知须写明主送机关，当前为空。",
+   "locationLabel": "主送机关",
+   "anchor": "seg-recipient",
+   "section": "head",
+   "requiredField": "recipient"
+  },
+  {
+   "id": "own-sign_date_format-ab5712b50c",
+   "severity": "critical",
+   "source": "rule",
+   "title": "成文日期不完整或无法识别",
+   "description": "成文日期「2025-10-25」不是完整的「×年×月×日」写法（GB/T 9704 7.3.5.3：用阿拉伯数字将年、月、日标全）。",
+   "locationLabel": "成文日期",
+   "anchor": "blk-sign",
+   "section": "sign"
+  },
+  {
+   "id": "own-elem_banji-f7a8628765",
+   "severity": "critical",
+   "source": "rule",
+   "title": "缺少版记（印发机关和印发日期）",
+   "description": "版记缺少印发机关、印发日期（GB/T 9704 7.4）。",
+   "locationLabel": "版记",
+   "anchor": "",
+   "section": "banji"
+  },
+  {
+   "id": "own-numbering_gap-f35470220d",
+   "severity": "critical",
+   "source": "rule",
+   "title": "层次序号不连续",
+   "description": "「四、工作要求」序号不连续：此处应为「三、」，实为「四、」。正式生成时层次序号按结构自动编排。",
+   "locationLabel": "四、工作要求",
+   "anchor": "blk-s4",
+   "section": "s4"
+  },
+  {
+   "id": "own-count_mismatch-f5a328a494",
+   "severity": "critical",
+   "source": "rule",
+   "title": "数量描述与实际列项不一致",
+   "description": "「共4项」与其后列出的第 2 层标题 2 项不一致。",
+   "locationLabel": "一、自查范围",
+   "anchor": "blk-s1-p",
+   "section": "s1"
+  },
+  {
+   "id": "gwk-c59259b92e",
+   "severity": "critical",
+   "source": "rule",
+   "title": "月日编虚位",
+   "description": "月05日，月、日不编虚位（1 不写 01）",
+   "locationLabel": "二、时间安排",
+   "anchor": "blk-s2-p",
+   "section": "s2"
+  },
+  {
+   "id": "gwk-25fd4d91ac",
+   "severity": "critical",
+   "source": "rule",
+   "title": "发文字号",
+   "description": "年份用六角括号〔〕：[2025]",
+   "locationLabel": "发文字号",
+   "anchor": "seg-docno",
+   "section": "head"
+  },
+  {
+   "id": "gwk-b4c2d44a41",
+   "severity": "critical",
+   "source": "rule",
+   "title": "中文里的半角标点",
+   "description": "中文里的半角标点 1 处（求,）。一律改全角（GB/T 15834）。",
+   "locationLabel": "开头段",
+   "anchor": "blk-intro",
+   "section": "intro"
+  },
+  {
+   "id": "own-elem_undertaker-dbfbcbb076",
+   "severity": "warning",
+   "source": "rule",
+   "title": "缺少承办部门",
+   "description": "正文引用了承办部门，但该字段为空。",
+   "locationLabel": "承办部门",
+   "anchor": "seg-undertaker",
+   "section": "s4",
+   "requiredField": "undertaker"
+  },
+  {
+   "id": "own-policy_ref_unlinked-fca62cfdbd",
+   "severity": "warning",
+   "source": "rule",
+   "title": "引用的文件未关联政策依据",
+   "description": "正文引用《示例市政务数据安全管理办法》，未在政策依据中关联，无法核验其是否现行有效。",
+   "locationLabel": "开头段",
+   "anchor": "blk-intro",
+   "section": "intro"
+  },
+  {
+   "id": "own-title_line_break-60a3e7b709",
+   "severity": "hint",
+   "source": "rule",
+   "title": "标题回行位置未指定",
+   "description": "标题 24 字，超过一行（二号字约 20 字），未指定回行位置，Word 会按宽度断行。GB/T 9704 7.3.1 要求回行时词意完整，请在 titleLines 中按意群分行。",
+   "locationLabel": "标题",
+   "anchor": "",
+   "section": "head"
+  },
+  {
+   "id": "own-policy_ref_unverified-75cafb59ae",
+   "severity": "hint",
+   "source": "rule",
+   "title": "政策有效性未经政策库核验",
+   "description": "本文涉及 1 项政策依据，政策库尚未接入，其有效性未经核验。",
+   "locationLabel": "开头段",
+   "anchor": "blk-intro",
+   "section": "intro"
+  }
+ ],
+ "issueDetails": {
+  "own-elem_recipient-2b40731029": {
+   "code": "ELEM_RECIPIENT",
+   "layer": "own",
+   "anchorPrecision": "segment"
+  },
+  "own-sign_date_format-ab5712b50c": {
+   "code": "SIGN_DATE_FORMAT",
+   "layer": "own",
+   "anchorPrecision": "block"
+  },
+  "own-elem_banji-f7a8628765": {
+   "code": "ELEM_BANJI",
+   "layer": "own",
+   "anchorPrecision": "none"
+  },
+  "own-numbering_gap-f35470220d": {
+   "code": "NUMBERING_GAP",
+   "layer": "own",
+   "anchorPrecision": "block",
+   "expected": 3,
+   "actual": 4
+  },
+  "own-count_mismatch-f5a328a494": {
+   "code": "COUNT_MISMATCH",
+   "layer": "own",
+   "anchorPrecision": "block",
+   "stated": 4,
+   "listed": 2
+  },
+  "gwk-c59259b92e": {
+   "code": "GWK_DATE_PAD",
+   "layer": "gongwen-kit",
+   "check": "体例",
+   "ruleName": "月日编虚位",
+   "blocking": true,
+   "anchorPrecision": "block",
+   "fragments": [
+    "月05日"
+   ]
+  },
+  "gwk-25fd4d91ac": {
+   "code": "GWK_DOCNO",
+   "layer": "gongwen-kit",
+   "check": "体例",
+   "ruleName": "发文字号",
+   "blocking": true,
+   "anchorPrecision": "segment",
+   "fragments": [
+    "[2025]"
+   ]
+  },
+  "gwk-b4c2d44a41": {
+   "code": "GWK_HALF_PUNCT",
+   "layer": "gongwen-kit",
+   "check": "文风",
+   "ruleName": "中文里的半角标点",
+   "blocking": true,
+   "anchorPrecision": "block",
+   "fragments": [
+    "求,"
+   ]
+  },
+  "own-elem_undertaker-dbfbcbb076": {
+   "code": "ELEM_UNDERTAKER",
+   "layer": "own",
+   "anchorPrecision": "segment"
+  },
+  "own-policy_ref_unlinked-fca62cfdbd": {
+   "code": "POLICY_REF_UNLINKED",
+   "layer": "own",
+   "anchorPrecision": "block"
+  },
+  "own-title_line_break-60a3e7b709": {
+   "code": "TITLE_LINE_BREAK",
+   "layer": "own",
+   "anchorPrecision": "none"
+  },
+  "own-policy_ref_unverified-75cafb59ae": {
+   "code": "POLICY_REF_UNVERIFIED",
+   "layer": "own",
+   "anchorPrecision": "block"
+  }
+ },
+ "formatCheck": {
+  "status": "hit",
+  "toolVersion": "0.4.4",
+  "sha256": "c4b3010dcbaa18b8e095616f23e9a94656c296c724d759658d87fb15318cc56e",
+  "seconds": 0.503,
+  "hitCount": 3,
+  "blockingCount": 3,
+  "hintCount": 0
+ },
+ "summary": {
+  "critical": 8,
+  "warning": 2,
+  "hint": 2
+ },
+ "gate": {
+  "canSubmit": true,
+  "canExportInternalDraft": true,
+  "canApprove": false,
+  "canExportFormal": false,
+  "blockingIssueIds": [
+   "own-elem_recipient-2b40731029",
+   "own-sign_date_format-ab5712b50c",
+   "own-elem_banji-f7a8628765",
+   "own-numbering_gap-f35470220d",
+   "own-count_mismatch-f5a328a494",
+   "gwk-c59259b92e",
+   "gwk-25fd4d91ac",
+   "gwk-b4c2d44a41"
+  ],
+  "reasons": [
+   "存在 8 个严重问题，须先修改（严重问题的例外审批尚未接入后端）"
+  ],
+  "formalExportReasons": [
+   "存在 8 个严重问题，须先修改（严重问题的例外审批尚未接入后端）",
+   "正式导出需要审批记录与正式发文权限，后端审批流程尚未接入"
+  ]
+ },
+ "docType": "notice",
+ "policyVerification": {
+  "status": "not_available",
+  "message": "政策库尚未接入，政策有效性（现行/废止）未经后端核验；前端提供的状态不作为核验结果。",
+  "refs": [],
+  "citedTitles": [
+   "示例市政务数据安全管理办法"
+  ]
+ }
+}

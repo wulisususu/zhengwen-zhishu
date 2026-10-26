@@ -1,0 +1,102 @@
+{
+ "c01a_docno_bracket_letterhead.docx": {
+  "claim": "发文字号用六角括号",
+  "rule": "发文字号",
+  "where": "版头发文字号 示办发【2026】8号"
+ },
+ "c01b_docno_bracket_body.docx": {
+  "claim": "发文字号用六角括号",
+  "rule": "发文字号",
+  "where": "正文引用 示办发[2026]8号"
+ },
+ "c02a_docno_di.docx": {
+  "claim": "发文顺序号不加「第」",
+  "rule": "发文字号",
+  "where": "版头 示办发〔2026〕第8号"
+ },
+ "c02b_docno_zero.docx": {
+  "claim": "发文顺序号不编虚位",
+  "rule": "发文字号",
+  "where": "版头 示办发〔2026〕008号"
+ },
+ "c03a_date_pad_sign.docx": {
+  "claim": "月日不编虚位",
+  "rule": "月日编虚位",
+  "where": "落款日期 2026年10月06日"
+ },
+ "c03b_date_pad_body.docx": {
+  "claim": "月日不编虚位",
+  "rule": "月日编虚位",
+  "where": "正文 2026年09月30日"
+ },
+ "c04a_date_cn_sign.docx": {
+  "claim": "成文日期用阿拉伯数字",
+  "rule": "中文数字日期",
+  "where": "落款日期 二〇二六年十月二十六日"
+ },
+ "c04b_date_cn_body.docx": {
+  "claim": "正文日期用阿拉伯数字",
+  "rule": "中文数字日期",
+  "where": "正文 二〇二六年十月三十日"
+ },
+ "c05a_half_colon.docx": {
+  "claim": "中文里的半角标点",
+  "rule": "中文里的半角标点",
+  "where": "正文 通知如下:（半角冒号）"
+ },
+ "c05b_half_comma.docx": {
+  "claim": "中文里的半角标点",
+  "rule": "中文里的半角标点",
+  "where": "正文 提高办文质量,（半角逗号）"
+ },
+ "c06a_half_paren.docx": {
+  "claim": "中文用全角括号",
+  "rule": "半角括号",
+  "where": "正文 文书科(208室)"
+ },
+ "c06b_half_paren_word.docx": {
+  "claim": "中文用全角括号",
+  "rule": "半角括号",
+  "where": "正文 各部门(单位)"
+ },
+ "c07a_yixingci_chouhua.docx": {
+  "claim": "异形词（GF 1001-2001）",
+  "rule": "异形词",
+  "where": "正文 筹画"
+ },
+ "c07b_yixingci_danxin.docx": {
+  "claim": "异形词（GF 1001-2001）",
+  "rule": "异形词",
+  "where": "正文 耽心"
+ },
+ "c08a_total_declared.docx": {
+  "claim": "表格合计与分项",
+  "rule": "合计不符",
+  "where": "工具自带表格构件，合计 26 ≠ 25"
+ },
+ "c08b_total_handmade.docx": {
+  "claim": "表格合计与分项",
+  "rule": "合计不符",
+  "where": "同上，但去掉 tblHeader（模拟手工/python-docx 表格）"
+ },
+ "c09a_fullwidth_digit.docx": {
+  "claim": "阿拉伯数字用半角",
+  "rule": "全角数字",
+  "where": "正文 １ 至 ２"
+ },
+ "c09b_fullwidth_year.docx": {
+  "claim": "阿拉伯数字用半角",
+  "rule": "全角数字",
+  "where": "正文 ２０２６年"
+ },
+ "c10a_dotted_level.docx": {
+  "claim": "公文不用 1.1 式层次",
+  "rule": "公文层次序数",
+  "where": "层次 1.1 讲解…"
+ },
+ "c10b_dotted_level_sub.docx": {
+  "claim": "公文不用 1.1 式层次",
+  "rule": "公文层次序数",
+  "where": "层次 3.1 名单报送"
+ }
+}

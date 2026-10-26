@@ -1,0 +1,57 @@
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+DocType = Literal["notice", "request", "report", "letter", "minutes", "interpretation"]
+
+
+class Fields(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recipient: str = Field(default="", max_length=1000)
+    issuer: str = Field(default="", max_length=1000)
+    undertaker: str = Field(default="", max_length=1000)
+
+
+class Content(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=256)
+    docType: DocType = "notice"
+    body: str = Field(default="", max_length=200000)
+    fields: Fields = Field(default_factory=Fields)
+    signDate: str = Field(default="", max_length=30)
+
+    @field_validator("title")
+    @classmethod
+    def title_not_blank(cls, value):
+        if not value.strip():
+            raise ValueError("标题不能为空")
+        return value.strip()
+
+
+class Revision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+
+
+class Update(Revision):
+    title: str | None = Field(default=None, min_length=1, max_length=256)
+    docType: DocType | None = None
+    body: str | None = Field(default=None, max_length=200000)
+    fields: Fields | None = None
+    signDate: str | None = Field(default=None, max_length=30)
+
+
+class Decision(Revision):
+    opinion: str = Field(default="", max_length=4000)
+
+
+class Materials(Revision):
+    fileIds: list[int] = Field(max_length=100)
+
+
+class ExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["internal_draft", "formal"] = "internal_draft"
+
+
+class Generation(Revision):
+    prompt: str = Field(min_length=1, max_length=12000)

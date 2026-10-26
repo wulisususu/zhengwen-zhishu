@@ -379,4 +379,5 @@ class PPTStructuredWorkspace(Base):
 
 # --- P3-B Guided Strategist: register GuidedProject on the shared metadata ---
 from app.PPT_master.guided_models import GuidedProject  # noqa: F401
+from app.gov.models import GovDocument, GovDocumentMaterial, GovReviewRecord  # noqa: F401
 

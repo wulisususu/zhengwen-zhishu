@@ -4,7 +4,7 @@ from pathlib import Path
 import logging
 import os
 
-DB_PATH = Path(__file__).parent.parent / "data" / "app.db"
+DB_PATH = Path(os.getenv("AI_BOX_DATA_DIR") or Path(__file__).parent.parent / "data") / "app.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})

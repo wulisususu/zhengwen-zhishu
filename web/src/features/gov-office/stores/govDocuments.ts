@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { getSessionToken } from "../../../stores/auth.js";
 import { getGovOfficeAdapter, GovOfficeError } from "../adapters";
 import type { DocumentQuery } from "../adapters";
 import type { DraftChanges, ExportResult, FieldKey, IssueResolution, Material, OfficialDocument } from "../types";
@@ -33,12 +34,15 @@ export const useGovDocumentsStore = defineStore("govDocuments", {
       this.notice = "";
     },
     async run<T>(op: () => Promise<T>, notice = ""): Promise<T | undefined> {
+      const token = getSessionToken();
       this.error = "";
       try {
         const result = await op();
+        if (getSessionToken() !== token) return undefined;
         if (notice) this.notice = notice;
         return result;
       } catch (err) {
+        if (getSessionToken() !== token) return undefined;
         this.notice = "";
         this.error = err instanceof GovOfficeError ? err.message : "操作失败，请稍后重试。";
         return undefined;

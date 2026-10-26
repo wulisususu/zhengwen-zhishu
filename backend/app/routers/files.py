@@ -136,6 +136,9 @@ def delete_file(file_id: int, user: User = Depends(get_current_user), db: Sessio
     f = db.query(File).filter(File.id == file_id, File.user_id == user.id).first()
     if not f:
         return fail(ERR_NOT_FOUND, "file not found")
+    from app.gov.models import GovDocumentMaterial
+    if db.query(GovDocumentMaterial).filter_by(file_id=file_id).first():
+        raise HTTPException(409, "材料已关联政务文稿，请先在可编辑文稿中解除关联")
     if os.path.exists(f.filepath):
         os.remove(f.filepath)
     db.delete(f)

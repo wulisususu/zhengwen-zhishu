@@ -34,7 +34,11 @@ def generate(db, user, document_id, body):
         if file.filetype.lower() not in {".txt", ".md"}:
             raise HTTPException(422, "存在尚未解析的材料；请先完成解析或移除关联后再生成。本期直接读取TXT/Markdown材料。")
         try:
-            text = Path(file.filepath).read_bytes()[:80000].decode("utf-8-sig")
+            with Path(file.filepath).open("rb") as source:
+                data = source.read(80001)
+            if len(data) > 80000:
+                raise HTTPException(422, "材料过长（单份上限80000字节），请拆分后重试；未截断材料或修改文稿")
+            text = data.decode("utf-8-sig")
         except (OSError, UnicodeError):
             raise HTTPException(422, "材料无法按UTF-8读取，请转换编码后重试")
         sources.append(f"材料《{file.filename}》：\n{text}")

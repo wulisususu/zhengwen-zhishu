@@ -259,3 +259,50 @@ def test_blank_saved_title_is_validation_error_not_server_error(app_client):
     client, tokens, _ = app_client
     doc = create(client, tokens["writer"])
     assert client.put(f"/api/v1/gov/documents/{doc['id']}", headers=tokens["writer"], json={"version": doc["version"], "title": "   "}).status_code == 422
+
+
+def test_future_version_cannot_cross_concurrent_submit_lock(app_client, monkeypatch):
+    from app.gov import service
+    from app.gov.models import GovDocument
+    from sqlalchemy import update
+    client, tokens, factory = app_client
+    doc = create(client, tokens["writer"])
+    original = service.write_revision
+    def concurrent_submit(db, current, version, **kwargs):
+        with factory() as other:
+            other.execute(update(GovDocument).where(GovDocument.id == doc["id"]).values(status="pending", version=2))
+            other.commit()
+        return original(db, current, version, **kwargs)
+    monkeypatch.setattr(service, "write_revision", concurrent_submit)
+    response = client.put(f"/api/v1/gov/documents/{doc['id']}", headers=tokens["writer"], json={"version": 2, "body": "不应写入的正文"})
+    assert response.status_code == 409
+    loaded = client.get(f"/api/v1/gov/documents/{doc['id']}", headers=tokens["writer"]).json()["data"]
+    assert loaded["body"] == doc["body"] and loaded["status"] == "pending"
+
+
+def test_legacy_delete_cannot_remove_linked_review_material(app_client, tmp_path, monkeypatch):
+    client, tokens, _ = app_client
+    from app.routers import files
+    client.app.include_router(files.router, prefix="/api/v1")
+    monkeypatch.setenv("GOV_DATA_DIR", str(tmp_path / "uploads"))
+    doc = create(client, tokens["writer"])
+    uploaded = client.post("/api/v1/gov/materials", headers=tokens["writer"], files={"file": ("审核依据.txt", b"evidence")}).json()["data"]
+    linked = client.post(f"/api/v1/gov/documents/{doc['id']}/materials", headers=tokens["writer"], json={"version": 1, "fileIds": [int(uploaded["id"])]}).json()["data"]
+    pending = action(client, tokens["writer"], linked, "submit").json()["data"]
+    assert client.delete(f"/api/v1/files/{uploaded['id']}", headers=tokens["writer"]).status_code == 409
+    loaded = client.get(f"/api/v1/gov/documents/{doc['id']}", headers=tokens["writer"]).json()["data"]
+    assert loaded["version"] == pending["version"] and len(loaded["materials"]) == 1
+    assert client.get(f"/api/v1/gov/materials/{uploaded['id']}/download", headers=tokens["writer"]).content == b"evidence"
+
+
+def test_long_valid_chinese_material_is_not_reported_as_bad_encoding(app_client, tmp_path, monkeypatch):
+    client, tokens, _ = app_client
+    module = generation_module()
+    monkeypatch.setattr(module, "generate_text", lambda prompt: {"text": "不应静默截断生成"})
+    monkeypatch.setenv("GOV_DATA_DIR", str(tmp_path / "uploads"))
+    doc = create(client, tokens["writer"])
+    uploaded = client.post("/api/v1/gov/materials", headers=tokens["writer"], files={"file": ("长材料.txt", ("中" * 30000).encode())}).json()["data"]
+    linked = client.post(f"/api/v1/gov/documents/{doc['id']}/materials", headers=tokens["writer"], json={"version": 1, "fileIds": [int(uploaded["id"])]}).json()["data"]
+    response = action(client, tokens["writer"], linked, "generate", prompt="起草")
+    assert response.status_code == 422 and "过长" in response.json()["detail"]
+    assert "编码" not in response.json()["detail"]

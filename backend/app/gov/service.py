@@ -41,6 +41,8 @@ def record(db, doc, user, action, note="", tone="neutral"):
 
 def write_revision(db, doc, version, *, payload=None, status=None):
     """Compare-and-swap in SQLite, not an unprotected read followed by commit."""
+    if version != doc.version:
+        raise HTTPException(409, "文稿已更新，请刷新后重试")
     values = {"version": version + 1, "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)}
     if payload is not None:
         values["payload_json"] = json.dumps(payload, ensure_ascii=False)

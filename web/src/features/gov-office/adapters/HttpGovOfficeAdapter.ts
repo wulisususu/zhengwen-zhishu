@@ -6,6 +6,10 @@ import type { Actor, AskOptions, Citation, DraftChanges, ExportResult, FieldKey,
 
 const BASE = "/api/v1/gov";
 
+function assertSession(token: string | null) {
+  if (getSessionToken() !== token) throw new GovOfficeError("登录账号已切换，已忽略旧请求结果", "auth_changed");
+}
+
 async function request(path: string, method = "GET", body?: unknown): Promise<Response> {
   const token = getSessionToken();
   if (!token) throw new GovOfficeError("请先登录", "401");
@@ -22,9 +26,11 @@ async function request(path: string, method = "GET", body?: unknown): Promise<Re
   } finally {
     clearTimeout(timer);
   }
+  assertSession(token);
   if (!res.ok) {
     if (res.status === 401) handleUnauthorized();
     const error = await res.json().catch(() => ({}));
+    assertSession(token);
     const detail = Array.isArray(error.detail) ? error.detail.map((d: { msg?: string }) => d.msg).join("；") : error.detail;
     throw new GovOfficeError(detail || error.message || `请求失败（${res.status}）`, String(res.status));
   }
@@ -32,8 +38,10 @@ async function request(path: string, method = "GET", body?: unknown): Promise<Re
 }
 
 async function json<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  const token = getSessionToken();
   const res = await request(path, method, body);
   const envelope = await res.json();
+  assertSession(token);
   if (envelope.code !== 0) throw new GovOfficeError(envelope.message || "后端处理失败", String(envelope.code));
   return envelope.data as T;
 }
@@ -47,9 +55,12 @@ function download(blob: Blob, filename: string) {
 }
 
 export async function downloadGovMaterial(file: Material): Promise<void> {
+  const token = getSessionToken();
   if (!file.downloadUrl?.startsWith(BASE + "/materials/")) throw new GovOfficeError("材料没有可用下载地址", "unavailable");
   const res = await request(file.downloadUrl.slice(BASE.length));
-  download(await res.blob(), file.name);
+  const blob = await res.blob();
+  assertSession(token);
+  download(blob, file.name);
 }
 
 export class HttpGovOfficeAdapter implements GovOfficeAdapter {
@@ -96,11 +107,14 @@ export class HttpGovOfficeAdapter implements GovOfficeAdapter {
   async resolveIssue(_id: string, _issue: string, _resolution: IssueResolution): Promise<OfficialDocument> { throw new GovOfficeError("自动审校未接入", "unavailable"); }
   async clearResolution(_id: string, _issue: string): Promise<OfficialDocument> { throw new GovOfficeError("自动审校未接入", "unavailable"); }
   async exportDocument(id: string, kind: ExportResult["kind"]): Promise<ExportResult> {
+    const token = getSessionToken();
     if (kind === "formal") throw new GovOfficeError("正式发文权限尚未配置", "forbidden");
     const res = await request(`/documents/${encodeURIComponent(id)}/export`, "POST", { kind });
     if (!res.headers.get("Content-Type")?.includes("wordprocessingml")) throw new GovOfficeError("后端未返回有效 DOCX 文件", "invalid_export");
     const filename = `内部草稿-${id}.docx`;
-    download(await res.blob(), filename);
+    const blob = await res.blob();
+    assertSession(token);
+    download(blob, filename);
     return { generated: true, kind, filename, watermark: "未审核 · 内部草稿", message: "内部草稿已生成并下载，不能作为正式文件使用。" };
   }
 }

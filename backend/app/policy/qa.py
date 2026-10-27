@@ -14,8 +14,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services import llm_chat
+from app.services.policy.store import PolicyFilter
 
-from . import corpus, retrieval
+from . import conversation, corpus, retrieval
 from .lifecycle import display_date
 from .models import PolicyQaLog, STATUS_PENDING, STATUS_REPEALED, STATUS_EFFECTIVE
 from .retrieval import Candidate, DEFAULT_THRESHOLD, build_excerpt
@@ -221,6 +222,32 @@ def _extractive_answer(evidence: list[Candidate], question: str = "") -> str:
 
 # ---------------------------------------------------------------- 主流程
 
+def _library_stats(store) -> dict[str, int]:
+    """政策库概况：总数与已核验 / 待核实份数（与 /gov/policies/stats 同一口径）。"""
+    counts = {status: store.list_policies(PolicyFilter(statuses=(status,)), 1, 1)[1]
+              for status in ("current", "abolished", "unverified")}
+    return {"total": sum(counts.values()), "verified": counts["current"], "unverified": counts["unverified"]}
+
+
+def _build_chat_ctx(store, question: str, candidates: list[Candidate], *,
+                    scope: str, threshold: float, top_k: int) -> conversation.ChatContext:
+    """组装对话路线的上下文。candidates 是按请求范围检索出的候选。"""
+    kind = conversation.classify(question, has_candidates=any(c.score >= 0.3 for c in candidates))
+    known_titles = {view.title for _, view in corpus.load(store, scope="all")}
+    scope_hint = ""
+    if scope == "current":
+        # 严格模式下额外看一眼全库：有待核实的过阈值条款就提示用户切范围
+        extra = [c for c in retrieval.search(corpus.load(store, scope="all"), question, top_k=top_k)
+                 if c.score >= threshold and c.policy.status == STATUS_PENDING]
+        if extra:
+            scope_hint = (f"当前范围为『仅已核验现行政策』；另有 {len(extra)} 条相关条款在待核实政策中，"
+                          "切换到『全部入库政策』可查看。")
+    return conversation.ChatContext(
+        kind=kind, stats=_library_stats(store), suggestions=[],
+        scope_hint=scope_hint, known_titles=known_titles,
+    )
+
+
 def _prepare(
     db: Session,
     question: str,
@@ -251,28 +278,10 @@ def _prepare(
         matched_terms.update(cand.matched_terms)
     corpus_coverage = (len(set(asked_terms) & matched_terms) / len(set(asked_terms))) if asked_terms else 0.0
     if candidates and asked_terms and corpus_coverage < MIN_CORPUS_COVERAGE:
-        payload = {
-            "status": "no_basis",
-            "sufficient": False,
-            "reason_code": "",
-            "conclusion": "",
-            "supplement": "",
-            "reason": (
-                f"政策库未收录与该问题直接相关的内容（问题关键词覆盖率 {corpus_coverage:.0%}）。"
-                "为避免用无关条款拼凑答案，系统不生成结论，建议先补充相关政策或转人工核实。"
-            ),
-            "manual_confirm": [],
-            "citations": [],
-            "candidates": [
-                {**cand.to_dict(), "below_threshold": True,
-                 "excerpt": build_excerpt(cand.clause.content, cand.matched_terms)}
-                for cand in candidates
-            ],
-            "meta": {**{"corpus_coverage": round(corpus_coverage, 3)}, "threshold": threshold,
-                     "scope": scope, "candidates": len(candidates), "generated_by": "none"},
-        }
-        _log(db, question, payload, scope, user_id)
-        return None, payload, None
+        # 库外问题（如闲聊、与政策无关的技术问题）：走对话路线友好回应
+        return None, None, _build_chat_ctx(
+            store, question, candidates, scope=scope, threshold=threshold, top_k=top_k,
+        )
 
     # ---- 依据分层：已核验 > （显式允许的）已废止 > 待核实；其余如实拒答 ----
     usable: list[Candidate] = []
@@ -318,18 +327,18 @@ def _prepare(
 
     # ---------- 无依据：不生成结论 ----------
     if not basis:
-        # 说明里统计的是全部候选（含未过阈值的），避免"明明有已废止条款却不提示"
+        # 库里其实有相关文件、只是不在效力期内 —— 必须如实拒答并说明，不能装作「库里没找到」。
+        # 注意这里看的是全部候选：范围限定到某份已废止政策时，其条款分数往往低于阈值，
+        # 若只看过阈值的候选就会误入「没找到」的对话路线（test_abolished_policy... 把守这一点）。
         dep_all = [c for c in candidates if c.policy.status == STATUS_REPEALED]
-        pend_all = [c for c in candidates if c.policy.status == STATUS_PENDING]
-        top_score = max([c.score for c in candidates], default=0.0)
-
-        if deprecated or not_in_force:
-            # 过阈值的候选全部不在效力期内：按实际状态说，不拿阈值当理由
-            stale = deprecated or not_in_force
+        stale_others = [c for c in candidates
+                        if c.policy.status not in (STATUS_EFFECTIVE, STATUS_PENDING, STATUS_REPEALED)]
+        if dep_all or stale_others:
+            stale = dep_all or stale_others
             titles = "、".join(sorted({f"《{c.policy.title}》" for c in stale}))
-            if deprecated and not not_in_force:
+            if dep_all and not stale_others:
                 state_text = "已废止"
-            elif not_in_force and not deprecated:
+            elif stale_others and not dep_all:
                 state_text = "尚未生效"
             else:
                 state_text = "已废止或尚未生效"
@@ -356,42 +365,10 @@ def _prepare(
             _log(db, question, payload, scope, user_id)
             return None, payload, None
 
-        reason_parts = []
-        if candidates and top_score < threshold:
-            reason_parts.append(
-                f"已检索 {len(candidates)} 条相关条款，最高相关度 {top_score:.2f}，"
-                f"未达到可信阈值 {threshold:.2f}。"
-            )
-        else:
-            reason_parts.append("未能从政策库中检索到与问题直接相关的现行规定。")
-        if dep_all:
-            reason_parts.append(f"其中 {len(dep_all)} 条来自已废止文件，不能作为现行依据。")
-        if pend_all:
-            reason_parts.append(f"另有 {len(pend_all)} 条来自尚未人工核验的政策，核验前不能作为现行依据。")
-        reason_parts.append("为避免误导，系统不生成结论。")
-        meta["excluded_deprecated"] = len(dep_all) if not used_deprecated else 0
-
-        payload = {
-            "status": "no_basis",
-            "sufficient": False,
-            "reason_code": "",
-            "conclusion": "",
-            "supplement": "",
-            "reason": "".join(reason_parts),
-            "manual_confirm": [],
-            "citations": [],
-            "candidates": [
-                {
-                    **cand.to_dict(),
-                    "below_threshold": cand.score < threshold,
-                    "excerpt": build_excerpt(cand.clause.content, cand.matched_terms),
-                }
-                for cand in candidates
-            ],
-            "meta": meta,
-        }
-        _log(db, question, payload, scope, user_id)
-        return None, payload, None
+        # 库里没有可作依据的内容：说明情况或友好转开，交给对话路线
+        return None, None, _build_chat_ctx(
+            store, question, candidates, scope=scope, threshold=threshold, top_k=top_k,
+        )
 
     evidence = (usable if basis == "verified"
                 else deprecated if basis == "deprecated" else pending)[:max_evidence]
@@ -554,6 +531,68 @@ def _evidence_preview(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     return [_citation_payload(cand, i + 1) for i, cand in enumerate(ctx["evidence"])]
 
 
+# ---------------------------------------------------------------- 对话路线
+
+def _chat_answer(db: Session, question: str, ctx: conversation.ChatContext, *,
+                 scope: str, user_id: int | None,
+                 history: list[dict] | None = None) -> dict[str, Any]:
+    """对话路线（同步）：受约束提示词生成；质检不过或模型不可用就换兜底话术。"""
+    model = ""
+    error = ""
+    reply = None
+    try:
+        conf = llm_chat.settings()
+        model = conf["model"]
+        raw = llm_chat.chat(conversation.build_chat_messages(question, history or [], ctx), temperature=0.6)
+        reply = conversation.guard_reply(raw, ctx.known_titles)
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    generated_by = "chat_llm"
+    if reply is None:
+        reply = conversation.fallback_reply(ctx, question)
+        generated_by = "chat_fallback"
+    payload = conversation.chat_payload(reply, generated_by, ctx, scope)
+    payload["meta"]["model"] = model
+    if error:
+        payload["meta"]["error"] = error
+    _log(db, question, payload, scope, user_id)
+    return payload
+
+
+def _chat_stream(db: Session, question: str, ctx: conversation.ChatContext, *,
+                 scope: str, user_id: int | None,
+                 history: list[dict] | None = None):
+    """对话路线（流式）：mode → delta →（被质检换掉时）replace → final。"""
+    yield {"type": "mode", "mode": "chat"}
+    model = ""
+    error = ""
+    buffer: list[str] = []
+    try:
+        conf = llm_chat.settings()
+        model = conf["model"]
+        for chunk in llm_chat.stream(
+                conversation.build_chat_messages(question, history or [], ctx), temperature=0.6):
+            buffer.append(chunk)
+            yield {"type": "delta", "text": chunk}
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+
+    text = "".join(buffer)
+    reply = conversation.guard_reply(text, ctx.known_titles)
+    generated_by = "chat_llm"
+    if reply is None:
+        reply = conversation.fallback_reply(ctx, question)
+        generated_by = "chat_fallback"
+    if reply != text:
+        yield {"type": "replace", "text": reply}
+    payload = conversation.chat_payload(reply, generated_by, ctx, scope)
+    payload["meta"]["model"] = model
+    if error:
+        payload["meta"]["error"] = error
+    _log(db, question, payload, scope, user_id)
+    yield {"type": "final", "data": payload}
+
+
 def answer(
     db: Session,
     question: str,
@@ -578,7 +617,8 @@ def answer(
     )
     if early is not None:
         return early
-    assert chat_ctx is None, "对话路线由 Task 2 接入"
+    if chat_ctx is not None:
+        return _chat_answer(db, question, chat_ctx, scope=scope, user_id=user_id)
 
     conclusion = ""
     error = ""
@@ -638,7 +678,9 @@ def answer_stream(
     if early is not None:
         yield {"type": "final", "data": early}
         return
-    assert chat_ctx is None, "对话路线由 Task 2 接入"
+    if chat_ctx is not None:
+        yield from _chat_stream(db, question, chat_ctx, scope=scope, user_id=user_id)
+        return
 
     evidence = ctx["evidence"]
     yield {
@@ -693,12 +735,15 @@ def answer_stream(
 
 def _log(db: Session, question: str, payload: dict, scope: str, user_id: int | None) -> None:
     try:
+        status = payload.get("status") or "no_basis"
+        if status not in ("answered", "no_basis", "chat"):
+            status = "no_basis"
         record = PolicyQaLog(
             question=question,
-            answer=payload.get("conclusion") or payload.get("reason") or "",
+            answer=payload.get("conclusion") or payload.get("reply") or payload.get("reason") or "",
             citations_json=json.dumps(payload.get("citations") or [], ensure_ascii=False),
             scope=scope,
-            status="answered" if payload.get("status") == "answered" else "no_basis",
+            status=status,
             generated_by=payload.get("meta", {}).get("generated_by", ""),
             model=payload.get("meta", {}).get("model", ""),
             user_id=user_id,

@@ -168,10 +168,11 @@ def test_retrieval_ranks_the_answering_clause_first(api):
     assert scores == sorted(scores, reverse=True)
 
 
-def test_unrelated_question_has_no_basis(api):
+def test_unrelated_question_gets_chat_reply_without_citations(api):
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
-    res = ask(api, "外地户籍人员申请人才公寓补贴需要什么材料")
-    assert res["status"] == "no_basis" and res["conclusion"] == "" and res["reason"]
+    res = ask(api, "外地户籍人员申请人才公寓补贴需要什么材料")   # ask() 下模型不可用 → 走兜底话术
+    assert res["status"] == "chat" and res["citations"] == [] and res["conclusion"] == ""
+    assert res["reply"]
 
 
 def test_abolished_policy_is_excluded_and_listed_as_history(api):

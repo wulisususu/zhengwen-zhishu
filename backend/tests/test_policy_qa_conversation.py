@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.policy import qa
+from app.policy import conversation, qa
 from policy_support import block_network  # noqa: F401  # pytest 经模块命名空间解析该 fixture
 from test_policy_qa_t1 import (  # noqa: F401
     CURRENT_REPLACEMENT,
@@ -70,3 +70,72 @@ def test_stream_evidence_event_carries_the_notice(api):
     final = next(e for e in events if e.get("type") == "final")["data"]
     assert evidence["basis"] == "unverified" and evidence["basis_notice"] == qa.UNVERIFIED_NOTICE
     assert final["basis"] == "unverified"
+
+
+# ---------------------------------------------------------------- Task 2：对话路线
+
+def test_greeting_gets_a_friendly_reply_not_a_refusal(api):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    with patch("app.services.llm_chat.chat", return_value="您好！我可以帮您查政策条款……"):
+        res = api.client.post("/api/v1/policy/qa", json={"question": "你好"}).json()["data"]
+    assert res["status"] == "chat" and res["reply"].startswith("您好")
+    assert res["citations"] == [] and res["meta"]["generated_by"] == "chat_llm"
+
+
+@pytest.mark.parametrize("question,kind", [
+    ("你好", "greeting"),
+    ("外地户籍人员申请人才公寓补贴需要什么材料", "policy"),
+    ("电脑命令行怎么查看IP地址", "other"),
+])
+def test_model_unavailable_uses_rotating_fallback(api, question, kind):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    res = ask(api, question)                       # ask() 已把模型打桩为不可用
+    assert res["status"] == "chat" and res["meta"]["kind"] == kind
+    assert res["meta"]["generated_by"] == "chat_fallback" and res["reply"]
+    assert "已检索" not in res["reply"]
+
+
+def test_fallback_wording_varies_between_questions():
+    ctx = conversation.ChatContext(kind="other", stats={"total": 1, "verified": 1, "unverified": 0},
+                                   known_titles=set())
+    replies = {conversation.fallback_reply(ctx, q)
+               for q in ["电脑怎么关机", "打印机连不上怎么办", "WPS怎么改页边距", "Excel公式怎么写"]}
+    assert len(replies) >= 2
+
+
+def test_chat_reply_naming_unknown_policy_falls_back():
+    known = {"示例市小微企业首次贷款贴息管理办法"}
+    assert conversation.guard_reply("根据《某市人才安居办法》，可以申请。", known) is None
+    assert conversation.guard_reply("可以参考《示例市小微企业首次贷款贴息管理办法》。", known)
+
+
+def test_chat_reply_with_code_block_falls_back():
+    assert conversation.guard_reply("建议咨询信息部门。\n```\nipconfig\n```", set()) is None
+
+
+def test_chat_reply_strips_citation_markers_and_doc_numbers_fall_back():
+    assert "[1]" not in conversation.guard_reply("您好[1]，请问需要查哪方面的政策？", set())
+    assert conversation.guard_reply("见示政发〔2024〕3号。", set()) is None
+
+
+def test_chat_stream_emits_mode_then_replace_when_guarded(api):
+    with patch("app.services.llm_chat.stream", return_value=iter(["根据《不存在办法》", "可以申请。"])):
+        text = api.client.post("/api/v1/policy/qa/stream", json={"question": "有没有人才公寓补贴"}).text
+    events = [json.loads(line[5:]) for line in text.splitlines()
+              if line.startswith("data:") and line[5:].strip() not in ("", "[DONE]")]
+    kinds = [e.get("type") for e in events]
+    # stage（检索提示）在 mode 之前发出，属于既有行为
+    assert "mode" in kinds and next(e for e in events if e["type"] == "mode")["mode"] == "chat"
+    assert "delta" in kinds and "replace" in kinds and "final" in kinds
+    final = next(e for e in events if e["type"] == "final")["data"]
+    replaced = next(e for e in events if e["type"] == "replace")["text"]
+    assert final["reply"] == replaced and "不存在办法" not in final["reply"]
+    assert final["meta"]["generated_by"] == "chat_fallback"
+
+
+def test_chat_turn_is_logged_with_chat_status(api):
+    with patch("app.services.llm_chat.chat", return_value="您好！需要查哪方面的政策？"):
+        api.client.post("/api/v1/policy/qa", json={"question": "你好"})
+    items = api.client.get("/api/v1/policy/qa/logs").json()["data"]["items"]
+    assert items and items[0]["status"] == "chat"
+    assert items[0]["answer"] == "您好！需要查哪方面的政策？"

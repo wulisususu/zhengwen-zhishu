@@ -96,8 +96,8 @@
 ### 1. 安装后端与创建配置
 
 ```bash
-git clone https://github.com/wulisususu/innet-agent-ai-box.git  # 当前 GitHub 仓库地址；待仓库重命名后同步更新
-cd innet-agent-ai-box
+git clone https://github.com/wulisususu/zhengwen-zhishu.git
+cd zhengwen-zhishu
 
 python3 -m venv backend/.venv
 source backend/.venv/bin/activate

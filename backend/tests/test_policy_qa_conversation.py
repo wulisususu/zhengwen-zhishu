@@ -192,3 +192,51 @@ def test_unverified_overview_carries_the_notice(api):
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法")
     res = ask(api, "帮我看看示例市小微企业首次贷款贴息管理办法")
     assert res["meta"]["mode"] == "overview" and res["basis_notice"] == qa.UNVERIFIED_NOTICE
+
+
+# ---------------------------------------------------------------- Task 4：多轮上下文
+
+def test_clean_history_limits_turns_and_length():
+    from app.policy.router import _clean_history
+    raw = [{"question": "q" * 500, "answer": "a" * 900}] * 5 + ["bad", {"x": 1}]
+    out = _clean_history(raw)
+    assert len(out) == 3 and len(out[0]["question"]) == 200 and len(out[0]["answer"]) == 300
+    assert _clean_history("not-a-list") == []
+
+
+def test_followup_question_is_answered_from_the_previous_topic(api):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    history = [{"question": "小微企业首次贷款贴息有什么规定", "answer": "……"}]
+    # 「那担保物有什么要求」单独检索时既低分又低覆盖（库里没有担保物的内容），
+    # 拼上前一轮的问题后才能接回这份政策 —— 计划 Review Focus 1 的场景
+    res = ask(api, "那担保物有什么要求", history=history)
+    assert res["status"] == "answered" and res["meta"]["followup"] is True
+    assert res["citations"][0]["policy_title"] == "示例市小微企业首次贷款贴息管理办法"
+
+
+def test_followup_only_combines_when_current_question_has_no_basis(api):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    add(api.library, CURRENT_REPLACEMENT, "示例市政务数据共享办法", verify="current")
+    history = [{"question": "小微企业首次贷款贴息有什么规定", "answer": "……"}]
+    res = ask(api, SHARE_Q, history=history)
+    assert res["status"] == "answered" and res["meta"]["followup"] is False
+    assert res["citations"][0]["policy_title"] == "示例市政务数据共享办法"
+
+
+def test_history_is_sent_to_the_model(api):
+    captured = {}
+
+    def fake_chat(messages, **kwargs):
+        captured["messages"] = messages
+        return "您好！"
+
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    history = [{"question": "小微企业首次贷款贴息有什么规定", "answer": "贴息比例为百分之五十。"}]
+    with patch("app.services.llm_chat.chat", side_effect=fake_chat):
+        res = api.client.post(
+            "/api/v1/policy/qa", json={"question": "你好", "history": history}).json()["data"]
+    roles = [m["role"] for m in captured["messages"]]
+    assert roles == ["system", "user", "assistant", "user"]
+    assert captured["messages"][1]["content"] == "小微企业首次贷款贴息有什么规定"
+    assert captured["messages"][2]["content"] == "贴息比例为百分之五十。"
+    assert res["status"] == "chat"

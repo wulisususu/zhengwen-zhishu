@@ -68,7 +68,8 @@ def _split_supplement(text: str) -> tuple[str, str]:
     return text.strip(), ""
 
 
-def _build_messages(question: str, evidence: list[Candidate], *, overview: bool = False) -> list[dict[str, str]]:
+def _build_messages(question: str, evidence: list[Candidate], *,
+                    overview: bool = False, history: list[dict] | None = None) -> list[dict[str, str]]:
     lines: list[str] = []
     for idx, cand in enumerate(evidence, start=1):
         meta = "，".join(x for x in [
@@ -81,10 +82,15 @@ def _build_messages(question: str, evidence: list[Candidate], *, overview: bool 
     ask_tail = ("请概括这份政策的主要内容：适用对象、主要措施、申请条件或办理要求，每句标注引用序号。"
                 if overview else "请依据上述条款作答，每句结论标注引用序号。")
     user = "政策条款：\n" + "\n".join(lines) + f"\n\n问题：{question}\n\n{ask_tail}"
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user},
-    ]
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # 多轮追问：把历史问答插在最后一条 user 之前，模型才知道「那申请材料呢」指什么
+    for turn in history or []:
+        if turn.get("question"):
+            messages.append({"role": "user", "content": str(turn["question"])})
+        if turn.get("answer"):
+            messages.append({"role": "assistant", "content": str(turn["answer"])})
+    messages.append({"role": "user", "content": user})
+    return messages
 
 
 def _citation_payload(cand: Candidate, index: int) -> dict:
@@ -313,6 +319,7 @@ def _named_policy_ctx(db: Session, match, question: str, *, store,
         "named_policy": policy.title,
         "candidates": len(within),
         "above_threshold": len(above_within),
+        "followup": False,
         "within_threshold": within_threshold,
         "cited": 0, "deprecated": 0, "pending": 0, "excluded_deprecated": 0,
         "threshold": threshold, "scope": "policy", "model": "", "generated_by": "none",
@@ -339,12 +346,57 @@ def _prepare(
     top_k: int,
     max_evidence: int,
     user_id: int | None,
+    history: list[dict] | None = None,
+    allow_followup: bool = True,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, Any]:
-    """检索 + 依据分层。返回 (ctx, early, chat)，三者恰有一个非 None。
+    """带多轮追问的入口。返回 (ctx, early, chat)，三者恰有一个非 None。
+
+    先按当前问题走一遍路由；得到对话路线且带着历史时，把上一轮的问题
+    拼进检索词再走一遍——第二遍有依据就采用，否则保持对话路线。
+    """
+    ctx, early, chat = _route_question(
+        db, question, store=store, scope=scope, policy_ids=policy_ids,
+        include_deprecated=include_deprecated, threshold=threshold, top_k=top_k,
+        max_evidence=max_evidence, user_id=user_id,
+    )
+    if chat is None or not allow_followup or not history:
+        return ctx, early, chat
+    if conversation.classify(question, has_candidates=False) == "greeting":
+        return ctx, early, chat
+    combined = f"{history[-1]['question']}；{question}"
+    # 拼接后的检索词必然更杂、分数更低（实测同一问法 0.29 → 0.51），
+    # 追问那遍用 0.7 倍阈值，与「点名政策内检索」的放宽口径一致。
+    followup_threshold = round(threshold * 0.7, 3)
+    ctx2, early2, chat2 = _route_question(
+        db, combined, store=store, scope=scope, policy_ids=policy_ids,
+        include_deprecated=include_deprecated, threshold=followup_threshold, top_k=top_k,
+        max_evidence=max_evidence, user_id=user_id, skip_coverage_gate=True,
+    )
+    if ctx2 is not None:
+        ctx2["meta"]["followup"] = True
+        return ctx2, None, None
+    # 第二遍仍然没有依据（含早退拒答）：保持对话路线
+    return ctx, early, chat
+
+
+def _route_question(
+    db: Session,
+    question: str,
+    *,
+    store,
+    scope: str,
+    policy_ids: list[int] | None,
+    include_deprecated: bool,
+    threshold: float,
+    top_k: int,
+    max_evidence: int,
+    user_id: int | None,
+    skip_coverage_gate: bool = False,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, Any]:
+    """单次检索 + 依据分层 + 对话路线判定。返回 (ctx, early, chat)，三者恰有一个非 None。
 
     检索与「给不给答」的判断都在这里完成，生成部分才能被同步、
     流式两种实现共用，避免两条链路各写一套规则后慢慢跑偏。
-    third（chat）是对话路线的上下文，本任务固定为 None，由对话路线接入。
     """
     rows = corpus.load(store, scope=scope, policy_ids=policy_ids)
     candidates = retrieval.search(rows, question, top_k=top_k)
@@ -369,7 +421,8 @@ def _prepare(
     for cand in candidates:
         matched_terms.update(cand.matched_terms)
     corpus_coverage = (len(set(asked_terms) & matched_terms) / len(set(asked_terms))) if asked_terms else 0.0
-    if candidates and asked_terms and corpus_coverage < MIN_CORPUS_COVERAGE:
+    if (not skip_coverage_gate and candidates and asked_terms
+            and corpus_coverage < MIN_CORPUS_COVERAGE):
         # 库外问题（如闲聊、与政策无关的技术问题）：走对话路线友好回应
         return None, None, _build_chat_ctx(
             store, question, candidates, scope=scope, threshold=threshold, top_k=top_k,
@@ -407,6 +460,7 @@ def _prepare(
     meta = {
         "candidates": len(candidates),
         "above_threshold": len(above),
+        "followup": False,
         "cited": 0,
         "deprecated": len(deprecated),
         "pending": len(pending),
@@ -722,6 +776,7 @@ def answer(
     top_k: int = 12,
     max_evidence: int = MAX_EVIDENCE,
     user_id: int | None = None,
+    history: list[dict] | None = None,
 ) -> dict[str, Any]:
     question = (question or "").strip()
     if not question:
@@ -730,12 +785,12 @@ def answer(
     ctx, early, chat_ctx = _prepare(
         db, question, store=store, scope=scope, policy_ids=policy_ids,
         include_deprecated=include_deprecated, threshold=threshold, top_k=top_k,
-        max_evidence=max_evidence, user_id=user_id,
+        max_evidence=max_evidence, user_id=user_id, history=history,
     )
     if early is not None:
         return early
     if chat_ctx is not None:
-        return _chat_answer(db, question, chat_ctx, scope=scope, user_id=user_id)
+        return _chat_answer(db, question, chat_ctx, scope=scope, user_id=user_id, history=history)
 
     overview = ctx.get("mode") == "overview"
     conclusion = ""
@@ -743,7 +798,9 @@ def answer(
     try:
         conf = llm_chat.settings()
         ctx["meta"]["model"] = conf["model"]
-        raw = llm_chat.chat(_build_messages(question, ctx["evidence"], overview=overview), temperature=0.2)
+        raw = llm_chat.chat(
+            _build_messages(question, ctx["evidence"], overview=overview, history=history),
+            temperature=0.2)
         conclusion = _strip_fence(_strip_reasoning(raw))
         conclusion, supplement = _split_supplement(conclusion)
     except Exception as exc:
@@ -773,6 +830,7 @@ def answer_stream(
     top_k: int = 12,
     max_evidence: int = MAX_EVIDENCE,
     user_id: int | None = None,
+    history: list[dict] | None = None,
 ):
     """流式问答：先给证据，再逐块吐字，最后给完整结构。
 
@@ -791,13 +849,13 @@ def answer_stream(
     ctx, early, chat_ctx = _prepare(
         db, question, store=store, scope=scope, policy_ids=policy_ids,
         include_deprecated=include_deprecated, threshold=threshold, top_k=top_k,
-        max_evidence=max_evidence, user_id=user_id,
+        max_evidence=max_evidence, user_id=user_id, history=history,
     )
     if early is not None:
         yield {"type": "final", "data": early}
         return
     if chat_ctx is not None:
-        yield from _chat_stream(db, question, chat_ctx, scope=scope, user_id=user_id)
+        yield from _chat_stream(db, question, chat_ctx, scope=scope, user_id=user_id, history=history)
         return
 
     evidence = ctx["evidence"]
@@ -831,7 +889,9 @@ def answer_stream(
     try:
         conf = llm_chat.settings()
         ctx["meta"]["model"] = conf["model"]
-        for chunk in llm_chat.stream(_build_messages(question, evidence, overview=overview), temperature=0.2):
+        for chunk in llm_chat.stream(
+                _build_messages(question, evidence, overview=overview, history=history),
+                temperature=0.2):
             buffer.append(chunk)
             yield {"type": "delta", "text": chunk}
     except Exception as exc:

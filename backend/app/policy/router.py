@@ -32,7 +32,8 @@ router = APIRouter(prefix="/policy", tags=["policy-qa"])
 def _options(payload: dict) -> dict:
     ids = payload.get("policy_ids") or None
     return {
-        "scope": str(payload.get("scope") or "current"),
+        # 默认放开到全部入库政策（已核验优先）；「仅已核验现行政策」是显式的严格模式
+        "scope": str(payload.get("scope") or "all"),
         "policy_ids": [int(i) for i in ids] if ids else None,
         "include_deprecated": bool(payload.get("include_deprecated")),
         "threshold": float(payload.get("threshold") or retrieval.DEFAULT_THRESHOLD),

@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 from app.services import llm_chat
 
 from . import corpus, retrieval
-from .lifecycle import display_date, is_basis_eligible
-from .models import PolicyQaLog, STATUS_PENDING, STATUS_REPEALED
+from .lifecycle import display_date
+from .models import PolicyQaLog, STATUS_PENDING, STATUS_REPEALED, STATUS_EFFECTIVE
 from .retrieval import Candidate, DEFAULT_THRESHOLD, build_excerpt
 
 MAX_EVIDENCE = 6
@@ -25,6 +25,11 @@ MAX_EVIDENCE = 6
 EXTRACT_MAX_CHARS = 220
 #: 问题实义词在政策库中的最低覆盖率，低于此值视为库外问题
 MIN_CORPUS_COVERAGE = 0.35
+#: 未核验前提的固定文案：由后端写进回答开头，不交给模型生成
+UNVERIFIED_NOTICE = (
+    "以下内容来自已入库但尚未经人工核验的政策，仅供参考；"
+    "正式引用前，请审核人在政策库完成核验。"
+)
 #: 模型明确表示「未作规定」时转为无依据
 INSUFFICIENT_MARKERS = ("未作规定", "没有规定", "未涉及", "无法依据", "条款中未", "未找到相关")
 
@@ -228,11 +233,12 @@ def _prepare(
     top_k: int,
     max_evidence: int,
     user_id: int | None,
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """检索 + 两道闸门。返回 (ctx, early)；early 非空表示这一问到此为止。
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, Any]:
+    """检索 + 依据分层。返回 (ctx, early, chat)，三者恰有一个非 None。
 
     检索与「给不给答」的判断都在这里完成，生成部分才能被同步、
     流式两种实现共用，避免两条链路各写一套规则后慢慢跑偏。
+    third（chat）是对话路线的上下文，本任务固定为 None，由对话路线接入。
     """
     rows = corpus.load(store, scope=scope, policy_ids=policy_ids)
     candidates = retrieval.search(rows, question, top_k=top_k)
@@ -248,6 +254,7 @@ def _prepare(
         payload = {
             "status": "no_basis",
             "sufficient": False,
+            "reason_code": "",
             "conclusion": "",
             "supplement": "",
             "reason": (
@@ -265,24 +272,35 @@ def _prepare(
                      "scope": scope, "candidates": len(candidates), "generated_by": "none"},
         }
         _log(db, question, payload, scope, user_id)
-        return None, payload
+        return None, payload, None
 
-    # 可作为现行依据的（已废止需显式允许）
+    # ---- 依据分层：已核验 > （显式允许的）已废止 > 待核实；其余如实拒答 ----
     usable: list[Candidate] = []
     deprecated: list[Candidate] = []
     pending: list[Candidate] = []
+    not_in_force: list[Candidate] = []
     for cand in above:
-        if is_basis_eligible(cand.policy.status):
+        status = cand.policy.status
+        if status == STATUS_EFFECTIVE:
             usable.append(cand)
-        elif cand.policy.status == STATUS_REPEALED:
+        elif status == STATUS_REPEALED:
             deprecated.append(cand)
-        elif cand.policy.status == STATUS_PENDING:
+        elif status == STATUS_PENDING:
             pending.append(cand)
+        else:
+            not_in_force.append(cand)   # 尚未生效等
 
+    basis = ""
+    basis_notice = ""
     used_deprecated = False
-    if not usable and include_deprecated and deprecated:
-        usable = deprecated[:max_evidence]
+    if usable:
+        basis = "verified"
+    elif include_deprecated and deprecated:
+        basis = "deprecated"
         used_deprecated = True
+    elif pending:
+        basis = "unverified"
+        basis_notice = UNVERIFIED_NOTICE
 
     meta = {
         "candidates": len(candidates),
@@ -299,15 +317,53 @@ def _prepare(
     }
 
     # ---------- 无依据：不生成结论 ----------
-    if not usable:
+    if not basis:
         # 说明里统计的是全部候选（含未过阈值的），避免"明明有已废止条款却不提示"
         dep_all = [c for c in candidates if c.policy.status == STATUS_REPEALED]
         pend_all = [c for c in candidates if c.policy.status == STATUS_PENDING]
         top_score = max([c.score for c in candidates], default=0.0)
-        reason_parts = [
-            f"已检索 {len(candidates)} 条相关条款，最高相关度 {top_score:.2f}，"
-            f"未达到可信阈值 {threshold:.2f}。"
-        ]
+
+        if deprecated or not_in_force:
+            # 过阈值的候选全部不在效力期内：按实际状态说，不拿阈值当理由
+            stale = deprecated or not_in_force
+            titles = "、".join(sorted({f"《{c.policy.title}》" for c in stale}))
+            if deprecated and not not_in_force:
+                state_text = "已废止"
+            elif not_in_force and not deprecated:
+                state_text = "尚未生效"
+            else:
+                state_text = "已废止或尚未生效"
+            reason = (
+                f"相关条款来自{state_text}的文件（{titles}），不能作为现行依据。"
+                "如需引用，请先在政策库核验现行版本，或在检索时显式允许引用已废止条款。"
+            )
+            payload = {
+                "status": "no_basis",
+                "sufficient": False,
+                "reason_code": "not_in_force",
+                "conclusion": "",
+                "supplement": "",
+                "reason": reason,
+                "manual_confirm": [],
+                "citations": [],
+                "candidates": [
+                    {**cand.to_dict(), "below_threshold": cand.score < threshold,
+                     "excerpt": build_excerpt(cand.clause.content, cand.matched_terms)}
+                    for cand in candidates
+                ],
+                "meta": meta,
+            }
+            _log(db, question, payload, scope, user_id)
+            return None, payload, None
+
+        reason_parts = []
+        if candidates and top_score < threshold:
+            reason_parts.append(
+                f"已检索 {len(candidates)} 条相关条款，最高相关度 {top_score:.2f}，"
+                f"未达到可信阈值 {threshold:.2f}。"
+            )
+        else:
+            reason_parts.append("未能从政策库中检索到与问题直接相关的现行规定。")
         if dep_all:
             reason_parts.append(f"其中 {len(dep_all)} 条来自已废止文件，不能作为现行依据。")
         if pend_all:
@@ -318,6 +374,7 @@ def _prepare(
         payload = {
             "status": "no_basis",
             "sufficient": False,
+            "reason_code": "",
             "conclusion": "",
             "supplement": "",
             "reason": "".join(reason_parts),
@@ -334,17 +391,21 @@ def _prepare(
             "meta": meta,
         }
         _log(db, question, payload, scope, user_id)
-        return None, payload
+        return None, payload, None
 
+    evidence = (usable if basis == "verified"
+                else deprecated if basis == "deprecated" else pending)[:max_evidence]
     return {
         "candidates": candidates,
         "deprecated": deprecated,
         "pending": pending,
         "meta": meta,
         "corpus_coverage": corpus_coverage,
-        "evidence": usable[:max_evidence],
+        "evidence": evidence,
         "used_deprecated": used_deprecated,
-    }, None
+        "basis": basis,
+        "basis_notice": basis_notice,
+    }, None, None
 
 
 def _is_insufficient(conclusion: str) -> bool:
@@ -390,11 +451,14 @@ def _assemble(ctx: dict[str, Any], question: str, conclusion: str, generated_by:
     deprecated = ctx["deprecated"]
     pending = ctx["pending"]
     threshold = meta["threshold"]
+    basis = ctx.get("basis", "")
+    basis_notice = ctx.get("basis_notice", "") if basis == "unverified" else ""
 
     if _is_insufficient(conclusion):
         payload = {
             "status": "no_basis",
             "sufficient": False,
+            "reason_code": "model_insufficient",
             "conclusion": "",
             "supplement": conclusion,
             "reason": "模型判断：给定条款未对该问题作出规定，系统不生成结论。",
@@ -444,20 +508,30 @@ def _assemble(ctx: dict[str, Any], question: str, conclusion: str, generated_by:
         notes.append(f"检索结果中的 {names} 来自已废止文件，仅作历史对照，不作为现行依据。")
 
     manual_confirm: list[str] = []
-    for cand in pending[:3]:
-        manual_confirm.append(
-            f"《{cand.policy.title}》{cand.clause.clause_no} 尚未经人工核验，不能作为现行依据，请先在政策库核验。"
-        )
+    if basis == "unverified":
+        # 依据本身来自未核验政策：按政策去重各提醒一条（不再说「不能作为现行依据」）
+        for title in dict.fromkeys(c["policy_title"] for c in citations if c["status"] == STATUS_PENDING):
+            manual_confirm.append(f"本次引用的《{title}》尚未经人工核验，正式行文前请审核人在政策库核验。")
+    else:
+        for cand in pending[:3]:
+            manual_confirm.append(
+                f"《{cand.policy.title}》{cand.clause.clause_no} 尚未经人工核验，不能作为现行依据，请先在政策库核验。"
+            )
     if any(c["status"] == STATUS_REPEALED for c in citations):
         manual_confirm.append("结论中引用了已废止条款（因显式允许），正式行文前必须替换为现行规定。")
 
     cited_statuses = {c["status"] for c in citations}
-    sufficient = "full" if cited_statuses <= {"现行有效"} and not manual_confirm else "partial"
+    if basis == "unverified":
+        sufficient = "partial"      # 依据来自未核验政策：一律不算「依据充分」
+    else:
+        sufficient = "full" if cited_statuses <= {"现行有效"} and not manual_confirm else "partial"
 
     payload = {
         "status": "answered",
         "sufficient": True,
         "sufficiency": sufficient,
+        "basis": basis,
+        "basis_notice": basis_notice,
         "conclusion": conclusion,
         "supplement": "\n".join(n for n in notes if n).strip(),
         "reason": "",
@@ -497,13 +571,14 @@ def answer(
     if not question:
         raise ValueError("问题不能为空")
 
-    ctx, early = _prepare(
+    ctx, early, chat_ctx = _prepare(
         db, question, store=store, scope=scope, policy_ids=policy_ids,
         include_deprecated=include_deprecated, threshold=threshold, top_k=top_k,
         max_evidence=max_evidence, user_id=user_id,
     )
     if early is not None:
         return early
+    assert chat_ctx is None, "对话路线由 Task 2 接入"
 
     conclusion = ""
     error = ""
@@ -555,7 +630,7 @@ def answer_stream(
 
     yield {"type": "stage", "stage": "retrieve", "text": "正在检索政策库"}
 
-    ctx, early = _prepare(
+    ctx, early, chat_ctx = _prepare(
         db, question, store=store, scope=scope, policy_ids=policy_ids,
         include_deprecated=include_deprecated, threshold=threshold, top_k=top_k,
         max_evidence=max_evidence, user_id=user_id,
@@ -563,11 +638,14 @@ def answer_stream(
     if early is not None:
         yield {"type": "final", "data": early}
         return
+    assert chat_ctx is None, "对话路线由 Task 2 接入"
 
     evidence = ctx["evidence"]
     yield {
         "type": "evidence",
         "citations": _evidence_preview(ctx),
+        "basis": ctx["basis"],
+        "basis_notice": ctx["basis_notice"],
         "meta": {**ctx["meta"], "corpus_coverage": round(ctx["corpus_coverage"], 3)},
     }
 

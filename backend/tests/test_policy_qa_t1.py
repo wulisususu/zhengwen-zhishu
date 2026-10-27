@@ -127,13 +127,17 @@ def ask(api, question, **extra):
 
 
 # ── 待办 3：未核验不能作为现行依据 ────────────────────────────────────────
-def test_import_is_unverified_and_not_used_as_basis(api):
+def test_import_is_unverified_and_strict_scope_excludes_it(api):
     pid = add(api.library, SAMPLE, "未经核验贷款政策")
     assert api.library.store.get(pid).verified_status == "unverified"
-    assert ask(api, LOAN_Q)["status"] == "no_basis"                       # 默认范围只含现行
+    # 严格模式（仅已核验现行政策）仍然拒答
+    assert ask(api, LOAN_Q, scope="current")["status"] != "answered"
+    # 默认范围放开后：待核实政策可以作答，但带未核验前提
+    res = ask(api, LOAN_Q)
+    assert res["status"] == "answered" and res["basis"] == "unverified"
     only = ask(api, LOAN_Q, scope="policy", policy_ids=[pid])            # 审查复现路径：指定该政策
-    assert only["status"] == "no_basis" and only["citations"] == []
-    assert "人工核验" in only["reason"]
+    assert only["status"] == "answered" and only["basis"] == "unverified"
+    assert only["citations"] and only["basis_notice"]
 
 
 def test_verified_current_policy_answers_with_t1_citation_ids(api):
@@ -188,7 +192,7 @@ def test_stream_uses_the_same_rules(api):
     add(api.library, SAMPLE, "未经核验贷款政策")
     with patch("app.services.llm_chat.stream", _offline):
         text = api.client.post("/api/v1/policy/qa/stream", json={"question": LOAN_Q}).text
-    assert '"status": "no_basis"' in text and "[DONE]" in text
+    assert '"basis": "unverified"' in text and "[DONE]" in text
 
 
 # ── 待办 1：写入只有审核人能做；不存在另一套改删接口 ──────────────────────

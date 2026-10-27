@@ -37,7 +37,7 @@ class PolicyQaLog(Base):
     answer = Column(Text, default="")
     citations_json = Column(Text, default="[]")
     scope = Column(String(32), default="current")
-    status = Column(String(32), default="answered")   # answered / no_basis / needs_review / rejected
+    status = Column(String(32), default="answered")   # answered / no_basis / chat（needs_review / rejected 预留）
     generated_by = Column(String(32), default="")     # llm / extractive / none
     model = Column(String(128), default="")
     user_id = Column(Integer, nullable=True)

@@ -127,18 +127,24 @@ def ask(api, question, **extra):
 
 
 # ── 待办 3：未核验不能作为现行依据 ────────────────────────────────────────
-def test_import_is_unverified_and_not_used_as_basis(api):
+DENSE_Q = "贴息和补贴怎么给"   # ① 逐条实词覆盖新规则：问法要实词紧凑（见 test_policy_qa_conversation）
+
+def test_import_is_unverified_and_strict_scope_excludes_it(api):
     pid = add(api.library, SAMPLE, "未经核验贷款政策")
     assert api.library.store.get(pid).verified_status == "unverified"
-    assert ask(api, LOAN_Q)["status"] == "no_basis"                       # 默认范围只含现行
-    only = ask(api, LOAN_Q, scope="policy", policy_ids=[pid])            # 审查复现路径：指定该政策
-    assert only["status"] == "no_basis" and only["citations"] == []
-    assert "人工核验" in only["reason"]
+    # 严格模式（仅已核验现行政策）仍然拒答
+    assert ask(api, DENSE_Q, scope="current")["status"] != "answered"
+    # 默认范围放开后：待核实政策可以作答，但带未核验前提
+    res = ask(api, DENSE_Q)
+    assert res["status"] == "answered" and res["basis"] == "unverified"
+    only = ask(api, DENSE_Q, scope="policy", policy_ids=[pid])           # 审查复现路径：指定该政策
+    assert only["status"] == "answered" and only["basis"] == "unverified"
+    assert only["citations"] and only["basis_notice"]
 
 
 def test_verified_current_policy_answers_with_t1_citation_ids(api):
     pid = add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
-    res = ask(api, LOAN_Q)
+    res = ask(api, DENSE_Q)
     assert res["status"] == "answered" and res["meta"]["generated_by"].startswith("extractive")
     first = res["citations"][0]
     assert first["clause_no"] == "第六条" and "[1]" in res["conclusion"] and first["excerpt"]["hl"]
@@ -164,10 +170,11 @@ def test_retrieval_ranks_the_answering_clause_first(api):
     assert scores == sorted(scores, reverse=True)
 
 
-def test_unrelated_question_has_no_basis(api):
+def test_unrelated_question_gets_chat_reply_without_citations(api):
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
-    res = ask(api, "外地户籍人员申请人才公寓补贴需要什么材料")
-    assert res["status"] == "no_basis" and res["conclusion"] == "" and res["reason"]
+    res = ask(api, "外地户籍人员申请人才公寓补贴需要什么材料")   # ask() 下模型不可用 → 走兜底话术
+    assert res["status"] == "chat" and res["citations"] == [] and res["conclusion"] == ""
+    assert res["reply"]
 
 
 def test_abolished_policy_is_excluded_and_listed_as_history(api):
@@ -187,8 +194,8 @@ def test_abolished_policy_is_excluded_and_listed_as_history(api):
 def test_stream_uses_the_same_rules(api):
     add(api.library, SAMPLE, "未经核验贷款政策")
     with patch("app.services.llm_chat.stream", _offline):
-        text = api.client.post("/api/v1/policy/qa/stream", json={"question": LOAN_Q}).text
-    assert '"status": "no_basis"' in text and "[DONE]" in text
+        text = api.client.post("/api/v1/policy/qa/stream", json={"question": DENSE_Q}).text
+    assert '"basis": "unverified"' in text and "[DONE]" in text
 
 
 # ── 待办 1：写入只有审核人能做；不存在另一套改删接口 ──────────────────────
@@ -283,7 +290,7 @@ def test_mixed_pdf_ocr_page_is_kept_with_its_page_number(api, monkeypatch):
 def test_model_refusal_remains_no_basis(api, streaming):
     import json
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
-    question = "申请首次贷款贴息需要具备哪些条件"
+    question = "申请贴息要具备什么条件"
     refusal = "现有条款未作规定"
     if streaming:
         with patch("app.services.llm_chat.stream", return_value=iter([refusal])):
@@ -302,7 +309,7 @@ def test_model_refusal_remains_no_basis(api, streaming):
 def test_invalid_model_citations_do_not_receive_an_unrelated_source(api, streaming, markers):
     import json
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
-    question = "申请首次贷款贴息需要具备哪些条件"
+    question = "申请贴息要具备什么条件"
     unsupported = "所有企业无需审核即可获得贴息" + markers
     if streaming:
         with patch("app.services.llm_chat.stream", return_value=iter([unsupported])):

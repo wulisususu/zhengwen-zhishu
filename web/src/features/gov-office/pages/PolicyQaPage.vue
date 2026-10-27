@@ -56,7 +56,7 @@ async function ask(question: string, options: AskOptions) {
 <template>
   <GovLayout :auto-collapse-below="900">
     <template v-if="isLive">
-      <GovPageHeader title="政策问答" subtitle="依据已入库政策回答，引用可回看原文；未核验政策不作为现行依据" />
+      <GovPageHeader title="政策问答" subtitle="依据已入库政策回答，引用可回看原文；未核验政策会注明，仅作参考" />
       <PolicyChatPage embedded />
     </template>
     <template v-else>

@@ -102,8 +102,8 @@
           <span class="text-[12px] text-[#98A2B3]">仅依据已入库政策作答，结论附条款依据</span>
           <div class="ml-auto flex items-center gap-1.5">
             <select v-model="scope" class="gov-select">
-              <option value="current">全部现行政策</option>
-              <option value="all">全部政策（含待核实）</option>
+              <option value="all">全部入库政策（已核验优先）</option>
+              <option value="current">仅已核验现行政策</option>
               <option value="policy" :disabled="!focusPolicy">仅选中政策</option>
             </select>
             <label class="gov-check">
@@ -117,15 +117,15 @@
         </div>
 
         <p v-if="stats.unverified" class="border-b border-[#EEF2F7] px-4 py-2 text-[12px] text-[#667085]">
-          有 {{ stats.unverified }} 份政策待核实；可选择「全部政策（含待核实）」试查，结果须人工核对。
+          有 {{ stats.unverified }} 份政策尚未核验；回答引用这些政策时会注明「未经核验」。
         </p>
 
         <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto bg-[#f7f9fc] px-4 py-4">
           <!-- 空态 -->
           <div v-if="!turns.length && !asking" class="flex h-full flex-col items-center justify-center text-center">
             <BookMarked class="size-10 text-[#C7CFDB]" :stroke-width="1.4" />
-            <p class="mt-3 text-[14px] text-[#667085]">输入政策问题，例如「小微企业首次贷款贴息的补贴比例是多少」</p>
-            <p class="mt-1 text-[12.5px] text-[#98A2B3]">每条结论都会标注引用条款；依据不足时不生成结论</p>
+            <p class="mt-3 text-[14px] text-[#667085]">直接提问即可，例如「小微企业首次贷款贴息的补贴比例是多少」，或说「帮我看看《某某办法》」</p>
+            <p class="mt-1 text-[12.5px] text-[#98A2B3]">回答依据政策库；引用未核验政策时会注明</p>
           </div>
 
           <!-- 历史问答：每轮都保留在页面上，后一次提问不覆盖前一次 -->
@@ -146,10 +146,11 @@
 
             <!-- 有依据 -->
             <div v-else-if="t.data.status === 'answered'" class="gov-answer">
+              <p v-if="t.data.basis_notice" class="gov-basis-notice" role="note">{{ t.data.basis_notice }}</p>
               <div class="mb-2 flex flex-wrap items-center gap-2">
                 <span v-if="t.streaming" class="gov-badge gov-badge--warn">生成中</span>
-                <span v-else :class="['gov-badge', t.data.sufficiency === 'full' ? 'gov-badge--ok' : 'gov-badge--warn']">
-                  {{ t.data.sufficiency === 'full' ? '依据充分' : '含待核实依据' }}
+                <span v-else :class="['gov-badge', answerBadgeClass(t.data)]">
+                  {{ answerBadgeText(t.data) }}
                 </span>
                 <span class="text-[11.5px] text-[#98A2B3]">
                   引用 {{ t.data.citations.length }} 条 · 候选 {{ t.data.meta.candidates }} 条
@@ -180,7 +181,8 @@
               <!-- 引用卡片 -->
               <div class="mt-3 flex items-center gap-2">
                 <span class="text-[12.5px] font-semibold text-[#475467]">
-                  {{ t.streaming ? '检索到的依据（生成中）' : '本次回答的引用依据' }}
+                  {{ t.streaming ? '检索到的依据（生成中）'
+                     : (t.data.meta.mode === 'overview' ? '政策概要的引用依据' : '本次回答的引用依据') }}
                 </span>
                 <span class="text-[11.5px] text-[#98A2B3]">{{ t.data.citations.length }} 条</span>
               </div>
@@ -218,8 +220,35 @@
               </div>
             </div>
 
+            <!-- 对话回复：打招呼、库外问题、无关问题的友好回应 -->
+            <div v-else-if="t.data && t.data.status === 'chat'" class="gov-chat">
+              <p class="gov-chat-bubble">{{ t.data.reply }}</p>
+
+              <div v-if="t.data.scope_hint" class="gov-chat-hint">
+                <span class="flex-1">{{ t.data.scope_hint }}</span>
+                <button type="button" class="gov-ghost" @click="scope = 'all'">切换到全部入库政策</button>
+              </div>
+
+              <div v-if="t.data.suggestions?.length" class="mt-3">
+                <p class="text-[12px] font-semibold text-[#667085]">名称相近的政策，点击查看</p>
+                <div class="mt-1.5 flex flex-wrap gap-2">
+                  <button v-for="s in t.data.suggestions" :key="s.policy_id" type="button" class="gov-suggestion"
+                    @click="askSuggested(s)">
+                    <span class="truncate">《{{ s.title }}》</span>
+                    <span :class="['gov-status', statusClass(s.status)]">{{ s.status }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="!t.streaming" class="mt-3 flex flex-wrap gap-2">
+                <button type="button" class="gov-ghost" @click="copyAnswer(t)">
+                  <Copy class="size-3.5" :stroke-width="2" />复制回复
+                </button>
+              </div>
+            </div>
+
             <!-- 无依据 -->
-            <div v-else-if="t.data && t.data.status !== 'answered'" class="gov-nobasis">
+            <div v-else-if="t.data && t.data.status === 'no_basis'" class="gov-nobasis">
               <div class="flex items-start gap-2">
                 <AlertTriangle class="mt-0.5 size-4 shrink-0 text-[#B7791F]" :stroke-width="2" />
                 <div>
@@ -332,7 +361,7 @@ const fileInput = ref(null)
 const meta = reactive({ title: '', doc_no: '', issuer: '', publish_date: '' })
 const isReviewer = ref(false)
 
-const scope = ref('current')
+const scope = ref('all')
 const excludeDeprecated = ref(true)
 const question = ref('')
 const asking = ref(false)
@@ -383,7 +412,20 @@ function sourceLabel(by) {
   if (by === 'extractive_after_error') return '原文摘录（模型不可用）'
   if (by === 'extractive_numeric') return '原文摘录（数值直引原文）'
   if (by === 'extractive_ungrounded') return '原文摘录（模型数值无法核对）'
+  if (by === 'extractive_overview') return '原文摘录（政策概要）'
+  if (by === 'chat_llm') return '对话回复'
+  if (by === 'chat_fallback') return '对话回复（固定话术）'
   return '未生成'
+}
+
+// 徽标：未核验依据优先标注，其次按 sufficiency（旧数据没有 basis 字段，走原有文案）
+function answerBadgeText(data) {
+  if (data.basis === 'unverified') return '依据未核验'
+  return data.sufficiency === 'full' ? '依据充分' : '含待核实依据'
+}
+
+function answerBadgeClass(data) {
+  return answerBadgeText(data) === '依据充分' ? 'gov-badge--ok' : 'gov-badge--warn'
 }
 
 // 把「…[1]…」切成 文本/引用 片段，便于渲染成可点击标签
@@ -527,12 +569,22 @@ function applyStreamEvent(rawChunk, turn) {
     }
     if (ev.type === 'stage') {
       turn.stage = ev.text || ''
+    } else if (ev.type === 'mode') {
+      // 对话路线：先立起 chat 轮次，后续 delta 才有地方落
+      if (ev.mode === 'chat') {
+        turn.data = {
+          status: 'chat', reply: '', suggestions: [], scope_hint: '',
+          citations: [], candidates: [], meta: { generated_by: 'stream' },
+        }
+      }
     } else if (ev.type === 'evidence') {
       // 先拿到依据，边生成边展示引用卡
       turn.data = {
         status: 'answered',
         sufficient: true,
         sufficiency: 'partial',
+        basis: ev.basis || '',
+        basis_notice: ev.basis_notice || '',
         conclusion: '',
         supplement: '',
         reason: '',
@@ -542,15 +594,32 @@ function applyStreamEvent(rawChunk, turn) {
         meta: { ...(ev.meta || {}), cited: (ev.citations || []).length, generated_by: 'stream' },
       }
     } else if (ev.type === 'delta') {
-      if (turn.data) turn.data.conclusion = (turn.data.conclusion || '') + (ev.text || '')
+      if (!turn.data) return
+      if (turn.data.status === 'chat') turn.data.reply = (turn.data.reply || '') + (ev.text || '')
+      else turn.data.conclusion = (turn.data.conclusion || '') + (ev.text || '')
     } else if (ev.type === 'replace') {
-      if (turn.data) turn.data.conclusion = ev.text || ''
+      if (!turn.data) return
+      if (turn.data.status === 'chat') turn.data.reply = ev.text || ''
+      else turn.data.conclusion = ev.text || ''
     } else if (ev.type === 'final') {
       turn.data = ev.data
     } else if (ev.type === 'error') {
       turn.error = ev.message || '生成失败'
     }
   }
+}
+
+// 多轮上下文：当前轮之前、已完成（有 data、无 error、不在流式中）的最后 3 轮
+function historyPayload(beforeIndex) {
+  const out = []
+  for (let i = beforeIndex - 1; i >= 0 && out.length < 3; i -= 1) {
+    const t = turns.value[i]
+    if (!t?.data || t.error || t.streaming) continue
+    const d = t.data
+    const text = d.status === 'chat' ? (d.reply || '') : (d.conclusion || d.reason || '')
+    out.unshift({ question: t.question, answer: String(text).slice(0, 300) })
+  }
+  return out
 }
 
 async function ask() {
@@ -579,6 +648,7 @@ async function ask() {
     scope: scope.value === 'policy' && focusPolicy.value ? 'policy' : scope.value,
     include_deprecated: !excludeDeprecated.value,
     policy_ids: focusPolicy.value ? [focusPolicy.value] : undefined,
+    history: historyPayload(turns.value.length - 1),
   }
 
   try {
@@ -634,6 +704,15 @@ function openCite(idx, citations) {
   if (target) activeCite.value = target
 }
 
+// 点选「名称相近的政策」：锁定该政策并请后端给出概要
+async function askSuggested(s) {
+  if (asking.value) return
+  focusPolicy.value = s.policy_id
+  scope.value = 'policy'
+  question.value = `介绍一下《${s.title}》`
+  await ask()
+}
+
 function scrollToBottom() {
   nextTick(() => {
     const el = scroller.value
@@ -646,7 +725,7 @@ function removeTurn(index) {
   turns.value.splice(index, 1)
   if (removed && activeCite.value) {
     const stillUsed = turns.value.some((t) =>
-      (t.data.citations || []).some((c) => c.clause_id === activeCite.value.clause_id))
+      (t.data?.citations || []).some((c) => c.clause_id === activeCite.value.clause_id))
     if (!stillUsed) activeCite.value = null
   }
 }
@@ -657,7 +736,10 @@ function clearTurns() {
 }
 
 async function copyAnswer(turn) {
-  const text = turn?.data?.conclusion || ''
+  const d = turn?.data || {}
+  let text = ''
+  if (d.status === 'chat') text = d.reply || ''
+  else text = (d.basis_notice ? d.basis_notice + '\n' : '') + (d.conclusion || '')
   try {
     await navigator.clipboard.writeText(text)
   } catch {
@@ -845,6 +927,30 @@ onMounted(() => {
   background: #fff; padding: 16px 18px; box-shadow: 0 2px 10px rgba(23, 63, 107, .05);
 }
 .gov-nobasis { border-color: #F0DCAE; background: #FFFCF5; }
+
+.gov-basis-notice {
+  margin-bottom: 10px; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid #F0DCAE; background: #FFFCF5;
+  font-size: 12.5px; line-height: 1.8; color: #7A4E10;
+}
+
+.gov-chat { max-width: 760px; margin: 0 auto; }
+.gov-chat-bubble {
+  border-radius: 12px; border: 1px solid #E4EAF2; background: #fff;
+  padding: 14px 16px; box-shadow: 0 2px 10px rgba(23, 63, 107, .05);
+  font-size: 13.5px; line-height: 1.9; color: #1F2A37; white-space: pre-wrap;
+}
+.gov-chat-hint {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  padding: 8px 10px; border-radius: 8px; background: #F8FAFC;
+  font-size: 12px; color: #475467;
+}
+.gov-suggestion {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 8px; border: 1px solid #D7E6F5; background: #F8FBFF;
+  padding: 7px 11px; font-size: 12.5px; color: #1D4E89; max-width: 100%;
+}
+.gov-suggestion:hover { border-color: #8FB3DB; background: #EFF7FF; }
 
 .gov-badge {
   border-radius: 6px; padding: 1px 8px; font-size: 11.5px; font-weight: 600;

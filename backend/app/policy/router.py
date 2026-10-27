@@ -29,14 +29,32 @@ from .models import PolicyQaLog
 router = APIRouter(prefix="/policy", tags=["policy-qa"])
 
 
+def _clean_history(raw) -> list[dict]:
+    """多轮上下文清洗：非列表给空；丢掉非 dict 项与全空项；只保留最后 3 轮并截断长度。"""
+    if not isinstance(raw, list):
+        return []
+    items: list[dict] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        question = str(entry.get("question") or "").strip()[:200]
+        answer = str(entry.get("answer") or "").strip()[:300]
+        if not question and not answer:
+            continue
+        items.append({"question": question, "answer": answer})
+    return items[-3:]
+
+
 def _options(payload: dict) -> dict:
     ids = payload.get("policy_ids") or None
     return {
-        "scope": str(payload.get("scope") or "current"),
+        # 默认放开到全部入库政策（已核验优先）；「仅已核验现行政策」是显式的严格模式
+        "scope": str(payload.get("scope") or "all"),
         "policy_ids": [int(i) for i in ids] if ids else None,
         "include_deprecated": bool(payload.get("include_deprecated")),
         "threshold": float(payload.get("threshold") or retrieval.DEFAULT_THRESHOLD),
         "top_k": int(payload.get("top_k") or 12),
+        "history": _clean_history(payload.get("history")),
     }
 
 

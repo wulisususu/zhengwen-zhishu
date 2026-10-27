@@ -82,7 +82,7 @@ const runtimeKnown = computed(() => !!props.runtime && props.runtime.modelMode !
         </svg>
       </span>
       <span v-if="!collapsed" class="gov-nav__brand-text">
-        <span class="gov-nav__title">政务办公智能体</span>
+        <span class="gov-nav__title">政文智枢</span>
         <span class="gov-nav__subtitle">公文 · 政策 · 审校</span>
       </span>
     </div>

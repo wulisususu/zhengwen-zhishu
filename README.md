@@ -1,8 +1,8 @@
-# InNet_box · 政务办公智能体 / 端侧 AI 平台
+# 政文智枢 · 政务办公智能体 / 端侧 AI 平台
 
 > **源码状态：2026-10-27**。本文基于 `main` 当前实现整理，不把演示数据、配置选项或历史部署记录等同于已上线能力。核心政务入口是 `/gov`；原有聊天、文档、知识库、语音与 PPT 模块仍保留在同一仓库。
 
-InNet_box 是采用 **FastAPI + Vue 3** 的智能办公平台。当前重点是“政策依据检索与问答 → 公文起草 → 双层审校 → 人工送审/退回/批准 → 内部 DOCX 导出”。政务功能使用 SQLite 持久化文稿、政策与审核记录，并提供可选的模型服务、OpenClaw 智能体及 PDF 解析适配器。
+政文智枢 是采用 **FastAPI + Vue 3** 的智能办公平台。当前重点是“政策依据检索与问答 → 公文起草 → 双层审校 → 人工送审/退回/批准 → 内部 DOCX 导出”。政务功能使用 SQLite 持久化文稿、政策与审核记录，并提供可选的模型服务、OpenClaw 智能体及 PDF 解析适配器。
 
 **重要边界：**
 - **不是正式电子公文发文系统**：当前导出的是带标记的内部草稿；正式发文权限、签章和放行流程未实现。人工批准不等于正式发文许可。
@@ -96,7 +96,7 @@ InNet_box 是采用 **FastAPI + Vue 3** 的智能办公平台。当前重点是�
 ### 1. 安装后端与创建配置
 
 ```bash
-git clone https://github.com/wulisususu/innet-agent-ai-box.git
+git clone https://github.com/wulisususu/innet-agent-ai-box.git  # 当前 GitHub 仓库地址；待仓库重命名后同步更新
 cd innet-agent-ai-box
 
 python3 -m venv backend/.venv
@@ -115,7 +115,7 @@ chmod 600 ~/.config/ai-box/backend/.env
 3. 配置 `policy`、`gongwen`、`policy_pdf` 的存储路径、工具路径及开关。默认政策数据存于 `backend/data/policy.db`。
 4. 需要模型初稿/政策 AI 问答时，在 `.env` 中填写 `EXTERNAL_MODEL_BASE_URL`、`EXTERNAL_MODEL_NAME`、`EXTERNAL_MODEL_API_KEY`；未配置时不能假定生成可用。
 
-`app/config.py` 默认优先读取 `~/.config/ai-box/backend/config.yaml` 和同目录 `.env`（文件存在时），也支持 `BACKEND_CONFIG_FILE`、`BACKEND_ENV_FILE`、`AI_BOX_CONFIG_DIR`。**注意**：`app/services/model_config.py` 的“设置页保存/同步 OpenClaw”路径仍含 `/home/youyeetoo/InNet_box` 等部署机专用常量；在其他机器不要直接套用设置页改模型配置，优先用显式环境变量并按源码校核。
+`app/config.py` 默认优先读取 `~/.config/ai-box/backend/config.yaml` 和同目录 `.env`（文件存在时），也支持 `BACKEND_CONFIG_FILE`、`BACKEND_ENV_FILE`、`AI_BOX_CONFIG_DIR`。**注意**：`app/services/model_config.py` 的“设置页保存/同步 OpenClaw”路径仍含 `/home/youyeetoo/政文智枢` 等部署机专用常量；在其他机器不要直接套用设置页改模型配置，优先用显式环境变量并按源码校核。
 
 业务用户数据库的实际路径由 `app/database.py` 中的 **`AI_BOX_DATA_DIR`**（默认 `backend/data/app.db`）决定；不要误以为更改 `config.yaml` 中 `database.url` 就能改变当前代码里的 SQLite 引擎路径。生产迁移请先备份两类数据库和上传材料。
 

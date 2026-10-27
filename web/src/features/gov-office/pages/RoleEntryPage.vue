@@ -53,7 +53,7 @@ async function choose(role: EntryRole) {
           </svg>
         </span>
         <div>
-          <h1 id="role-entry-title" class="role-entry__title">政务办公智能体</h1>
+          <h1 id="role-entry-title" class="role-entry__title">政文智枢</h1>
           <p class="role-entry__subtitle">请选择本次使用的角色</p>
         </div>
       </header>

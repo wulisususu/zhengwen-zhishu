@@ -4,7 +4,7 @@
 - 对象：gongwen-kit 0.4.4（`b67ced1`，MIT），`node bin/gongwen.js check`
 - 环境：Linux x86_64，Intel Xeon E5-2690 v4（2 核），Node v22.23.4，npm 10.9.9
 - 复现：`python tests/spike/gongwen_s1_bench.py`；`pytest tests/test_gongwen_kit_s1.py`
-- **后续（2026-10-25）**：按复测结论接入。gongwen-kit 负责通知生成、它已支持的格式机检和外来 Word 的辅助修复；要素、序号、数量、政策引用和审核门槛由 InNet_box 自研规则负责。接口与字段见 `docs/gongwen-api.md`。
+- **后续（2026-10-25）**：按复测结论接入。gongwen-kit 负责通知生成、它已支持的格式机检和外来 Word 的辅助修复；要素、序号、数量、政策引用和审核门槛由 政文智枢 自研规则负责。接口与字段见 `docs/gongwen-api.md`。
 
 ## S1 结论：NO-GO（停在 S1，未做 S2；复测结论见下一节）
 
@@ -62,12 +62,12 @@ S1 的 no-go 只针对「作为审校主机检」这一用途，复测后结论�
 
 20 份单份 0.46–0.56 s。唯一的例外对我们最要紧：表格首行没有 `tblHeader` 时，合计错只是**提示**，
 报告 `status=pass`、退出码 0。python-docx 出的表格（我们两条链路都是）都没有 `tblHeader`，
-所以 InNet_box 产物里的合计错，按退出码看会被放行，必须读 `hits` 才能看到。
+所以 政文智枢 产物里的合计错，按退出码看会被放行，必须读 `hits` 才能看到。
 半角括号会被「半角括号」「中文里的半角标点」两条规则各报一次，接入时需要去重。
 
-### 复测 2：fix 处理 InNet_box 产物——纸张版心成功，标题、层次、列表、表格、落款不达标
+### 复测 2：fix 处理 政文智枢 产物——纸张版心成功，标题、层次、列表、表格、落款不达标
 
-样本是 InNet_box 两条真实链路的产物（同一份通知，含列表、名额表、加粗日期）：
+样本是 政文智枢 两条真实链路的产物（同一份通知，含列表、名额表、加粗日期）：
 `markdown_to_docx`（主链路）与 `document_agent._render_docx`（content_json 链路）。
 `fix` 都只输出 `-修订.docx`，原件 md5 不变，修后 `check` 均为 `pass`。逐项对照（DOCX XML + LibreOffice 渲染）：
 
@@ -98,12 +98,12 @@ S1 的 no-go 只针对「作为审校主机检」这一用途，复测后结论�
 CJK 行在替换字体下会占两个网格行（工具自出稿同样如此），所以**不能用这些图判断每页 22 行**，
 上游 `docs/版式.md` 记录的 22 行是在 Word 里量的。
 
-### 复测 3：同内容通知，gongwen-kit 生成 vs InNet_box python-docx
+### 复测 3：同内容通知，gongwen-kit 生成 vs 政文智枢 python-docx
 
-`innet/kit_notice.docx`（`make_kit_notice.js`，按上游 `templates/notice.js` 的构件写，正文与 InNet_box 样本逐字相同）
+`innet/kit_notice.docx`（`make_kit_notice.js`，按上游 `templates/notice.js` 的构件写，正文与 政文智枢 样本逐字相同）
 对比 `innet_01`／`innet_02`：
 
-| 项 | gongwen-kit | InNet_box（python-docx） |
+| 项 | gongwen-kit | 政文智枢（python-docx） |
 |---|---|---|
 | 纸张／版心 | A4，37/35/28/26 mm，22 行×28 字网格 | US Letter，Word 默认页边距，无网格 |
 | 版头 | 红色发文机关标志 + 发文字号 + 红色分隔线 | 无（两条链路都没有这些字段的输入） |
@@ -128,7 +128,7 @@ CJK 行在替换字体下会占两个网格行（工具自出稿同样如此）�
 |---|---|
 | 写法类机检（声称支持的规则） | **可用**：20/20 报出。注意手工表格合计错只提示；半角括号重复报 |
 | 要素缺失／结构类机检 | **不具备**（S1：0/5），须我方自写 |
-| fix 修 InNet_box 产物 | **部分可用**：纸张、版心、网格、正文字体、页码可靠；标题和层次需先对齐约定；列表、表格、落款、版头、版记修不了；修后 `pass` 不代表合规 |
+| fix 修 政文智枢 产物 | **部分可用**：纸张、版心、网格、正文字体、页码可靠；标题和层次需先对齐约定；列表、表格、落款、版头、版记修不了；修后 `pass` 不代表合规 |
 | 按标准构件生成 | **明显优于**现有 python-docx 输出，代价是 Node 运行时与一层内容到构件的映射 |
 
 所以不建议整体弃用。建议用作**公文生成 + 写法机检**模块；fix 不作为我方产物的主修复手段

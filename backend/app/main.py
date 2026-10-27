@@ -21,7 +21,7 @@ cfg = get_config()
 logging.basicConfig(level=getattr(logging, cfg["logging"]["level"]), format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("app")
 
-app = FastAPI(title="MQW AI Platform", version="0.1.0")
+app = FastAPI(title="政文智枢 · 政务办公智能体", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 API = "/api/v1"

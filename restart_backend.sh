@@ -3,7 +3,7 @@
 
 
 # ===========================================================================
-# restart_backend.sh — INnet_agent 后端 + OpenClaw Agent 重启脚本
+# restart_backend.sh — 政文智枢 后端 + OpenClaw Agent 重启脚本
 # 用法:
 #   ./restart_backend.sh              → 重启后端 (8000)
 #   ./restart_backend.sh --agent      → 重启 OpenClaw Agent (18790/18791)
@@ -78,7 +78,7 @@ clean_pycache() {
 # ── 函数: 启动后端 ─────────────────────────────────────────────────────────
 start_backend() {
     log "──────────────────────────────────────"
-    log "启动 INnet_agent 后端 (端口 ${BACKEND_PORT})"
+    log "启动 政文智枢 后端 (端口 ${BACKEND_PORT})"
     log "──────────────────────────────────────"
 
     # Let systemd own production restarts; do not race Restart=always.
@@ -312,7 +312,7 @@ main() {
 
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║   INnet_agent 后端管理脚本 v1.0          ║${NC}"
+    echo -e "${GREEN}║   政文智枢 后端管理脚本 v1.0          ║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
     echo ""
 

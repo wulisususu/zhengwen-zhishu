@@ -71,4 +71,14 @@ describe("real government HTTP boundary", () => {
     await expect(api.exportDocument(doc.id, "formal")).rejects.toThrow();
     await expect(api.getPolicyStats()).rejects.toMatchObject({ code: "503" });
   });
+  it("asks the backend to summarize one material by numeric id", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ origin: "backend", mode: "meeting", sections: [], sources: {}, dropped: [] }));
+    vi.stubGlobal("fetch", fetcher);
+    const api = await adapter();
+    const result = await api.summarizeMaterial("12", "meeting");
+    expect(fetcher.mock.calls[0][0]).toBe("/api/v1/gov/summaries");
+    expect(fetcher.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ fileIds: [12], mode: "meeting" });
+    expect(result.origin).toBe("backend");
+  });
 });

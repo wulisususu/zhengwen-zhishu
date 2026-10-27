@@ -8,6 +8,7 @@ from . import service
 from .schemas import Content, Update, Decision, Revision, ExportRequest, Generation, CitationSelection
 from .materials import router as material_router
 from .entry import router as entry_router
+from .summary import SummaryRequest
 
 router = APIRouter(prefix="/gov", tags=["government"])
 router.include_router(material_router)
@@ -83,6 +84,12 @@ def check(document_id: str, body: Revision, user: User = Depends(get_current_use
 def generate(document_id: str, body: Generation, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from .generation import generate as run_generation
     return ok(run_generation(db, user, document_id, body))
+
+
+@router.post("/summaries")
+def summarize(body: SummaryRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from .summary import summarize as run_summary
+    return ok(run_summary(db, user, body))
 
 
 @router.post("/documents/{document_id}/export")

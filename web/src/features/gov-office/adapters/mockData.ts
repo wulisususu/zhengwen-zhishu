@@ -3,7 +3,7 @@
 // marked "演示". Nothing here may be shown as a backend result: the mock
 // adapter stamps origin = "demo" and the UI renders a demo marker for it.
 
-import type { Citation, Material, OfficialDocument, QaSession } from "../types";
+import type { Citation, Material, OfficialDocument, QaSession, SummaryMode, SummaryResult } from "../types";
 
 export const DEMO_POLICY_STATS = { total: 128, current: 112, abolished: 11, unverified: 5 };
 
@@ -504,3 +504,27 @@ export const DEMO_DOCUMENTS: OfficialDocument[] = [
     ],
   }),
 ];
+
+/** 演示用提炼结果：虚构材料片段，结构与后端 /gov/summaries 一致。 */
+export function demoSummary(material: Material, mode: SummaryMode): SummaryResult {
+  const passages = mode === "meeting"
+    ? ["会议议定：同意启动年度政务数据安全自查工作（演示）。", "由数据安全处牵头，于11月30日前完成自查报告（演示）。", "办公室负责印发会议通知（演示）。"]
+    : ["本年度共组织自查 3 轮，覆盖示例单位 12 个（演示）。", "自查发现弱口令、权限未回收等问题 9 项，已整改 7 项（演示）。", "剩余 2 项涉及外部系统，整改时限尚未明确（演示）。"];
+  const sources = Object.fromEntries(passages.map((text, i) => [`S${i + 1}`, { id: `S${i + 1}`, fileId: material.id, fileName: material.name, page: mode === "meeting" ? null : 1, paragraph: i + 1, text }]));
+  const item = (text: string, ...ids: string[]) => ({ text, sources: ids, notes: [] as string[] });
+  const sections = mode === "meeting"
+    ? [
+        { key: "decisions", label: "会议决议", items: [item("同意启动年度政务数据安全自查工作", "S1")] },
+        { key: "tasks", label: "工作任务", items: [
+          { ...item("完成自查报告", "S2"), owner: "数据安全处", deadline: "11月30日前" },
+          { ...item("印发会议通知", "S3"), owner: "办公室", deadline: "" },
+        ] },
+      ]
+    : [
+        { key: "summary", label: "摘要", items: [item("全年组织 3 轮自查，发现问题 9 项、已整改 7 项", "S1", "S2")] },
+        { key: "keyData", label: "关键数据", items: [item("覆盖示例单位 12 个", "S1"), item("已整改 7 项", "S2")] },
+        { key: "conclusions", label: "重要结论", items: [item("弱口令与权限未回收是主要问题", "S2")] },
+        { key: "pending", label: "待确认事项", items: [item("剩余 2 项外部系统问题的整改时限", "S3")] },
+      ];
+  return { origin: "demo", mode, materials: [{ fileId: material.id, fileName: material.name, segments: passages.length }], sections, sources, dropped: [], generatedAt: new Date().toISOString() };
+}

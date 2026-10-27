@@ -2,7 +2,7 @@
 // defined yet. It never generates files, never calls a model and never
 // invents a runtime state; anything it returns carries origin = "demo".
 
-import { DEMO_CITATIONS, DEMO_DOCUMENTS, DEMO_MATERIAL_LIBRARY, DEMO_POLICY_STATS, DEMO_QA_SESSIONS } from "./mockData";
+import { DEMO_CITATIONS, DEMO_DOCUMENTS, DEMO_MATERIAL_LIBRARY, DEMO_POLICY_STATS, DEMO_QA_SESSIONS, demoSummary } from "./mockData";
 import { GovOfficeError } from "./GovOfficeAdapter";
 import type { DocumentQuery, GovOfficeAdapter } from "./GovOfficeAdapter";
 import { documentGates, evaluateIssue, isOwnDocument, summarizeIssues } from "../domain/issueRules";
@@ -222,6 +222,12 @@ export function createMockGovOfficeAdapter(): GovOfficeAdapter {
 
     async listMaterialLibrary() {
       return clone(DEMO_MATERIAL_LIBRARY);
+    },
+
+    async summarizeMaterial(materialId, mode) {
+      const material = DEMO_MATERIAL_LIBRARY.find((m) => m.id === materialId);
+      if (!material) throw new GovOfficeError("材料不存在", "not_found");
+      return demoSummary(material, mode);
     },
 
     async addMaterials(id, materialIds) {

@@ -138,3 +138,50 @@ T1 字段：`id, source, remote_id, title, doc_number, issuer, publish_date(YYYY
 | 参数（业务码 40000） | `INVALID_QUERY`、`INVALID_STATUS`、`UNSUPPORTED_FILE`、`FETCH_BAD_URL` |
 | 不存在（业务码 40400） | `NOT_FOUND` |
 | 其他（业务码 50200） | `EGRESS_BLOCKED`、`POLICY_DISABLED`、`POLICY_NOT_CONFIGURED`、`REMOTE_TIMEOUT`、`REMOTE_HTTP_ERROR`、`REMOTE_UNAVAILABLE`、`REMOTE_BAD_RESPONSE`、`FETCH_HOST_NOT_ALLOWED`、`FETCH_PRIVATE_ADDRESS`、`FETCH_DNS_FAILED`、`FETCH_TOO_MANY_REDIRECTS`、`FETCH_TOO_LARGE`、`FETCH_TIMEOUT`、`FETCH_HTTP_ERROR`、`FETCH_FAILED`、`FETCH_UNSUPPORTED_CONTENT`、`EXTRACT_FAILED`、`EMPTY_CONTENT`、`STORE_ERROR`、`INTERNAL_ERROR` |
+
+## 7. 政策问答接口（2026-10-27 对话式改造后）
+
+`POST /gov/policy/qa`（同步）与 `POST /gov/policy/qa/stream`（SSE）共用同一套路由规则：
+按名匹配 → 覆盖度闸门 → 依据分层 → 对话路线。
+
+### 请求
+
+| 字段 | 说明 |
+|---|---|
+| `question` | 用户问题（必填） |
+| `scope` | `all`（默认，全部入库政策）/ `current`（仅已核验现行政策）/ `policy`（仅 `policy_ids` 指定） |
+| `policy_ids` | `scope=policy` 时生效 |
+| `include_deprecated` | 显式允许已废止条款作为依据（现有行为） |
+| `threshold` / `top_k` | 检索阈值（默认 0.60）与候选数 |
+| `history` | 最多 3 轮 `[{question, answer}]`；question 截 200 字、answer 截 300 字 |
+
+### 响应（`data`）
+
+三种 `status`：
+
+| status | 含义 | 关键字段 |
+|---|---|---|
+| `answered` | 依据政策条款作答 | `conclusion`（带 `[n]` 引用）、`citations`、`basis`（`verified` / `unverified` / `deprecated`）、`basis_notice`（仅 unverified 时为固定文案，其余为空串）、`sufficiency`、`manual_confirm` |
+| `no_basis` | 如实拒答 | `reason`（按实际状态写：`reason_code` 为 `not_in_force` 时不提阈值；`model_insufficient` 表示模型明确表示未作规定）、`reason_code` |
+| `chat` | 对话路线：打招呼、库内未收录、无关问题 | `reply`、`suggestions`（`[{policy_id, title, status}]`，供点选）、`scope_hint`、`meta.kind`、`meta.generated_by`（`chat_llm` / `chat_fallback`） |
+
+`meta.mode`：`answer`（就剩余问题在点名政策内作答）或 `overview`（按名介绍整份政策）；普通提问也是 `answer`。
+`meta.followup`：本轮是否借助上一轮问题拼接检索（仅 answered 载荷携带）。
+
+### 流式事件（`/qa/stream`）
+
+| type | 说明 |
+|---|---|
+| `stage` | 检索 / 生成阶段提示 |
+| `mode` | `{"mode": "chat"}`：本轮走对话路线，前端据此立起对话气泡 |
+| `evidence` | 证据卡；新增 `basis`、`basis_notice` |
+| `delta` / `replace` | 文本增量；`replace` 表示质检换掉了模型输出（对话路线换兜底话术，作答路线换原文摘录） |
+| `final` | 与同步接口完全相同的 `data` |
+
+### 行为规则
+
+- 未核验政策可作答：回答开头由后端固定加上 `basis_notice`（不交给模型生成），引用卡片仍显示「待核实」；已核验与未核验同时命中时只用已核验作答，未核验的进 `manual_confirm`。
+- 政策名唯一强匹配（标题重合 ≥ 0.8 且高出第二名 0.15）：只在该政策内检索，剩余问题有命中走 `answer`，否则输出政策概要；概要兜底 `generated_by = "extractive_overview"`。
+- 多份相近或不唯一：`status = "chat"`，`suggestions` 列出名称相近的政策供点选。
+- 库里确实没有：对话路线说明「暂未收录」，不得出现库里不存在的书名、文号或代码块（质检不过自动换兜底话术）。
+- 追问拼接检索时覆盖度闸门跳过、阈值放宽到 0.7 倍；拼接后仍无依据则保持对话路线。

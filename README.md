@@ -1,686 +1,226 @@
-# InNet_box — 端侧 AI 智能体平台
+# InNet_box · 政务办公智能体 / 端侧 AI 平台
 
-> 部署硬件：RK3588 开发板 | 操作系统：Linux (Ubuntu/Debian) | 目标 IP：192.168.0.117
+> **源码状态：2026-10-27**。本文基于 `main` 当前实现整理，不把演示数据、配置选项或历史部署记录等同于已上线能力。核心政务入口是 `/gov`；原有聊天、文档、知识库、语音与 PPT 模块仍保留在同一仓库。
 
----
+InNet_box 是采用 **FastAPI + Vue 3** 的智能办公平台。当前重点是“政策依据检索与问答 → 公文起草 → 双层审校 → 人工送审/退回/批准 → 内部 DOCX 导出”。政务功能使用 SQLite 持久化文稿、政策与审核记录，并提供可选的模型服务、OpenClaw 智能体及 PDF 解析适配器。
 
-## 目录
+**重要边界：**
+- **不是正式电子公文发文系统**：当前导出的是带标记的内部草稿；正式发文权限、签章和放行流程未实现。人工批准不等于正式发文许可。
+- **角色入口不是身份认证**：访问者可以直接选择“起草人”或“审核人”。这是比赛/演示入口，不能用于真实多用户权限隔离或直接暴露在不可信网络。
+- **不默认承诺数据不出域**：政务初稿生成、政策问答等通过可配置的 OpenAI 兼容模型 API；示例配置为 `model.mode: cloud_allowed`，调用公网模型意味着请求内容出网。只有配置并核实内网/离线链路、网络策略后，才能作出相应部署声明。
 
-- [1. 系统概述](#1-系统概述)
-- [2. 整体架构](#2-整体架构)
-- [3. 目录结构](#3-目录结构)
-- [4. 后端 (backend)](#4-后端-backend)
-  - [4.1 技术栈](#41-技术栈)
-  - [4.2 配置文件](#42-配置文件)
-  - [4.3 子模块](#43-子模块)
-  - [4.4 服务依赖](#44-服务依赖)
-- [5. 前端 (web)](#5-前端-web)
-  - [5.1 技术栈](#51-技术栈)
-  - [5.2 关键文件](#52-关键文件)
-  - [5.3 代理配置](#53-代理配置)
-  - [5.4 环境变量](#54-环境变量)
-- [6. 服务端口映射](#6-服务端口映射)
-- [7. 启动指南](#7-启动指南)
-  - [7.1 全链路启动](#71-全链路启动)
-  - [7.2 分步启动](#72-分步启动)
-  - [7.3 验证服务状态](#73-验证服务状态)
-- [8. 运维与调试](#8-运维与调试)
-  - [8.1 日志](#81-日志)
-  - [8.2 常用命令](#82-常用命令)
-  - [8.3 systemd 服务](#83-systemd-服务)
-  - [8.4 性能与资源管理](#84-性能与资源管理)
-- [9. 聊天链路与降级策略](#9-聊天链路与降级策略)
-  - [9.1 聊天全路径](#91-聊天全路径)
-  - [9.2 双路径降级机制](#92-双路径降级机制)
-  - [9.3 OpenClaw 配置详情](#93-openclaw-配置详情)
-  - [9.4 35B 不可达场景分析](#94-35b-不可达场景分析)
-- [10. 已知问题与限制](#10-已知问题与限制)
-  - [10.1 35B 外部模型不可达 (关键)](#101-35b-外部模型不可达-关键)
-  - [10.2 start_all.sh 因 `set -u` 提前退出](#102-start_allsh-因-set--u-提前退出)
-  - [10.3 MiniCPM 依赖修复历史](#103-minicpm-依赖修复历史)
-  - [10.4 前端开发模式依赖代理](#104-前端开发模式依赖代理)
-  - [10.5 符号链接兼容](#105-符号链接兼容)
-  - [10.6 30s 无反馈等待 (关键)](#106-30s-无反馈等待-关键)
+## 功能现状
 
----
+| 模块 | 当前实现 | 关键限制 |
+| --- | --- | --- |
+| 政务工作台 `/gov` | 起草、保存、刷新恢复、材料关联、送审、退回、批准、历史记录；后端 SQLite 持久化及版本冲突保护 | 角色入口共用角色账号；不可作为生产身份认证 |
+| 通知起草与审校 | 通知字段/版记/表格、模型初稿、规则校验 + `gongwen-kit` 格式机检、问题定位、批准前重检、内部 DOCX | 双层自动审校仅覆盖“通知”；需要安装 Node 与 `gongwen-kit` |
+| 其他公文文种 | 请示、报告、函、纪要可按既有流程生成内部草稿 | 不具备“通知”的完整双层自动审校；仍需人工审核 |
+| 政策库 `/gov/library` | 政策导入、条款切分/检索、来源/版本/状态、人工作废或现行核验、引用到文稿 | 新导入政策默认为未核验，不自动认定为现行有效 |
+| 政策问答 `/gov/policy-qa` | 基于已入库条款检索，证据不足时不强行下结论；支持条款引用与原文定位、SSE 接口 | 内容受政策库覆盖范围和模型可用性限制；需人工核验 |
+| 政策 PDF | 政策导入支持逐页解析、物理页码与 SHA-256 来源定位；扫描/混合页走原 OCR 路径 | OpenDataLoader 仅在 `policy_pdf.engine: opendataloader` 时启用；普通文件解析链路不随之切换 |
+| 旧业务模块 | 对话/文档工作流、OpenClaw、知识库、ASR/TTS、PPT 工作台和增量处理模块代码仍在 | 部分依赖外部模型、独立进程、模板或特定硬件；不能仅凭代码推断服务正在运行 |
+| 规划功能 | `/gov/summary`、`/gov/audit-log` 页面占位 | 不是完整的长文总结产品或集中审计日志系统 |
 
-## 1. 系统概述
+> **测试与部署情况**：仓库有后端 pytest、前端 Vitest、浏览器用例及 2026-10-26 的集成验收记录（见下文）。这些记录证明各自注明的测试范围，不代表每次提交后都做过完整生产环境复测。
 
-InNet_box 是一个部署在 RK3588 端侧设备上的 AI 智能体平台，提供 **对话 (Chat)**、**文档生成 (Document Generation)**、**PPT 生成**、**知识库检索**、**语音输入/润色** 等能力。前后端分离，后端集成多路本地模型推理和云端大模型兜底。
+## 主要业务流程
 
----
+```text
+选择角色（演示入口 /entry）
+   ├─ 起草人：创建通知 → 编辑要素/正文/材料 → 保存
+   │           ├─ 生成初稿（需可用模型 API）
+   │           ├─ 政策条款检索与引用
+   │           ├─ 双层审校（规则 + gongwen-kit）
+   │           └─ 提交审核 → 根据退回意见修改 → 重新提交
+   └─ 审核人：查看送审文稿 → 退回 / 批准
+                                └─ 通知批准前后端重新审校并复核政策依据
 
-## 2. 整体架构
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│                        浏览器 (用户)                            │
-│             http://192.168.0.11:3000                          │
-└──────────────────────┬────────────────────────────────────────┘
-                       │ /api/* (Vite 开发代理)
-                       ▼
-┌──────────────────────────────────────────────┐
-│          前端 — Vue 3 + Vite :3000            │
-│  · Chat / 文档 / PPT / 知识库 / 语音         │
-│  · axios(baseURL: /api/v1)                   │
-│  · 代理: /api → localhost:8000               │
-│        /api/v1/docs-pipeline → localhost:8003 │
-└──────────────────────┬────────────────────────┘
-                       │ POST /api/v1/conversations/{id}/messages
-                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│            后端 — FastAPI :8000                                   │
-│  · `conversations.py` → `chat_with_degradation()`                │
-│  · 其他路由: ASR/TTS/知识库/PPT/文档                              │
-│  · 健康检查 GET /api/v1/health                                   │
-└───────────────┬──────────────────────────────────────────────────┘
-                │ PI_AGENT_CHAT=1
-                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                ↓ ↓ ↓  聊天降级双路径  ↓ ↓ ↓                       │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │ Path 1: OpenClaw Chat Agent (:18790) — 30s 超时             │  │
-│  │                                                              │  │
-│  │  health_check → ✅ → _stream_pi_chat()                       │  │
-│  │    → call_chat_agent() → 18790 /v1/responses                │  │
-│  │    → OpenClaw 内部模型降级:                                  │  │
-│  │      ├─ primary: 35B (192.168.10.212:8081)  ❌ 不可达        │  │
-│  │      └─ fallback: 0.6B (127.0.0.1:8088)     ⏸️ paused        │  │
-│  │    → 30s 无首 token → asyncio.TimeoutError → 触发降级        │  │
-│  └──────────────┬─────────────────────────────────────────────┘  │
-│                 │ 30s 超时                                        │
-│                 ▼                                                │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │ Path 2: Direct Local Model (bypass OpenClaw)               │  │
-│  │                                                              │  │
-│  │  _local_small_generate(content, max_tokens=512)             │  │
-│  │    → POST http://127.0.0.1:8002/v1/chat/completions        │  │
-│  │    → 裸 prompt, 无 system prompt / tools 上下文              │  │
-│  │    → 0.6B 模型 (8002) 直接回复, context 不溢出               │  │
-│  │    → 最终 fallback: "AI 服务暂不可用"                          │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
-
-本地模型服务:
-:5101           :8002           :8003           :8088              :18790 / :18791
-MeloTTS        Qwen3-0.6B      MiniCPM         Qwen2.5-1.5B       OpenClaw Agent
-语音合成       llama-server    视觉文档          RKLLM (paused)     网关 (systemd)
-(CPU)          (CPU 运行)                                                      primary: 35B
-                                                                               fallback: 0.6B-8088
-
-外部 35B: 192.168.10.212:8081 ❌ 不可达 (无 10 网段)
+已保存文稿 → 导出带“内部草稿”标识的 DOCX
+                           × 不支持正式发文、签章或例外放行
 ```
 
-### 网络拓扑说明
+- 后端执行业务角色、所有权、状态与版本号校验；起草人不能批准自己的文稿，审核人不能代替起草人修改稿件。
+- 文稿内容变更会使旧审校结果失效。通知批准时重新运行双层检查；政策引用状态也由后端复核。格式/引用不合格时禁止批准。
+- 材料接口支持 `.txt`、`.md`、`.pdf`、`.docx`、`.xlsx`、`.csv`、`.pptx`、`.png`、`.jpg`、`.jpeg`（单文件上限 20 MiB）；**模型生成初稿目前直接读取的关联材料仅限 UTF-8 TXT/Markdown，每份最多 80,000 字节**。允许上传 PDF 并不代表模型生成已经读取 PDF 内容。
+- 政策导入和人工核验由审核人或管理员操作；政策依据必须可追踪，未核验、失效与历史版本不得伪装成有效依据。
 
-| 网段 | 说明 |
-|------|------|
-| 192.168.0.0/24 | 本机所在局域网 (192.168.0.11) |
-| 192.168.10.0/24 | 原 35B 大模型所在网段 **当前不可达** |
+## 项目结构
 
----
-
-## 3. 目录结构
-
-```
-/home/youyeetoo/InNet_box/
-├── README.md               # 项目说明（本文件）
-├── .gitignore              # Git 忽略规则
-├── restart_backend.sh      # 后端 + OpenClaw Agent 统一管理脚本
-│
-├── backend/                # 后端 (FastAPI + Uvicorn)
-│   ├── app/                #   - 主应用代码
-│   │   ├── PPT_master/     #     * PPT 生成技能
-│   │   ├── docs_pipeline/  #     * 文档生成管线
-│   │   ├── kb/             #     * 知识库 (Embedding / 向量检索)
-│   │   ├── services/       #     * 服务 (LLM / MiniCPM 视觉 / 文档)
-│   │   │   └── pi_agent_client/
-│   │   │       └── degradation.py  ← 聊天降级核心逻辑
-│   │   └── ...其他模块
-│   ├── scripts/            #   - 运维脚本 (启停 / 健康检查 / 修复补丁)
-│   │   ├── run.py          #     * 后端入口 (systemd ExecStart 指向)
-│   │   ├── start_all.sh    #     * 一键启动
-│   │   ├── start_clean.sh  #     * 干净启动
-│   │   ├── start_llm.sh    #     * 单独启动 LLM
-│   │   ├── run_pipeline.py #     * 独立文档管线服务 (:8003)
-│   │   ├── standalone_docs_pipeline.py  # * 独立管道服务
-│   │   ├── python_chat_workflow.py      # * PCW 工作流 (:8099)
-│   │   └── fixes/          #     * 历史修复补丁
-│   ├── docs/               #   - 设计文档 / 报告 / 验收证据
-│   ├── tests/              #   - 后端测试
-│   ├── config.example.yaml #   - 配置示例 (部署时复制为 config.yaml)
-│   ├── .env.example        #   - 环境变量示例 (部署时复制为 .env)
-│   ├── requirements.txt    #   - Python 依赖
-│   └── .pi-agent/          #   - PI Agent 配置 (chat / doc / children_medical)
-│       └── chat/
-│           └── openclaw.json  ← OpenClaw 模型路由配置
-│
-└── web/                    # 前端 (Vue 3 + Vite)
-    ├── src/                #   - 源码
-    │   ├── components/     #     * 组件 (ChatMode / DocumentMode / ComposerBar …)
-    │   ├── views/          #     * 页面 (LoginPage / PptHostPage …)
-    │   ├── stores/         #     * Pinia 状态管理
-    │   ├── features/       #     * 功能模块 (PPT workbench)
-    │   └── api.js          #     * axios 客户端 (baseURL: /api/v1)
-    ├── public/             #   - 静态资源
-    ├── docs/               #   - 文档 / 报告
-    ├── tests/              #   - 前端测试
-    ├── deployment/         #   - systemd 服务文件
-    ├── vite.config.js      #   - Vite 配置 (host/port/proxy)
-    ├── package.json        #   - npm 依赖与脚本
-    ├── index.html          #   - HTML 入口
-    └── start.sh            #   - 前端启动脚本
+```text
+.
+├── backend/
+│   ├── app/
+│   │   ├── main.py                # FastAPI 入口，注册业务路由
+│   │   ├── gov/                   # 政务文稿、角色入口、材料、审批、导出
+│   │   ├── policy/                # 条款级政策问答、检索与引用
+│   │   ├── gongwen/               # 其他文种的既有公文排版
+│   │   ├── routers/               # 登录、政策库、政务公文、文件等 API
+│   │   ├── services/
+│   │   │   ├── gongwen/           # gongwen-kit 桥接/规则/审校
+│   │   │   ├── policy/            # 国务院政策检索、入库、版本与 PDF
+│   │   │   ├── llm_chat.py        # 政务共用模型 API 客户端
+│   │   │   └── model_policy.py    # 模型出口策略
+│   │   ├── docs_pipeline/         # 历史文档生成流水线
+│   │   ├── kb/                    # 知识库
+│   │   └── PPT_master/            # PPT 服务
+│   ├── config.example.yaml       # 后端配置模板
+│   ├── .env.example              # 密钥/服务地址模板
+│   ├── requirements.txt
+│   ├── requirements-pdf.txt      # 政策 PDF 可选依赖
+│   ├── scripts/run.py            # FastAPI 单 worker 入口
+│   ├── third_party/README.md     # gongwen-kit 安装说明
+│   └── tests/
+├── web/
+│   ├── src/features/gov-office/  # 政务页面、状态与 API 适配器
+│   ├── src/features/ppt-workbench/
+│   ├── src/views/                # 原业务页面
+│   ├── vite.config.js
+│   └── package.json
+├── docs/                          # 角色入口与集成验收
+└── restart_backend.sh             # 特定部署机的运维脚本
 ```
 
-> 说明：`data/`、`service_logs/`、`release/` 等运行时/发布产物目录已从仓库中移除，部署时由启动脚本自动创建或按需生成。
----
+## 环境与依赖
 
-## 4. 后端 (backend)
+- **后端**：Python 3（推荐与目标部署环境保持一致），FastAPI、Uvicorn、SQLAlchemy、SQLite；依赖见 `backend/requirements.txt`。大型知识库/PPT/视觉任务可能需要额外模型文件、系统程序或可选依赖。
+- **前端**：Vue 3、Vue Router、Pinia、Vite 5、Tailwind CSS、Vitest。项目 `web/.nvmrc` 指定 **Node 24**。
+- **通知双层审校/DOCX**：Node >= 18；按 `backend/third_party/README.md` 固定版本安装 `gongwen-kit`。该目录不随 Git 仓库交付；不能通过 `pip install -r requirements.txt` 获得。
+- **政策 PDF 可选加速**：`opendataloader-pdf==2.5.15`、Java 11+；默认 `legacy` 不依赖它。实际硬件、字体及 OCR 依赖请按部署目标单独验收。
+- **历史聊天/视觉/语音**：OpenClaw、MiniCPM、ASR、TTS 等可能是独立服务，并非启动 FastAPI 就全部自动可用。
 
-### 4.1 技术栈
+## 本地开发启动
 
-| 组件 | 技术 |
-|------|------|
-| Web 框架 | FastAPI (Python 3) |
-| 运行方式 | Uvicorn (单 worker) |
-| 数据库 | SQLite (`data/app.db`) |
-| HTTP 客户端 | requests |
-| 文档解析 | mammoth / python-docx / PyMuPDF |
-| 配置格式 | YAML |
+下面是从源码启动 API 与网页的**基础步骤**；不是一键恢复特定 RK3588 服务器上全部模型服务的脚本。
 
-### 4.2 配置文件
-
-**`config.yaml`** (实际位置 `~/.config/ai-box/backend/config.yaml`):
-
-```yaml
-server:                 # 服务绑定
-  host: 0.0.0.0
-  port: 8000
-database:               # 数据库 (SQLite)
-  url: sqlite:///data/app.db
-jwt:                    # JWT 鉴权
-  secret: <secret>
-  algorithm: HS256
-  expire_minutes: 1440
-asr:                    # 语音识别
-  model_dir: /home/youyeetoo/rkllm_model_zoo/mqw-tools/paraformer_onnx
-llm:                    # 大模型配置
-  prompt_model_url: http://127.0.0.1:8088
-  local_small_model_api_url: http://127.0.0.1:8088/v1/chat/completions
-  local_small_model_name: Qwen3-0.6B-Q4_K_M.gguf
-  ollama_base_url: http://192.168.10.212:8081/v1   # ← 35B (10网段不可达)
-  cloud_base_url: https://dashscope.aliyuncs.com/compatible-mode  # 云端兜底
-  cloud_model: qwen-plus
-knowledge:              # 知识库
-  enabled: true
-openclaw:               # OpenClaw 智能体网关
-  enabled: true
-  gateway_base_url: http://127.0.0.1:18789
-  gateway_token: <token>
-  document_model: openclaw/docgen        # 文档生成 Agent
-  chat_model: openclaw/default           # 对话 Agent
-  pediatric_medical_qa_model: openclaw/children-qa  # 儿童医疗问答
-  knowledge_model: openclaw/default      # 知识库 Agent
-  voice_input_model: openclaw/voice-input # 语音输入 Agent
-polish:                 # 语音润色
-  api_url: http://127.0.0.1:8088/v1/chat/completions
-python_chat_workflow:   # PCW 工作流 (已关闭)
-  enabled: false
-feature_flags:          # 功能开关
-  show_ppt: true
-  show_table: false
-  show_agents: true
-```
-
-**`.env`** (实际位置 `~/.config/ai-box/backend/.env`):
-
-```
-DESKTOP_INTERNAL_TOKEN=...
-OPENCLAW_GATEWAY_TOKEN=...
-PI_AGENT_TOKEN=...
-PI_AGENT_CHAT=1
-PI_AGENT_DOC=1
-```
-
-### 4.3 子模块
-
-| 模块路径 | 功能 |
-|----------|------|
-| `app/main.py` | FastAPI 应用入口、路由注册 |
-| `app/services/llm_server.py` | RKLLM 本地推理服务 (:8001) |
-| `app/services/minicpm_vision_service.py` | MiniCPM 视觉文档服务 (:8003) |
-| `app/services/pi_agent_client/degradation.py` | **聊天降级核心**: 30s PI Agent → direct local model |
-| `app/services/pi_agent_client/chat_client.py` | OpenClaw Chat Agent 客户端 |
-| `app/services/pi_agent_client/doc_client.py` | OpenClaw Doc Agent 客户端 |
-| `app/services/llm_client.py` | LLM 客户端 - 含 `_local_small_generate()` 直调本地模型 |
-| `app/kb/` | 知识库 (Embedding 模型预加载 / 向量检索) |
-| `app/PPT_master/` | PPT 生成 (模板匹配 / SVG 编辑 / 版式渲染) |
-| `app/docs_pipeline/` | 文档生成管线 (Markdown → 格式文档) |
-| `.pi-agent/chat/` | PI Agent Chat 配置 (OpenClaw + 模型路由) |
-| `.pi-agent/doc/` | PI Agent Doc 配置 (OpenClaw) |
-| `.openclaw/` | OpenClaw 核心配置 (backup 插件 / 自定义 backend) |
-
-### 4.4 服务依赖
-
-```
-后端 :8000
- ├── :8002 (Qwen3-0.6B llama.cpp, Path 2 直接调用)
- ├── :5101 (MeloTTS 语音合成, CPU, 独立服务)
- ├── :8003 (MiniCPM Visual, 文档视觉解析)
- ├── :8088 (Qwen2.5-1.5B RKLLM, paused)
- ├── :18790 (OpenClaw Chat Agent, Path 1 入口)
- ├── :18791 (OpenClaw Doc Agent)
- └── 可选 :8081 (35B 外部模型, 当前不可达)
-```
-
-> 注意：PCW (`:8099`) 已关闭,`python_chat_workflow.enabled=false`。聊天仅走 degradation.py 定义的双路径。
-
----
-
-## 5. 前端 (web)
-
-### 5.1 技术栈
-
-| 组件 | 技术 |
-|------|------|
-| 框架 | Vue 3 (Composition API) |
-| 构建工具 | Vite 5 |
-| 路由 | vue-router |
-| 状态管理 | Pinia |
-| HTTP | axios (baseURL: `/api/v1`) |
-| 样式 | TailwindCSS |
-| PPT 工作台 | Vue 组件 + 适配器模式 |
-
-### 5.2 关键文件
-
-| 文件 | 功能 |
-|------|------|
-| `vite.config.js` | Vite 配置 (开发服务器 host/port/proxy) |
-| `src/api.js` | axios 实例 (`baseURL: '/api/v1'`) |
-| `src/components/ChatMode.vue` | 对话界面 (含 SSE 流解析) |
-| `src/components/DocumentMode.vue` | 文档生成界面 |
-| `src/views/PptHostPage.vue` | PPT 工作台宿主页 |
-| `src/views/KnowledgeFileSearchView.vue` | 知识库文件搜索 |
-| `src/features/gov-office/pages/RoleEntryPage.vue` | 角色入口（不设登录页：选择起草人或审核人，见 `docs/role-entry.md`） |
-| `src/components/ComposerBar.vue` | 底部输入栏 |
-| `src/stores/chat.js` | 对话状态 (Pinia) |
-| `src/features/ppt-workbench/` | PPT 工作台适配器 (支持 Legacy / Mock 模式) |
-
-### 5.3 代理配置 (`vite.config.js`)
-
-```javascript
-server: {
-  host: '0.0.0.0',      // 绑定所有网卡, 局域网可访问
-  port: 3000,
-  proxy: {
-    '/api/v1/docs-pipeline': {
-      target: 'http://localhost:8003',  // → MiniCPM Visual
-      changeOrigin: true,
-    },
-    '/api': {
-      target: 'http://localhost:8000',  // → 后端 FastAPI
-      changeOrigin: true,
-    },
-  },
-}
-```
-
-> ⚠️ **重要**:Vite 代理仅在 **dev 模式** (`npm run dev`) 下生效。若使用 `vite preview` 或直接提供 `dist/` 静态文件, `/api` 请求将因缺少代理而 404。生产部署需要在前端加一层反向代理 (如 nginx)。
-
-### 5.4 环境变量
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `VITE_PPT_MASTER_BASE_URL` | PPT 生成服务基 URL (覆盖同源代理) | `window.location.origin` |
-| `VITE_PPT_MASTER_PAGE_COUNT` | PPT 默认页数 | `8` |
-
-`src/features/ppt-workbench/adapters/LegacyPptMasterAdapter.ts` 中后端保底地址为 `http://192.168.0.11:8000`。
-
----
-
-## 6. 服务端口映射
-
-| 端口 | 服务名 | 绑定地址 | 当前状态 | 说明 |
-|------|--------|----------|----------|------|
-| **3000** | 前端 Vite Dev Server | 0.0.0.0 | ✅ 运行 | HTTP 200, 前端入口 |
-| **8000** | 后端 FastAPI | 0.0.0.0 | ✅ 运行 | 主 API, 健康检查通过 |
-| **5101** | MeloTTS 语音合成 | 127.0.0.1 | ✅ 运行 | 独立 TTS 服务, CPU 推理 |
-| **8002** | Qwen3-0.6B Router (llama-server) | 127.0.0.1 | ✅ 运行 | CPU 运行, Path 2 直调目标 |
-| **8003** | MiniCPM Visual 文档视觉 | 127.0.0.1 | ✅ 运行 | 文档 OCR / 图片理解 |
-| **8088** | Qwen2.5-1.5B RKLLM (NPU) | 0.0.0.0 | ⏸️ Paused | 暂停以释放 NPU 给 8003 |
-| **8099** | PCW Python Chat Workflow | — | ❌ 已停 | `python_chat_workflow.enabled=false` |
-| **18790** | OpenClaw Chat Agent | 127.0.0.1 | ✅ Live | Path 1 入口 (systemd user) |
-| **18791** | OpenClaw Doc Agent | 127.0.0.1 | ✅ Live | 文档智能体 (systemd user) |
-| **18081** | 旧平台 Legacy (ks_web_backend) | 0.0.0.0 | ✅ 运行 | 独立项目, 未改动 |
-
-> 8088 的 `paused` 状态是设计行为 — 1.5B 模型在 RK3588 NPU 上会与 MiniCPM 8003 竞争 NPU 资源,因此通过 `/admin/pause` 暂停释放。需要时可通过 `/admin/resume` 恢复。
-
----
-
-## 7. 启动指南
-
-### 7.1 全链路启动
-
-一键启动 (后端全家桶 + 模型 + PI Agent):
+### 1. 安装后端与创建配置
 
 ```bash
-cd /home/youyeetoo/InNet_box/backend
-bash scripts/start_all.sh
+git clone https://github.com/wulisususu/innet-agent-ai-box.git
+cd innet-agent-ai-box
+
+python3 -m venv backend/.venv
+source backend/.venv/bin/activate
+python -m pip install -r backend/requirements.txt
+
+mkdir -p ~/.config/ai-box/backend
+cp backend/config.example.yaml ~/.config/ai-box/backend/config.yaml
+cp backend/.env.example ~/.config/ai-box/backend/.env
+chmod 600 ~/.config/ai-box/backend/.env
 ```
 
-启动前端 (开发模式):
+启动前编辑 `~/.config/ai-box/backend/config.yaml`：
+1. 填写**随机生成**的非空 `jwt.secret`（例如用 `python -c 'import secrets; print(secrets.token_urlsafe(48))'` 生成），不要提交密钥。
+2. 根据部署网络明确选择 `model.mode`。示例配置使用 `cloud_allowed`，不是离线模式。
+3. 配置 `policy`、`gongwen`、`policy_pdf` 的存储路径、工具路径及开关。默认政策数据存于 `backend/data/policy.db`。
+4. 需要模型初稿/政策 AI 问答时，在 `.env` 中填写 `EXTERNAL_MODEL_BASE_URL`、`EXTERNAL_MODEL_NAME`、`EXTERNAL_MODEL_API_KEY`；未配置时不能假定生成可用。
+
+`app/config.py` 默认优先读取 `~/.config/ai-box/backend/config.yaml` 和同目录 `.env`（文件存在时），也支持 `BACKEND_CONFIG_FILE`、`BACKEND_ENV_FILE`、`AI_BOX_CONFIG_DIR`。**注意**：`app/services/model_config.py` 的“设置页保存/同步 OpenClaw”路径仍含 `/home/youyeetoo/InNet_box` 等部署机专用常量；在其他机器不要直接套用设置页改模型配置，优先用显式环境变量并按源码校核。
+
+业务用户数据库的实际路径由 `app/database.py` 中的 **`AI_BOX_DATA_DIR`**（默认 `backend/data/app.db`）决定；不要误以为更改 `config.yaml` 中 `database.url` 就能改变当前代码里的 SQLite 引擎路径。生产迁移请先备份两类数据库和上传材料。
+
+### 2. 启动 API
 
 ```bash
-cd /home/youyeetoo/InNet_box/web
+cd backend
+python scripts/run.py
+```
+
+默认监听 `0.0.0.0:8000`（可通过 `config.yaml -> server` 修改），使用单 Uvicorn worker。验证：
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health
+curl http://127.0.0.1:8000/api/v1/gov/entry
+```
+
+第二个接口应返回角色入口配置；业务 API 需要角色会话 JWT。Swagger API 文档通常在 `http://127.0.0.1:8000/docs`。
+
+> 后端入口会导入 PPT/文档/知识库等模块；若干净环境因额外可选库或系统工具缺失而无法启动，应根据缺失模块补齐实际依赖，而不是将“基础依赖安装完成”当作完整部署验收。
+
+### 3. 启动前端
+
+另开终端：
+
+```bash
+cd web
+npm ci
 npm run dev
 ```
 
-> 注意：`start_all.sh` 包含 `set -u`,若 `LD_LIBRARY_PATH` 未定义会提前退出。参见 [10.2](#102-start_allsh-因-set--u-提前退出)。
+开发入口：`http://127.0.0.1:3000/`（重定向到 `/gov`；未登录会进入 `/entry` 角色选择）。
 
-### 7.2 分步启动
+Vite 开发代理：
+- `/api` → `http://localhost:8000`（可由 `VITE_PPT_BACKEND_PROXY` 覆盖）
+- `/api/v1/docs-pipeline` → `http://localhost:8003`（可由 `VITE_DOCS_BACKEND_PROXY` 覆盖；优先于通用 `/api`）
 
-若 `start_all.sh` 失败,可按以下顺序分别启动:
+生产 `npm run build` 产物**不包含 Vite dev proxy**。部署 `dist/` 时，需要单独配置 `/api` 反向代理与 Vue history 路由回退。不要直接把绑定 `0.0.0.0` 的演示入口和宽松 CORS 后端公开到生产网络。
 
-| 步骤 | 命令 | 服务 |
-|------|------|------|
-| 1 | `cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm` <br> `export LD_LIBRARY_PATH=./lib:$LD_LIBRARY_PATH` <br> `nohup .venv/bin/python3 /home/youyeetoo/InNet_box/backend/app/services/llm_server.py > /home/youyeetoo/InNet_box/backend/data/llm_server.log 2>&1 &` | RKLLM 8001 (可选, 当前用 8088) |
-| 2 | `cd /home/youyeetoo/rkllm_model_zoo/MiniCPM-V-2_6-rkllm` <br> `export MINICPM_SERVICE_PORT=8003` <br> `nohup .venv/bin/python3 /home/youyeetoo/InNet_box/backend/app/services/minicpm_vision_service.py 8003 > ... &` | MiniCPM 8003 |
-| 3 | `cd /home/youyeetoo/InNet_box/backend` <br> `source /home/youyeetoo/rkllm_model_zoo/funasr_env/bin/activate` <br> `export LD_LIBRARY_PATH=...` <br> `export BACKEND_INTERNAL_SERVICE_TOKEN=change-me-internal-service-token` <br> `nohup python scripts/run.py > ... &` | 后端 FastAPI 8000 |
-| 4 | `systemctl --user restart openclaw-chat.service` | Chat Agent 18790 |
-| 5 | `systemctl --user restart openclaw-doc.service` | Doc Agent 18791 |
-| 6 | `cd /home/youyeetoo/InNet_box/web && npm run dev` | 前端 3000 |
+### 演示数据模式
 
-### 7.3 验证服务状态
+前端默认使用真实 HTTP 后端，**网络失败不会自动切到 Mock**。需要独立展示静态流程时，显式设置 `VITE_GOV_OFFICE_MODE=demo` 后重新构建/启动；演示行为不等于后端已实现，也不能用于验证持久化或权限。
+
+## 模型与数据出口
+
+| `model.mode` | 本进程模型请求允许的目标 | 适用说明 |
+| --- | --- | --- |
+| `cloud_allowed` | 配置允许的 HTTP(S) 外部模型 | 可能将请求正文发往公网；示例模板默认使用此模式 |
+| `intranet` | loopback + 私有网络地址 | 禁止本进程主动连接公网模型；不能据此证明所有子进程不出网 |
+| `offline` | 仅本机 loopback | 不可访问远端模型时明确失败或由相应模块按规则返回无生成结果 |
+
+`AI_BOX_MODEL_MODE` 可以覆盖 YAML 设置；若模式未配置，代码按 `intranet` 处理。策略是**应用层出口检查**，不是操作系统断网证明：OpenClaw 独立进程、第三方工具及外部政策 URL 抓取须另行审查，并在防火墙/路由层设置真实隔离。政策在线搜索只在配置及出口策略允许时工作；不允许联网时仍可使用已导入的本地政策库。
+
+## 关键 API（统一前缀 `/api/v1`）
+
+| 路径 | 用途 |
+| --- | --- |
+| `GET/POST /gov/entry` | 查询/选择演示起草人或审核人角色，获得 JWT |
+| `/gov/documents`、`/gov/documents/{id}/...` | 文稿 CRUD、生成、审校、引用、送审、批准/退回、内部导出 |
+| `/gov/materials` | 政务材料上传、关联及授权下载 |
+| `/gov/policies`、`/gov/policies/search` | 政策库、状态核验与条款查询 |
+| `/gov/notices/review`、`/gov/notices/export` | 独立结构化通知双层审校与内部 DOCX |
+| `/gov/docx/check`、`/gov/docx/fix` | 外部 DOCX 格式检查、可选生成修订副本 |
+| `/policy/search`、`/policy/qa`、`/policy/qa/stream` | 条款级检索、政策问答及 SSE |
+| `/health` | 基础健康检查；仅反映 API 进程，不代表模型均已就绪 |
+
+完整输入字段与响应以 FastAPI `/docs`、`backend/docs/policy-api.md`、`backend/docs/gongwen-api.md` 为准。
+
+## 测试与验收
 
 ```bash
-# 查看所有端口监听
-ss -ltnp | grep -E ':3000|:8000|:8002|:8003|:8088|:18790|:18791'
+# 后端：从 backend 目录执行；pytest 为开发/测试工具
+cd backend
+python -m pytest tests/test_gov_role_entry.py tests/test_gov_basic_api.py tests/test_gov_gongwen_integration.py tests/test_gov_policy_integration.py -q
 
-# 逐一健康检查
-curl -s http://127.0.0.1:8000/api/v1/health       # 后端
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/  # 前端 (应为 200)
-curl -s http://127.0.0.1:8002/health               # Qwen3-0.6B Router
-curl -s http://127.0.0.1:8003/health               # MiniCPM Visual
-curl -s http://127.0.0.1:8088/health               # 1.5B RKLLM (paused 正常)
-curl -s http://127.0.0.1:18790/health              # Chat Agent
-curl -s http://127.0.0.1:18791/health              # Doc Agent
+# 前端：从 web 目录执行
+cd ../web
+npm test           # Node 宿主测试 + Vitest
+npm run build      # vue-tsc + Vite build
+npm run test:browser  # 需要可启动的 Chromium/Chrome 环境
 ```
+
+此处列出的是**建议执行的命令，不是本次文档修改产生的新测试通过报告**。历史集成证据：
+- [角色入口与权限边界](docs/role-entry.md)
+- [2026-10-26 完整集成验收](docs/superpowers/2026-10-26-full-integration-acceptance.md)
+- [政策检索与导入验收](docs/superpowers/2026-10-26-policy-integration-acceptance.md)
+
+## 已知限制与部署注意
+
+1. **仅内部草稿**：正式发文、数字签章、完整审批授权、忽略问题/例外放行尚未提供；双层审校不代表公文合法合规认证。
+2. **角色入口面向演示**：同一角色共用账户，无法区分不同实际起草人/审核人；需要真实使用时应改为组织身份认证、最小权限和网络访问控制。
+3. **工具链不全即功能不可用**：`gongwen-kit`、Node、模型 API、政策库与 PDF/OCR 都需分别部署、健康检查。不能用单一 `/health` 证明全功能可用。
+4. **PDF/材料能力边界**：政策 PDF 的逐页解析不等于任意文稿附件可直接参与模型生成；扫描页 OCR 质量需人工复核。OpenDataLoader 只作为政策 PDF 的显式可选引擎。
+5. **旧脚本含硬编码部署路径**：`backend/scripts/start_all.sh`、`restart_backend.sh` 与部分模型配置引用特定 RK3588 主机/目录、端口或 systemd 服务。迁移机器前必须审查，不建议在新机器上无修改直接运行。
+6. **模型出口需独立审计**：公网 API、OpenClaw provider、旧 PPT 生成等链路应分别检查；不能仅凭 `model.mode` 宣称“端侧完全离线、不出域”。
+7. **旧模块测试与部署非同一范围**：历史验收重点是政务闭环，不能据此宣称所有 PPT、语音、OpenClaw 或旧业务分支在新环境都通过回归。
+
+## 相关说明
+
+- [政策接口契约](backend/docs/policy-api.md)
+- [公文审校接口契约](backend/docs/gongwen-api.md)
+- [gongwen-kit 独立安装](backend/third_party/README.md)
+- [角色入口](docs/role-entry.md)
+- [完整集成验收](docs/superpowers/2026-10-26-full-integration-acceptance.md)
 
 ---
 
-## 8. 运维与调试
-
-### 8.1 日志
-
-所有服务日志统一存放于部署机的 `service_logs/`（运行时生成，不在仓库内）:
-
-| 日志文件 | 对应服务 |
-|----------|----------|
-| `backend_8000.log` | 后端 FastAPI |
-| `frontend_3000.log` | 前端 Vite Dev Server |
-| `qwen3_0_6b_8002.log` | Qwen3-0.6B Router |
-| `minicpm_visual_8003.log` | MiniCPM Visual |
-| `qwen_1_5b_8088.log` | 1.5B RKLLM |
-| `start_all_*.log` | 启动日志 |
-
-实时查看:
-
-```bash
-tail -f /home/youyeetoo/InNet_box/service_logs/backend_8000.log
-tail -f /home/youyeetoo/InNet_box/service_logs/frontend_3000.log
-```
-
-### 8.2 常用命令
-
-```bash
-# 查看服务状态 (一目了然)
-ss -ltnp | grep -E ':3000|:8000|:8002|:8003|:8088|:18790|:18791|:18081'
-
-# 查看 OpenClaw 智能体状态
-systemctl --user status openclaw-chat.service openclaw-doc.service --no-pager -l
-
-# 重启后端
-lsof -ti tcp:8000 | xargs kill
-cd /home/youyeetoo/InNet_box/backend && source funasr_env/bin/activate && python scripts/run.py &
-
-# 重启 OpenClaw Agent
-systemctl --user restart openclaw-chat.service
-systemctl --user restart openclaw-doc.service
-
-# 暂停/恢复 1.5B RKLLM (NPU 释放/占用)
-curl -X POST http://127.0.0.1:8088/admin/pause
-curl -X POST http://127.0.0.1:8088/admin/resume
-
-# 查看 OpenClaw 日志
-journalctl --user -u openclaw-chat.service --no-pager -n 50
-journalctl --user -u openclaw-doc.service --no-pager -n 50
-
-# 测试聊天全路径 (用 Internal Token)
-TOKEN="change-me-internal-service-token"
-curl -s -X POST http://127.0.0.1:8000/api/v1/chat \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"content":"你好"}'
-
-# 查看磁盘/内存 (RK3588 资源有限)
-df -h
-free -h
-```
-
-### 8.3 systemd 服务
-
-OpenClaw Chat / Doc Agent 使用 **user-level systemd 服务**:
-
-```
-~/.config/systemd/user/openclaw-chat.service
-~/.config/systemd/user/openclaw-doc.service
-```
-
-管理方式:
-
-```bash
-systemctl --user start   openclaw-chat.service   # 启动
-systemctl --user stop    openclaw-chat.service   # 停止
-systemctl --user restart openclaw-chat.service   # 重启
-systemctl --user enable  openclaw-chat.service   # 开机自启
-```
-
-> 后端 FastAPI 和前端 Vite 当前以 nohup 方式运行,未注册 systemd 服务。若需开机自启,建议为其创建 systemd service 或使用 supervisor。
-
-### 8.4 性能与资源管理
-
-RK3588 是 ARM 端侧芯片,资源有限(NPU/内存):
-
-- **NPU 竞争**:MiniCPM (8003) 和 RKLLM (8088) 共享 NPU,同时运行可能互相拖慢。当前方案是 8088 默认 pause,8003 稳定后再 resume。
-- **Qwen3-0.6B (8002)** 运行在 CPU (llama.cpp GGUF),不占用 NPU,独立运行。
-- **35B 外部模型**(192.168.10.212:8081)若可访问,可大幅提升复杂文档/PPT 的生成质量,但 10 网段目前不可达,系统已自动降级为本地 0.6B 模型。
-### 8.5 TTS 语音合成服务
-
-TTS 使用独立的 **MeloTTS 服务**（:5101），替代旧版 Piper TTS：
-
-| 项目 | 说明 |
-|------|------|
-| 服务地址 | http://127.0.0.1:5101（独立 FastAPI 进程，CPU 推理） |
-| 调用方式 | 后端 tts_service.py -> POST /tts 获取 audio_url -> GET /audio/{id} 拿 WAV |
-| 后端接入 | POST /api/v1/tts/synthesize（JWT 鉴权） |
-| 模型 | MeloTTS-Chinese（中文+英文混合，约 1.9GB） |
-| 统一 venv | funasr_env（`/home/youyeetoo/rkllm_model_zoo/funasr_env`，由启动脚本引用） |
-| 启动 | bash /home/youyeetoo/rkllm_model_zoo/melo_tts/start_melo_tts.sh |
-| 验证 | curl -s http://127.0.0.1:5101/health -> {"state":"ready"} |
-
----
-
-## 9. 聊天链路与降级策略
-
-### 9.1 聊天全路径
-
-```
-浏览器发消息 POST /api/v1/conversations/{id}/messages
-  → 前端 Vite 代理 → 后端 :8000
-  → conversations.py send_message()
-    → _use_pi_agent_chat() = True (PI_AGENT_CHAT=1)
-    → workflow_type == "chat"
-    → _pi_chat_sse_gen()  ← 内层生成器
-      ├─ 等待图片解析 (如有附件) — 最多 60s
-      └─ chat_with_degradation()  ← 降级入口
-```
-
-### 9.2 双路径降级机制
-
-`degradation.py` → `chat_with_degradation()` 两条路径：
-
-```
-Path 1: PI Agent (OpenClaw 18790) ──────────────────────
-  触发:  health_check(18790) 通过
-  调用:  _stream_pi_chat() → OpenClaw /v1/responses
-          → openclaw/chat agent
-  超时:  10s 首 token (asyncio.wait_for, 5s × 2 次)
-  心跳:  status:thinking "模型正在思考…" (5s 时)
-  结果:  10s 内无 token → 触发 Path 2
-  说明:  OpenClaw system prompt + tools 过大, 0.6B (4096 ctx) 撑不住
-         35B 恢复后此路径正常 (< 3s 出首 token)
-
-Path 2: 直连本地模型 (8002) ────────────────────────────
-  触发:  Path 1 超时 / Agent 不可用
-  调用:  _local_small_generate(content, max_tokens=512)
-          → POST http://127.0.0.1:8002/v1/chat/completions
-          → Qwen3-0.6B llama-server (CPU)
-  Prompt: system: "你是AI聊天小助手，中科信创自研轻量模型。…" (~150 tokens)
-          user: 用户原始消息 (≤1500 chars)
-  配置:  config.yaml → llm.local_small_system_prompt
-  结果:  0.3-0.5s 内返回, context 不溢出
-  保底:  若也失败 → "AI 服务暂时不可用"
-
-总体时序 (35B 不可达时):
-  user → message_start → [thinking @5s] → [10s 超时]
-  → status:degraded → token → done → [DONE]
-  总耗时: ~11s (10s Path 1 超时 + 0.5s 本地模型)
-```
-
-### 9.3 图片附件等待机制
-
-```
-上传图片 → parse_task 后台创建 → MiniCPM OCR 异步执行
-  ↓ 用户立即发消息
-_pi_chat_sse_gen()
-  ├─ attachment_bundle.pending 非空?
-  │   ├─ YES → yield status:analyzing_image "正在分析图片内容…"
-  │   │         每 2s poll get_attachment_bundle(include_visual=True)
-  │   │         每 10s yield status:processing_ocr "(Ns)" 心跳
-  │   │         最多等 60s
-  │   │         完成后 → yield status:image_analyzed "图片分析完成: …"
-  │   │         attachment_context = MiniCPM 视觉描述
-  │   └─ NO  → 跳过
-  └─ chat_with_degradation(attachment_context=<实际内容>)
-```
-
-### 9.4 SSE 心跳事件
-
-| 节点 | 触发条件 | 事件 | 间隔 |
-|------|---------|------|------|
-| Path 1 等待首 token | 5s 无响应 | `status:thinking` | 单次 |
-| MiniCPM OCR 等待 | 图片解析中 | `status:processing_ocr` | 每 10s |
-| Doc 文档生成 | Agent 生成内容中 | `status:generating` | 每 10s |
-
-所有心跳事件格式: `{type: "status", stage: "<stage>", message: "<描述>"}`
-
-### 9.5 OpenClaw 配置
-
-配置文件: `backend/.pi-agent/chat/openclaw.config.ts` / `doc/openclaw.config.ts`
-
-```ts
-providers: {
-  openaiCompatible: {
-    baseUrl: 'http://127.0.0.1:8002/v1',          // 当前唯一可用模型
-    model: 'Qwen3-0.6B-Q4_K_M.gguf',
-  },
-}
-```
-
-> 注: 原配置含 35B primary (192.168.10.212:8081) 和 8088 fallback，
-> 已于 2026-07-20 全部迁移到 8002 端口。历史备份由 git 历史承载。
-
-### 9.6 模型端口清理 (2026-07-20)
-
-| 端口 | 旧用途 | 当前状态 |
-|------|--------|---------|
-| 8088 | Qwen2.5-1.5B / qwen_api_server | ❌ 已禁用 (qwen_api_server.py.disabled) |
-| 8002 | llama-server Qwen3-0.6B | ✅ 唯一模型端口 |
-| 8003 | MiniCPM Vision | ✅ OCR 视觉服务 |
-| 18790 | OpenClaw Chat Agent | ✅ (provider 指向 8002) |
-| 18791 | OpenClaw Doc Agent | ✅ (provider 指向 8002) |
-
-DeepSeek 1.5B RKLLM 本地 NPU 模型已注释 (llm_server.py / llm_service.py / llm_runner.py)。
-
----
-
-## 10. 已知问题与限制
-
-### 10.1 35B 外部模型不可达 (关键)
-
-- **问题**: 35B 模型在 192.168.10.212:8081，本机 (192.168.0.11) 不在 10 网段。
-- **影响**: Path 1 (OpenClaw) 必然超时 10s → 降级到 Path 2 本地 0.6B。
-- **当前方案**: Path 2 直连 8002，0.5s 响应。35B 恢复后 Path 1 自动生效。
-
-### 10.2 端口 8088 完全移除
-
-- 原 qwen_api_server.py (8088) 已禁用 (.disabled)，全部 8088 引用已迁移到 8002。
-- 涉及 12 个文件的修改，历史版本见 git 历史。
-
-### 10.3 MiniCPM 依赖修复历史
-
-- 本机 MiniCPM venv 缺少 opencv (cv2)，已通过 `apt install python3-opencv` + 软连接解决。
-
-### 10.4 前端开发模式依赖代理
-
-- 前端 `npm run dev` 模式依赖 Vite 代理 (`/api` → `localhost:8000`)。
-- 若需生产部署，应在 nginx 中配置反向代理。
-
-### 10.5 路径说明
-
-- 本仓库所有脚本/配置中的路径已统一为 `/home/youyeetoo/InNet_box`，不再依赖符号链接。
-- 部署到新机器时，如需更换部署目录，请同步替换代码与配置中的 `/home/youyeetoo/InNet_box` 前缀（约 5 处核心路径，见审计报告）。
-
-### 10.7 MeloTTS 首次启动加载慢
-
-- MeloTTS 首次启动需加载 MeloTTS-Chinese checkpoint（约 200MB）及两个 BERT 模型，CPU 上约需 30-60s。
-- 加载期间 /health 返回 state: starting，/tts 返回 503。
-- 加载完成后 /health 切换为 state: ready。建议在 start_all.sh 中等待 health 就绪后再启用后端。
-- 若缺失依赖（如 proces、nltk、num2words 等），会报 ModuleNotFoundError，批量安装即可。
-- 源服务器为 192.168.0.14:5101，可在 0.14 确认模型正常后再同步到 0.117。
-
----
-
-## 11. 运维管理
-
-### 11.1 restart_backend.sh
-
-统一管理脚本，位于项目根目录: `./restart_backend.sh`
-
-```bash
-./restart_backend.sh              # 重启后端 (8000)
-./restart_backend.sh --agent      # 重启 OpenClaw Agent (18790/18791)
-./restart_backend.sh --all        # 全部重启
-./restart_backend.sh --install    # 安装 systemd 开机自启
-```
-
-### 11.2 systemd 服务
-
-服务名: `innet_backend` (开机自启已启用)
-
-```bash
-sudo systemctl restart innet_backend   # 重启后端
-sudo systemctl status innet_backend    # 查看状态
-sudo journalctl -u innet_backend -f    # 实时日志
-```
-
-### 11.3 历史备份
-
-仓库已不再保留独立备份目录，所有历史版本通过 git 提交历史回溯。
-
----
-
-> **首次启动参考**: 2026-07-16 的部署全记录曾存放于 `release/logs/service-start-record-20260716.md`，现该目录已随仓库整理移除；部署要点见本文档第 7 节。
-
-部署要点详见第 7 节「启动指南」与第 8 节「运维与调试」。
+项目仍在迭代。文档描述的是仓库中**可定位到的代码路径和明确的能力边界**；部署状态、外部服务连通性、模型效果与正式公文合规性需要在目标环境另行验证。

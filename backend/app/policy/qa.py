@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.services import llm_chat
 from app.services.policy.store import PolicyFilter
 
-from . import conversation, corpus, retrieval
+from . import conversation, corpus, retrieval, titles
 from .lifecycle import display_date
 from .models import PolicyQaLog, STATUS_PENDING, STATUS_REPEALED, STATUS_EFFECTIVE
 from .retrieval import Candidate, DEFAULT_THRESHOLD, build_excerpt
@@ -68,7 +68,7 @@ def _split_supplement(text: str) -> tuple[str, str]:
     return text.strip(), ""
 
 
-def _build_messages(question: str, evidence: list[Candidate]) -> list[dict[str, str]]:
+def _build_messages(question: str, evidence: list[Candidate], *, overview: bool = False) -> list[dict[str, str]]:
     lines: list[str] = []
     for idx, cand in enumerate(evidence, start=1):
         meta = "，".join(x for x in [
@@ -78,7 +78,9 @@ def _build_messages(question: str, evidence: list[Candidate]) -> list[dict[str, 
             cand.clause.clause_no,
         ] if x)
         lines.append(f"[{idx}] 《{meta}》：{cand.clause.content.strip()}")
-    user = "政策条款：\n" + "\n".join(lines) + f"\n\n问题：{question}\n\n请依据上述条款作答，每句结论标注引用序号。"
+    ask_tail = ("请概括这份政策的主要内容：适用对象、主要措施、申请条件或办理要求，每句标注引用序号。"
+                if overview else "请依据上述条款作答，每句结论标注引用序号。")
+    user = "政策条款：\n" + "\n".join(lines) + f"\n\n问题：{question}\n\n{ask_tail}"
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
@@ -230,7 +232,8 @@ def _library_stats(store) -> dict[str, int]:
 
 
 def _build_chat_ctx(store, question: str, candidates: list[Candidate], *,
-                    scope: str, threshold: float, top_k: int) -> conversation.ChatContext:
+                    scope: str, threshold: float, top_k: int,
+                    suggestions: list[dict] | None = None) -> conversation.ChatContext:
     """组装对话路线的上下文。candidates 是按请求范围检索出的候选。"""
     kind = conversation.classify(question, has_candidates=any(c.score >= 0.3 for c in candidates))
     known_titles = {view.title for _, view in corpus.load(store, scope="all")}
@@ -243,9 +246,85 @@ def _build_chat_ctx(store, question: str, candidates: list[Candidate], *,
             scope_hint = (f"当前范围为『仅已核验现行政策』；另有 {len(extra)} 条相关条款在待核实政策中，"
                           "切换到『全部入库政策』可查看。")
     return conversation.ChatContext(
-        kind=kind, stats=_library_stats(store), suggestions=[],
+        kind=kind, stats=_library_stats(store), suggestions=list(suggestions or []),
         scope_hint=scope_hint, known_titles=known_titles,
     )
+
+
+def _named_policy_ctx(db: Session, match, question: str, *, store,
+                      threshold: float, max_evidence: int,
+                      user_id: int | None = None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """唯一强匹配：介绍这份政策（overview），或在其内部就剩余问题作答（answer）。
+
+    返回 (ctx, early)：early 非空表示该政策不在效力期内，直接拒答。
+    """
+    policy = match.policy
+    remaining = titles.remaining_question(question, policy.title)
+    rows = corpus.load(store, scope="policy", policy_ids=[policy.id])
+
+    basis = ("verified" if policy.status == STATUS_EFFECTIVE
+             else "unverified" if policy.status == STATUS_PENDING else "")
+    if not basis or not rows:
+        payload = {
+            "status": "no_basis",
+            "sufficient": False,
+            "reason_code": "not_in_force",
+            "conclusion": "",
+            "supplement": "",
+            "reason": (f"《{policy.title}》当前状态为「{policy.status or '待核实'}」，不能作为现行依据。"
+                       "如需引用，请先在政策库核验现行版本。"),
+            "manual_confirm": [],
+            "citations": [],
+            "candidates": [],
+            "meta": {"threshold": threshold, "scope": "policy", "mode": "overview",
+                     "named_policy": policy.title, "generated_by": "none"},
+        }
+        _log(db, question, payload, "policy", user_id)
+        return None, payload
+
+    remaining_terms = retrieval.content_terms(remaining)
+    # 去掉与标题重叠的泛词（如「管理办法」被 LCS 切剩的「办法」）：
+    # 这些词都在政策标题里，留着会把「只想看这份政策」误判成「在里面找答案」。
+    title_core = titles.title_core(policy.title)
+    remaining_terms = [t for t in remaining_terms if t not in title_core]
+    # 政策内检索的语料只有这一份文件，BM25 的 idf 天然偏低（与语料规模相关），
+    # 沿用全库阈值会把点名后的追问误判成「没有相关条款」。这里放宽到 0.7 倍，
+    # 剩余问题本身已经过「是名词性追问还是只想看政策」的判定。
+    within_threshold = round(threshold * 0.7, 3)
+    within = retrieval.search(rows, remaining or question, top_k=max(12, max_evidence)) if remaining_terms else []
+    above_within = [c for c in within if c.score >= within_threshold]
+
+    asked = retrieval.content_terms(remaining or question)
+    matched_terms: set[str] = set()
+    for cand in within:
+        matched_terms.update(cand.matched_terms)
+    coverage = (len(set(asked) & matched_terms) / len(set(asked))) if asked else 0.0
+
+    if remaining_terms and above_within:
+        mode = "answer"
+        evidence = above_within[:max_evidence]
+    else:
+        mode = "overview"
+        # 概要不受阈值限制：取这份政策的前 N 条正文条款（corpus.load 已按 seq 排好序）
+        evidence = [retrieval.Candidate(policy=pv, clause=cv, score=0.0, bm25=0.0, coverage=0.0)
+                    for cv, pv in rows][:max_evidence]
+    meta = {
+        "mode": mode,
+        "named_policy": policy.title,
+        "candidates": len(within),
+        "above_threshold": len(above_within),
+        "within_threshold": within_threshold,
+        "cited": 0, "deprecated": 0, "pending": 0, "excluded_deprecated": 0,
+        "threshold": threshold, "scope": "policy", "model": "", "generated_by": "none",
+    }
+    ctx = {
+        "candidates": within, "deprecated": [], "pending": [], "meta": meta,
+        "corpus_coverage": round(coverage, 3), "evidence": evidence,
+        "used_deprecated": False, "basis": basis,
+        "basis_notice": UNVERIFIED_NOTICE if basis == "unverified" else "",
+        "mode": mode,
+    }
+    return ctx, None
 
 
 def _prepare(
@@ -271,6 +350,19 @@ def _prepare(
     candidates = retrieval.search(rows, question, top_k=top_k)
     above = [c for c in candidates if c.score >= threshold]
 
+    # ---- 按政策名称匹配：「帮我看看某某政策」----
+    policies = list({view.id: view for _, view in rows}.values())
+    matches = titles.match_titles(question, policies)
+    strong = (matches[0] if matches and matches[0].score >= titles.STRONG
+              and (len(matches) == 1 or matches[0].score - matches[1].score >= 0.15) else None)
+    title_suggestions = [{"policy_id": m.policy.id, "title": m.policy.title, "status": m.policy.status}
+                         for m in matches[:3]]
+    if strong is not None:
+        ctx, early = _named_policy_ctx(db, strong, question, store=store,
+                                       threshold=threshold, max_evidence=max_evidence,
+                                       user_id=user_id)
+        return ctx, early, None
+
     # ---- 覆盖度闸门：问题里的实义词在库中几乎找不到 → 属于库外问题 ----
     asked_terms = retrieval.content_terms(question)
     matched_terms: set[str] = set()
@@ -281,6 +373,7 @@ def _prepare(
         # 库外问题（如闲聊、与政策无关的技术问题）：走对话路线友好回应
         return None, None, _build_chat_ctx(
             store, question, candidates, scope=scope, threshold=threshold, top_k=top_k,
+            suggestions=title_suggestions,
         )
 
     # ---- 依据分层：已核验 > （显式允许的）已废止 > 待核实；其余如实拒答 ----
@@ -335,7 +428,7 @@ def _prepare(
                         if c.policy.status not in (STATUS_EFFECTIVE, STATUS_PENDING, STATUS_REPEALED)]
         if dep_all or stale_others:
             stale = dep_all or stale_others
-            titles = "、".join(sorted({f"《{c.policy.title}》" for c in stale}))
+            stale_titles = "、".join(sorted({f"《{c.policy.title}》" for c in stale}))
             if dep_all and not stale_others:
                 state_text = "已废止"
             elif stale_others and not dep_all:
@@ -343,7 +436,7 @@ def _prepare(
             else:
                 state_text = "已废止或尚未生效"
             reason = (
-                f"相关条款来自{state_text}的文件（{titles}），不能作为现行依据。"
+                f"相关条款来自{state_text}的文件（{stale_titles}），不能作为现行依据。"
                 "如需引用，请先在政策库核验现行版本，或在检索时显式允许引用已废止条款。"
             )
             payload = {
@@ -368,6 +461,7 @@ def _prepare(
         # 库里没有可作依据的内容：说明情况或友好转开，交给对话路线
         return None, None, _build_chat_ctx(
             store, question, candidates, scope=scope, threshold=threshold, top_k=top_k,
+            suggestions=title_suggestions,
         )
 
     evidence = (usable if basis == "verified"
@@ -389,21 +483,44 @@ def _is_insufficient(conclusion: str) -> bool:
     return len(conclusion or "") < 120 and any(marker in (conclusion or "") for marker in INSUFFICIENT_MARKERS)
 
 
+def _overview_extract(evidence: list[Candidate]) -> str:
+    """概要模式的兜底：模型不可用或输出被拒时，取前 3 条证据各自的第一句原文。"""
+    parts = []
+    for i, cand in enumerate(evidence[:3], start=1):
+        sentences = _sentences(cand.clause.content)
+        if not sentences:
+            continue
+        parts.append(f"{sentences[0]} [{i}]")
+    if not parts:
+        return f"《{evidence[0].policy.title}》暂无可摘录的正文条款 [1]"
+    return "".join(parts)
+
+
 def _apply_guards(conclusion: str, question: str, evidence: list[Candidate],
-                  error: str = "") -> tuple[str, str, str]:
-    """模型输出质检：无引用 / 噪声 / 数值不可核 → 一律退回原文摘录。"""
+                  error: str = "", *, overview: bool = False) -> tuple[str, str, str]:
+    """模型输出质检：无引用 / 噪声 / 数值不可核 → 一律退回原文摘录。
+
+    overview（政策概要）模式不走数值直引；兜底摘录换成 _overview_extract。
+    """
     generated_by = "llm"
     supplement = ""
+
+    def _fallback() -> str:
+        return _overview_extract(evidence) if overview else _extractive_answer(evidence, question)
 
     if _is_insufficient(conclusion):
         return conclusion, generated_by, supplement
 
     cited_ids = [int(index) for index in re.findall(r"\[(\d+)\]", conclusion or "")]
-    if not cited_ids or any(index < 1 or index > len(evidence) for index in cited_ids) or _answer_is_noisy(conclusion, question):
-        conclusion = _extractive_answer(evidence, question)
-        generated_by = "extractive" if not error else "extractive_after_error"
+    rejected = (not cited_ids
+                or any(index < 1 or index > len(evidence) for index in cited_ids)
+                or _answer_is_noisy(conclusion, "" if overview else question))
+    if rejected:
+        conclusion = _fallback()
+        generated_by = "extractive_overview" if overview else (
+            "extractive" if not error else "extractive_after_error")
         supplement = ""
-    elif _asks_number(question) and re.search(r"\d", evidence[0].clause.content or ""):
+    elif not overview and _asks_number(question) and re.search(r"\d", evidence[0].clause.content or ""):
         # 数值类问题一律引用原文：小模型会把「15000 次」改写成「15000 年」，
         # 数字全对、单位全错，比不答更危险。
         conclusion = _extractive_answer(evidence, question)
@@ -411,8 +528,8 @@ def _apply_guards(conclusion: str, question: str, evidence: list[Candidate],
         supplement = "数值类问题直接引用原文表述，避免模型改写单位。"
     elif _has_ungrounded_number(conclusion, evidence):
         # 结论里出现了条款中不存在的数字，说明是模型自己算的，不能采信
-        conclusion = _extractive_answer(evidence, question)
-        generated_by = "extractive_ungrounded"
+        conclusion = _fallback()
+        generated_by = "extractive_overview" if overview else "extractive_ungrounded"
         supplement = "模型结论中的数值无法在条款中核对，已改为引用原文。"
 
     return conclusion, generated_by, supplement
@@ -620,12 +737,13 @@ def answer(
     if chat_ctx is not None:
         return _chat_answer(db, question, chat_ctx, scope=scope, user_id=user_id)
 
+    overview = ctx.get("mode") == "overview"
     conclusion = ""
     error = ""
     try:
         conf = llm_chat.settings()
         ctx["meta"]["model"] = conf["model"]
-        raw = llm_chat.chat(_build_messages(question, ctx["evidence"]), temperature=0.2)
+        raw = llm_chat.chat(_build_messages(question, ctx["evidence"], overview=overview), temperature=0.2)
         conclusion = _strip_fence(_strip_reasoning(raw))
         conclusion, supplement = _split_supplement(conclusion)
     except Exception as exc:
@@ -633,7 +751,7 @@ def answer(
         supplement = ""
 
     conclusion, generated_by, guard_supplement = _apply_guards(
-        conclusion, question, ctx["evidence"], error
+        conclusion, question, ctx["evidence"], error, overview=overview
     )
     supplement = guard_supplement or supplement
 
@@ -691,8 +809,9 @@ def answer_stream(
         "meta": {**ctx["meta"], "corpus_coverage": round(ctx["corpus_coverage"], 3)},
     }
 
-    # 数值类问题不必等模型：直接引用原文，省掉整段生成时间
-    if _asks_number(question) and re.search(r"\d", evidence[0].clause.content or ""):
+    # 数值类问题不必等模型：直接引用原文，省掉整段生成时间（政策概要模式不走这条近路）
+    if (ctx.get("mode") != "overview" and _asks_number(question)
+            and re.search(r"\d", evidence[0].clause.content or "")):
         conclusion = _extractive_answer(evidence, question)
         yield {"type": "delta", "text": conclusion}
         payload = _assemble(
@@ -708,10 +827,11 @@ def answer_stream(
     buffer: list[str] = []
     error = ""
     supplement = ""
+    overview = ctx.get("mode") == "overview"
     try:
         conf = llm_chat.settings()
         ctx["meta"]["model"] = conf["model"]
-        for chunk in llm_chat.stream(_build_messages(question, evidence), temperature=0.2):
+        for chunk in llm_chat.stream(_build_messages(question, evidence, overview=overview), temperature=0.2):
             buffer.append(chunk)
             yield {"type": "delta", "text": chunk}
     except Exception as exc:
@@ -719,7 +839,8 @@ def answer_stream(
 
     text = _strip_fence(_strip_reasoning("".join(buffer)))
     conclusion, supplement = _split_supplement(text)
-    conclusion, generated_by, guard_supplement = _apply_guards(conclusion, question, evidence, error)
+    conclusion, generated_by, guard_supplement = _apply_guards(
+        conclusion, question, evidence, error, overview=overview)
     if guard_supplement:
         supplement = guard_supplement
 

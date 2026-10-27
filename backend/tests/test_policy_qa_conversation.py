@@ -11,6 +11,8 @@ from unittest.mock import patch
 import pytest
 
 from app.policy import conversation, qa
+from app.policy.corpus import PolicyView
+from app.policy.titles import STRONG, match_titles
 from policy_support import block_network  # noqa: F401  # pytest 经模块命名空间解析该 fixture
 from test_policy_qa_t1 import (  # noqa: F401
     CURRENT_REPLACEMENT,
@@ -139,3 +141,54 @@ def test_chat_turn_is_logged_with_chat_status(api):
     items = api.client.get("/api/v1/policy/qa/logs").json()["data"]["items"]
     assert items and items[0]["status"] == "chat"
     assert items[0]["answer"] == "您好！需要查哪方面的政策？"
+
+
+# ---------------------------------------------------------------- Task 3：按政策名匹配
+
+def view(pid, title, status="现行有效"):
+    return PolicyView(id=pid, title=title, doc_no="", issuer="", status=status,
+                      verified_status="current" if status == "现行有效" else "unverified",
+                      status_note="", publish_date="", effective_date="", expire_date="",
+                      source_url="", version=1, is_current_version=True)
+
+
+def test_match_titles_scores_bookmarked_and_loose_names():
+    p = [view(1, "示例市小微企业首次贷款贴息管理办法"), view(2, "示例市政务数据共享办法")]
+    assert match_titles("帮我看看《示例市小微企业首次贷款贴息管理办法》", p)[0].policy.id == 1
+    assert match_titles("能帮我看看小微企业首次贷款贴息办法吗", p)[0].score >= STRONG
+    assert match_titles("你好", p) == []
+
+
+def test_plain_question_is_not_treated_as_a_title_lookup():
+    p = [view(1, "示例市小微企业首次贷款贴息管理办法")]
+    assert match_titles("贷款贴息比例是多少", p) == []
+
+
+def test_named_policy_gets_an_overview_with_citations(api):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    add(api.library, CURRENT_REPLACEMENT, "示例市政务数据共享办法", verify="current")
+    res = ask(api, "能帮我看看小微企业首次贷款贴息办法吗")
+    assert res["status"] == "answered" and res["meta"]["mode"] == "overview"
+    assert {c["policy_title"] for c in res["citations"]} == {"示例市小微企业首次贷款贴息管理办法"}
+    assert res["meta"]["generated_by"] == "extractive_overview"      # ask() 下模型不可用
+
+
+def test_named_policy_with_specific_question_answers_inside_that_policy(api):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    res = ask(api, "《示例市小微企业首次贷款贴息管理办法》的补贴比例是多少")
+    assert res["meta"]["mode"] == "answer" and "第六条" in [c["clause_no"] for c in res["citations"]]
+
+
+def test_ambiguous_title_asks_back_with_suggestions(api):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法")
+    add(api.library, SAMPLE.replace("管理办法", "管理办法实施细则"), "示例市小微企业首次贷款贴息管理办法实施细则")
+    res = ask(api, "帮我看看小微企业贴息的办法")
+    assert res["status"] == "chat"
+    assert {s["title"] for s in res["suggestions"]} == {
+        "示例市小微企业首次贷款贴息管理办法", "示例市小微企业首次贷款贴息管理办法实施细则"}
+
+
+def test_unverified_overview_carries_the_notice(api):
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法")
+    res = ask(api, "帮我看看示例市小微企业首次贷款贴息管理办法")
+    assert res["meta"]["mode"] == "overview" and res["basis_notice"] == qa.UNVERIFIED_NOTICE

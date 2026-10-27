@@ -26,6 +26,10 @@ MAX_EVIDENCE = 6
 EXTRACT_MAX_CHARS = 220
 #: 问题实义词在政策库中的最低覆盖率，低于此值视为库外问题
 MIN_CORPUS_COVERAGE = 0.35
+#: ① 作依据的条款自身要求：问题实义词在该条款中的命中比例下限。
+#: 大语料（203 条真实政务文件）上，「电脑命令行」能蒙中「行政命令」、「行政复议法实施条例」
+#: 能蒙中「依法申请行政复议」——合并覆盖度闸门与阈值都拦不住，必须按条款逐个算。
+BASIS_TERM_COVERAGE = 0.5
 #: 未核验前提的固定文案：由后端写进回答开头，不交给模型生成
 UNVERIFIED_NOTICE = (
     "以下内容来自已入库但尚未经人工核验的政策，仅供参考；"
@@ -239,12 +243,13 @@ def _library_stats(store) -> dict[str, int]:
 
 def _build_chat_ctx(store, question: str, candidates: list[Candidate], *,
                     scope: str, threshold: float, top_k: int,
-                    suggestions: list[dict] | None = None) -> conversation.ChatContext:
+                    suggestions: list[dict] | None = None,
+                    scope_hint_override: str = "") -> conversation.ChatContext:
     """组装对话路线的上下文。candidates 是按请求范围检索出的候选。"""
     kind = conversation.classify(question, has_candidates=any(c.score >= 0.3 for c in candidates))
     known_titles = {view.title for _, view in corpus.load(store, scope="all")}
-    scope_hint = ""
-    if scope == "current":
+    scope_hint = scope_hint_override
+    if not scope_hint and scope == "current":
         # 严格模式下额外看一眼全库：有待核实的过阈值条款就提示用户切范围
         extra = [c for c in retrieval.search(corpus.load(store, scope="all"), question, top_k=top_k)
                  if c.score >= threshold and c.policy.status == STATUS_PENDING]
@@ -367,15 +372,29 @@ def _prepare(
     # 拼接后的检索词必然更杂、分数更低（实测同一问法 0.29 → 0.51），
     # 追问那遍用 0.7 倍阈值，与「点名政策内检索」的放宽口径一致。
     followup_threshold = round(threshold * 0.7, 3)
+
+    # ③ 追问优先走点名政策路线：上一轮问题里点过《政策名》时，拼接后仍按名
+    # 找到这份政策，并且就剩余问题在其内部作答（mode == answer）才采用；
+    # 只肯给概要（overview）说明本轮不是在问这份政策的内容，不采用。
     ctx2, early2, chat2 = _route_question(
         db, combined, store=store, scope=scope, policy_ids=policy_ids,
         include_deprecated=include_deprecated, threshold=followup_threshold, top_k=top_k,
         max_evidence=max_evidence, user_id=user_id, skip_coverage_gate=True,
     )
-    if ctx2 is not None:
+    if ctx2 is not None and ctx2.get("mode") == "answer":
         ctx2["meta"]["followup"] = True
         return ctx2, None, None
-    # 第二遍仍然没有依据（含早退拒答）：保持对话路线
+
+    # 原流程：纯拼接检索兜底（跳过按名捷径——按名路线只肯给概要时不能让它抢答）
+    ctx3, early3, chat3 = _route_question(
+        db, combined, store=store, scope=scope, policy_ids=policy_ids,
+        include_deprecated=include_deprecated, threshold=followup_threshold, top_k=top_k,
+        max_evidence=max_evidence, user_id=user_id, skip_coverage_gate=True, skip_title_route=True,
+    )
+    if ctx3 is not None:
+        ctx3["meta"]["followup"] = True
+        return ctx3, None, None
+    # 两遍都没有依据（含早退拒答）：保持对话路线
     return ctx, early, chat
 
 
@@ -392,6 +411,7 @@ def _route_question(
     max_evidence: int,
     user_id: int | None,
     skip_coverage_gate: bool = False,
+    skip_title_route: bool = False,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, Any]:
     """单次检索 + 依据分层 + 对话路线判定。返回 (ctx, early, chat)，三者恰有一个非 None。
 
@@ -401,10 +421,11 @@ def _route_question(
     rows = corpus.load(store, scope=scope, policy_ids=policy_ids)
     candidates = retrieval.search(rows, question, top_k=top_k)
     above = [c for c in candidates if c.score >= threshold]
+    asked_terms = retrieval.content_terms(question)
 
     # ---- 按政策名称匹配：「帮我看看某某政策」----
     policies = list({view.id: view for _, view in rows}.values())
-    matches = titles.match_titles(question, policies)
+    matches = [] if skip_title_route else titles.match_titles(question, policies)
     strong = (matches[0] if matches and matches[0].score >= titles.STRONG
               and (len(matches) == 1 or matches[0].score - matches[1].score >= 0.15) else None)
     title_suggestions = [{"policy_id": m.policy.id, "title": m.policy.title, "status": m.policy.status}
@@ -415,8 +436,24 @@ def _route_question(
                                        user_id=user_id)
         return ctx, early, None
 
+    if not skip_title_route and titles.contains_book_title(question):
+        # ② 点了《书名》但库里没有唯一强匹配：不做条款检索，直接走对话路线。
+        # 用全库再比一次标题：严格范围下政策其实在库、只是未核验时，提示切换范围而不是说没收录。
+        all_rows = rows if scope == "all" else corpus.load(store, scope="all")
+        all_policies = list({view.id: view for _, view in all_rows}.values())
+        all_matches = titles.match_titles(question, all_policies)
+        hint_override = ""
+        if scope == "current" and all_matches and all_matches[0].score >= titles.STRONG:
+            hint_override = (f"当前范围为『仅已核验现行政策』；《{all_matches[0].policy.title}》在库中"
+                             "但尚未核验，切换到『全部入库政策』可查看。")
+        return None, None, _build_chat_ctx(
+            store, question, candidates, scope=scope, threshold=threshold, top_k=top_k,
+            suggestions=[{"policy_id": m.policy.id, "title": m.policy.title, "status": m.policy.status}
+                         for m in all_matches[:3]],
+            scope_hint_override=hint_override,
+        )
+
     # ---- 覆盖度闸门：问题里的实义词在库中几乎找不到 → 属于库外问题 ----
-    asked_terms = retrieval.content_terms(question)
     matched_terms: set[str] = set()
     for cand in candidates:
         matched_terms.update(cand.matched_terms)
@@ -430,12 +467,22 @@ def _route_question(
         )
 
     # ---- 依据分层：已核验 > （显式允许的）已废止 > 待核实；其余如实拒答 ----
+    # ① 作依据的条款逐个验实词覆盖：单条条款命中的问题实词要过半。
+    asked_set = set(asked_terms)
+
+    def _serves_as_basis(cand: Candidate) -> bool:
+        if not asked_set:
+            return True
+        return len(set(cand.matched_terms) & asked_set) / len(asked_set) >= BASIS_TERM_COVERAGE
+
     usable: list[Candidate] = []
     deprecated: list[Candidate] = []
     pending: list[Candidate] = []
     not_in_force: list[Candidate] = []
     for cand in above:
         status = cand.policy.status
+        if not _serves_as_basis(cand):
+            continue
         if status == STATUS_EFFECTIVE:
             usable.append(cand)
         elif status == STATUS_REPEALED:

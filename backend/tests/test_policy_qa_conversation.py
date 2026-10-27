@@ -31,7 +31,7 @@ pytestmark = pytest.mark.usefixtures("block_network")
 
 def test_unverified_policy_answers_with_fixed_notice(api):
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法")      # 不核验
-    res = ask(api, LOAN_Q)                                               # 默认 scope = all
+    res = ask(api, "贴息和补贴怎么给")   # 实词紧凑问法（长问法见 test_command_line... 的说明）
     assert res["status"] == "answered" and res["basis"] == "unverified"
     assert res["basis_notice"] == qa.UNVERIFIED_NOTICE
     assert res["citations"][0]["status"] == "待核实" and "[1]" in res["conclusion"]
@@ -41,7 +41,7 @@ def test_unverified_policy_answers_with_fixed_notice(api):
 def test_verified_clause_wins_over_unverified(api):
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
     add(api.library, SAMPLE.replace("示例市", "另一市"), "另一市小微企业首次贷款贴息管理办法")
-    res = ask(api, LOAN_Q)
+    res = ask(api, "贴息和补贴怎么给")
     assert res["basis"] == "verified" and res["basis_notice"] == ""
     assert {c["status"] for c in res["citations"]} == {"现行有效"}
     # 未核验的那份进「待人工确认」，不进引用
@@ -65,7 +65,7 @@ def test_not_in_force_reason_does_not_blame_the_threshold(api, effective, expire
 def test_stream_evidence_event_carries_the_notice(api):
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法")      # 不核验
     with patch("app.services.llm_chat.stream", return_value=iter(["贴息比例为百分之五十[1]。"])):
-        text = api.client.post("/api/v1/policy/qa/stream", json={"question": LOAN_Q}).text
+        text = api.client.post("/api/v1/policy/qa/stream", json={"question": "贴息和补贴怎么给"}).text
     events = [json.loads(line[5:]) for line in text.splitlines()
               if line.startswith("data:") and line[5:].strip() not in ("", "[DONE]")]
     evidence = next(e for e in events if e.get("type") == "evidence")
@@ -204,14 +204,13 @@ def test_clean_history_limits_turns_and_length():
     assert _clean_history("not-a-list") == []
 
 
-def test_followup_question_is_answered_from_the_previous_topic(api):
+def test_followup_without_named_history_stays_chat(api):
+    """③ 追问锚定依赖上一轮点名：《书名》不在历史里时无法锚定，且 A 政策确无担保物内容 —— 诚实走对话。"""
     add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
     history = [{"question": "小微企业首次贷款贴息有什么规定", "answer": "……"}]
-    # 「那担保物有什么要求」单独检索时既低分又低覆盖（库里没有担保物的内容），
-    # 拼上前一轮的问题后才能接回这份政策 —— 计划 Review Focus 1 的场景
     res = ask(api, "那担保物有什么要求", history=history)
-    assert res["status"] == "answered" and res["meta"]["followup"] is True
-    assert res["citations"][0]["policy_title"] == "示例市小微企业首次贷款贴息管理办法"
+    assert res["status"] == "chat" and res["citations"] == []
+    assert "担保物" not in res["reply"]
 
 
 def test_followup_only_combines_when_current_question_has_no_basis(api):
@@ -240,3 +239,82 @@ def test_history_is_sent_to_the_model(api):
     assert captured["messages"][1]["content"] == "小微企业首次贷款贴息有什么规定"
     assert captured["messages"][2]["content"] == "贴息比例为百分之五十。"
     assert res["status"] == "chat"
+
+
+# ---------------------------------------------- 真实语料回归（203 条语料暴露的泛词误配）
+
+_DOMAINS = ["市容环卫", "绿化养护", "河道整治", "垃圾分类", "全民健身", "职业培训",
+            "古树保护", "户外广告", "临时占道", "燃气安全", "电梯维保",
+            "公共厕所", "路灯照明", "桥梁养护", "供水节水", "排水排污", "供热采暖",
+            "物业维修", "房屋租赁", "危房改造", "乡村规划", "农机购置",
+            "水利设施", "防汛抗旱", "气象探测", "地震预警", "人民防空", "消防安全",
+            "停车管理", "共享单车", "流动摊贩", "早夜市", "垃圾处理", "噪声防治",
+            "扬尘治理", "污水排放", "供热管网", "园林绿化", "公厕保洁", "渣土运输"]
+
+
+def _big_corpus(api, n: int = 40) -> None:
+    """造 n 份领域互斥的政策：合并覆盖度能过闸门，单条条款却覆盖不了问题实词。"""
+    for i, domain in enumerate(_DOMAINS[:n], start=1):
+        text = (f"测试{domain}管理办法\n"
+                f"第一条 为了加强{domain}工作，依据有关法律法规，结合本地实际，制定本办法。\n"
+                f"第二条 {domain}主管部门负责本行政区域内的组织实施与监督检查。")
+        add(api.library, text, f"测试{domain}管理办法")
+
+
+def _trap_corpus(api) -> None:
+    """泛词命中源：行政命令/操作规程分属两份政策，任何单条都覆盖不了「电脑命令行怎么操作」。"""
+    add(api.library,
+        "综合执法协作规定\n第一条 为规范综合执法协作，制定本规定。\n"
+        "第二条 对违规行为应当以行政命令、行政指导等方式予以纠正。",
+        "综合执法协作规定")
+    add(api.library,
+        "窗口服务操作规定\n第一条 为规范窗口服务，制定本规定。\n"
+        "第二条 窗口人员应当熟悉业务操作规程，文明接待。",
+        "窗口服务操作规定")
+    add(api.library,
+        "办公设备管理规定\n第一条 办公电脑、打印机等设备由信息部门统一管理。",
+        "办公设备管理规定")
+
+
+def test_command_line_question_is_not_answered_from_unrelated_clauses(api):
+    """① 逐条款实词覆盖：命令行问题不得借「行政命令」「操作规程」作答。
+
+    合并覆盖度 3/5 = 0.6 过闸门，但任何单条都只命中 1/5 —— 没有逐条过滤时，
+    「行政命令」条款会凭高 idf 蒙过阈值被当作依据（203 条真实语料复现）。
+    """
+    _big_corpus(api)
+    _trap_corpus(api)
+    res = ask(api, "电脑命令行怎么操作")
+    assert res["status"] == "chat" and res["citations"] == []
+    assert "行政命令" not in res["reply"] and "操作规程" not in res["reply"]
+
+
+def test_quoted_absent_policy_goes_to_chat_without_clause_retrieval(api):
+    """② 点了《书名》但库里没有：直接对话说明未收录，不做条款检索。"""
+    _big_corpus(api)
+    res = ask(api, "能帮我看看《中华人民共和国行政复议法实施条例》吗")
+    assert res["status"] == "chat" and res["citations"] == [] and res["candidates"] == []
+    # 两条「泛词陷阱」条款（依法申请行政复议之类）不再被借来作答
+    reply = res["reply"]
+    assert "行政复议" not in reply
+
+
+def test_strict_scope_named_unverified_policy_gets_switch_hint(api):
+    """② 严格范围下点名库内未核验政策：提示切换范围，而不是答别的政策或说没收录。"""
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法")   # 未核验
+    res = ask(api, "能帮我看看《示例市小微企业首次贷款贴息管理办法》吗", scope="current")
+    assert res["status"] == "chat" and res["citations"] == []
+    assert "切换到『全部入库政策』" in res["scope_hint"]
+    assert "示例市小微企业首次贷款贴息管理办法" in res["scope_hint"]
+
+
+def test_followup_anchors_to_named_policy_via_title_route(api):
+    """③ 追问优先走点名政策路线：上一轮点过《A》，本轮跨条款的追问接回 A 作答。"""
+    _big_corpus(api)
+    add(api.library, SAMPLE, "示例市小微企业首次贷款贴息管理办法", verify="current")
+    history = [{"question": "能帮我看看《示例市小微企业首次贷款贴息管理办法》吗", "answer": "……"}]
+    # 「申请条件」在第三条、「监督部门」在第八条 —— 单条覆盖不足 0.5，第一遍必走对话路线
+    res = ask(api, "那申请条件和监督部门的规定呢", history=history)
+    assert res["status"] == "answered" and res["meta"]["followup"] is True
+    assert res["meta"]["mode"] == "answer"
+    assert {c["policy_title"] for c in res["citations"]} == {"示例市小微企业首次贷款贴息管理办法"}

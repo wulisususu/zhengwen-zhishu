@@ -39,6 +39,11 @@ def title_core(title: str) -> str:
     return _NOISE_RE.sub("", title or "")
 
 
+def contains_book_title(question: str) -> bool:
+    """问题里是否点了《书名》。"""
+    return bool(_CLAUSE_RE.search(question or ""))
+
+
 def strip_fillers(question: str) -> str:
     return _FILL_RE.sub("", question or "").strip()
 

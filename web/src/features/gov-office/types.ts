@@ -264,3 +264,36 @@ export interface DraftChanges {
   fields?: Record<FieldKey, string>;
   signDate?: string;
 }
+
+/** 提炼总结 */
+export type SummaryMode = "material" | "meeting";
+
+/** One numbered passage of the original material that a summary item cites. */
+export interface SummarySource {
+  id: string;
+  fileId: string;
+  fileName: string;
+  page: number | null;
+  paragraph: number;
+  text: string;
+}
+
+export interface SummaryItem {
+  text: string;
+  sources: string[];
+  /** Meeting tasks only; empty when the material does not state it. */
+  owner?: string;
+  deadline?: string;
+  notes: string[];
+}
+
+export interface SummaryResult {
+  origin: "backend" | "demo";
+  mode: SummaryMode;
+  materials: { fileId: string; fileName: string; segments: number }[];
+  sections: { key: string; label: string; items: SummaryItem[] }[];
+  sources: Record<string, SummarySource>;
+  /** Items the model returned that failed source checks; shown, never silently discarded. */
+  dropped: { section: string; text: string; reason: string }[];
+  generatedAt: string;
+}

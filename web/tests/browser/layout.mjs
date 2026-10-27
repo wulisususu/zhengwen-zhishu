@@ -5,6 +5,7 @@ import { isInViewport, isUnobstructed, navigate, switchIdentity } from "./helper
 const PAGES = [
   { path: "/gov", key: "home", keyButtons: [] },
   { path: "/gov/policy-qa", key: "policy-qa", keyButtons: ["提问"] },
+  { path: "/gov/summary", key: "summary", keyButtons: ["开始提炼"] },
   { path: "/gov/draft", key: "draft", keyButtons: ["保存草稿", "导出", "提交审核"], a4: true },
   { path: "/gov/proofread", key: "proofread", keyButtons: ["前往审核中心"], a4: true },
   { path: "/gov/review-center", key: "review-center", keyButtons: ["退回修改", "审核通过"], reviewer: true },

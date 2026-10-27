@@ -19,6 +19,8 @@ import type {
   QaSession,
   QaTurn,
   RuntimeStatus,
+  SummaryMode,
+  SummaryResult,
 } from "../types";
 
 export interface DocumentQuery {
@@ -62,6 +64,8 @@ export interface GovOfficeAdapter {
   clearResolution(id: string, issueId: string): Promise<OfficialDocument>;
   rerunReview(id: string): Promise<OfficialDocument>;
   listMaterialLibrary(): Promise<Material[]>;
+  /** 提炼总结：one material per call; every item cites numbered passages of it. */
+  summarizeMaterial?(materialId: string, mode: SummaryMode): Promise<SummaryResult>;
   addMaterials(id: string, materialIds: string[]): Promise<OfficialDocument>;
   removeMaterial(id: string, materialId: string): Promise<OfficialDocument>;
   saveDraft(id: string, changes?: DraftChanges): Promise<OfficialDocument>;

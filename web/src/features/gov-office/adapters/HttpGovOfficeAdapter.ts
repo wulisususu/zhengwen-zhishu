@@ -2,7 +2,7 @@ import { getSessionToken } from "../../../stores/auth.js";
 import { handleUnauthorized } from "../../../api.js";
 import { GovOfficeError } from "./GovOfficeAdapter";
 import type { GovOfficeAdapter, DocumentQuery } from "./GovOfficeAdapter";
-import type { Actor, AskOptions, Citation, DraftChanges, ExportResult, FieldKey, IssueResolution, Material, OfficialDocument, PolicyStats, PolicyStatus, PolicyDocument, PolicyDetail, PolicyHit, QaSession, QaTurn, RuntimeStatus } from "../types";
+import type { Actor, AskOptions, Citation, DraftChanges, ExportResult, FieldKey, IssueResolution, Material, OfficialDocument, PolicyStats, PolicyStatus, PolicyDocument, PolicyDetail, PolicyHit, QaSession, QaTurn, RuntimeStatus, SummaryMode, SummaryResult } from "../types";
 
 const BASE = "/api/v1/gov";
 
@@ -17,7 +17,7 @@ async function request(path: string, method = "GET", body?: unknown): Promise<Re
   const form = body instanceof FormData;
   if (body !== undefined && !form) headers.set("Content-Type", "application/json");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), /\/(generate|check|export)$/.test(path) || path === '/policies/import' ? 180000 : 30000);
+  const timer = setTimeout(() => controller.abort(), /\/(generate|check|export|summaries)$/.test(path) || path === '/policies/import' ? 180000 : 30000);
   let res: Response;
   try {
     res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : form ? body as FormData : JSON.stringify(body), signal: controller.signal });
@@ -104,6 +104,7 @@ export class HttpGovOfficeAdapter implements GovOfficeAdapter {
     return this.saveDraft(id, { fields: { ...doc.fields, ...fields } });
   }
   async listMaterialLibrary() { return json<Material[]>("/materials"); }
+  summarizeMaterial(materialId: string, mode: SummaryMode) { return json<SummaryResult>("/summaries", "POST", { fileIds: [Number(materialId)], mode }); }
   async uploadMaterial(file: File) { const form = new FormData(); form.append("file", file); return json<Material>("/materials", "POST", form); }
   addMaterials(id: string, materialIds: string[]) { return this.change(id, "/materials", { fileIds: materialIds.map(Number) }); }
   async removeMaterial(id: string, materialId: string) {

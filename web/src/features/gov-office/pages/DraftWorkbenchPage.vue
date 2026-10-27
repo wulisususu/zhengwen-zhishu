@@ -357,7 +357,7 @@ const zoomOptions: { value: "fit" | number; label: string }[] = [
 
 <style scoped>
 .gov-policy-overlay { position: fixed; inset: 0; z-index: 100; background: #10243f66; display: grid; place-items: center; padding: 20px; }
-.gov-policy-dialog { width: min(1100px, 100%); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background: var(--gov-surface); border-radius: 12px; }
+.gov-policy-dialog { width: min(1100px, 100%); height: min(860px, 90vh); display: flex; flex-direction: column; overflow: hidden; background: var(--gov-surface); border-radius: 12px; }
 .gov-policy-dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--gov-border); }
 /* Editor fills the centre column; the body textarea takes all height left by the title and generation row. */
 .gov-draft__editor { border: 0; margin: 0; min-width: 0; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; background: var(--gov-surface); }

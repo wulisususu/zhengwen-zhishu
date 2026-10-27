@@ -43,7 +43,7 @@ export interface GovOfficeAdapter {
   getPolicyStats(): Promise<PolicyStats>;
   listQaSessions(): Promise<QaSession[]>;
   getCitations(ids: string[]): Promise<Citation[]>;
-  listPolicies?(keyword?: string): Promise<{ items: PolicyDocument[]; total: number }>;
+  listPolicies?(keyword?: string, options?: { statuses?: PolicyStatus[]; page?: number }): Promise<{ items: PolicyDocument[]; total: number }>;
   searchPolicies?(query: string, statuses?: PolicyStatus[]): Promise<{ hits: PolicyHit[] }>;
   getPolicy?(id: number): Promise<PolicyDetail>;
   selectCitations?(id: string, citationIds: string[]): Promise<OfficialDocument>;

@@ -82,7 +82,11 @@ export class HttpGovOfficeAdapter implements GovOfficeAdapter {
     if (result.missing.length) throw new GovOfficeError("部分政策条款已不可用，请重新选择", "missing_citation");
     return result.citations;
   }
-  listPolicies(keyword = "") { return json<{ items: PolicyDocument[]; total: number }>("/policies?" + new URLSearchParams({ keyword, page_size: "50" })); }
+  listPolicies(keyword = "", options: { statuses?: PolicyStatus[]; page?: number } = {}) {
+    const params = new URLSearchParams({ keyword, page_size: "50", page: String(options.page ?? 1) });
+    for (const status of options.statuses ?? []) params.append("status", status);
+    return json<{ items: PolicyDocument[]; total: number }>("/policies?" + params);
+  }
   searchPolicies(query: string, statuses: PolicyStatus[] = ["current"]) { return json<{ hits: PolicyHit[] }>("/policies/search", "POST", { query, statuses, limit: 30 }); }
   getPolicy(id: number) { return json<PolicyDetail>(`/policies/${id}`); }
   selectCitations(id: string, citationIds: string[]) { return this.change(id, "/citations", { citationIds }); }

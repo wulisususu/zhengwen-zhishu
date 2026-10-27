@@ -26,6 +26,17 @@ describe("real government HTTP boundary", () => {
     await api.getCurrentActor();
     expect(new Headers(fetcher.mock.calls[1][1].headers).get("Authorization")).toBe("Bearer new-login-token");
   });
+  it("passes policy status filters and the page to the policy list", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ items: [], total: 0 }));
+    vi.stubGlobal("fetch", fetcher);
+    const api = await adapter();
+    await api.listPolicies("数据", { statuses: ["unverified", "current"], page: 3 });
+    const url = new URL(fetcher.mock.calls[0][0], "http://local");
+    expect(url.pathname).toBe("/api/v1/gov/policies");
+    expect(url.searchParams.get("keyword")).toBe("数据");
+    expect(url.searchParams.get("page")).toBe("3");
+    expect(url.searchParams.getAll("status")).toEqual(["unverified", "current"]);
+  });
   it("saves the fetched server version and editable content", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(doc)).mockResolvedValueOnce(response({ ...doc, version: 5, title: "新标题" }));
     vi.stubGlobal("fetch", fetcher);
